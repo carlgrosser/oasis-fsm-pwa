@@ -451,7 +451,7 @@ textarea.form-input {
 }
 
 .menu-item-danger {
-  color: var(--danger);
+  color: var(--error-color);
 }
 
 /* ========== DIVIDER ========== */
