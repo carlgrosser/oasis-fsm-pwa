@@ -54,10 +54,28 @@ const App = {
       });
     });
 
-    // Sync button
+    // Hamburger menu
+    const menuBtn = document.getElementById('menuBtn');
+    const menuDropdown = document.getElementById('menuDropdown');
+    if (menuBtn && menuDropdown) {
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = menuDropdown.style.display !== 'none';
+        menuDropdown.style.display = open ? 'none' : 'block';
+      });
+      document.addEventListener('click', () => {
+        menuDropdown.style.display = 'none';
+      });
+      menuDropdown.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    // Sync button (inside menu)
     const syncBtn = document.getElementById('syncBtn');
     if (syncBtn) {
-      syncBtn.addEventListener('click', () => Sync.manualSync());
+      syncBtn.addEventListener('click', () => {
+        menuDropdown.style.display = 'none';
+        Sync.manualSync();
+      });
     }
 
     // Clock button
@@ -68,10 +86,11 @@ const App = {
       });
     }
 
-    // Logout button
+    // Logout button (inside menu)
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', () => {
+        menuDropdown.style.display = 'none';
         if (confirm('Log out?')) Auth.logout();
       });
     }

@@ -114,11 +114,11 @@ const OdooAPI = {
    */
   async searchRead(model, domain, fields, opts) {
     const options = opts || {};
-    return this.callKw(model, 'search_read', [domain, fields], {
-      limit: options.limit || 0,
-      offset: options.offset || 0,
-      order: options.order || '',
-    });
+    const kwargs = {};
+    if (options.limit) kwargs.limit = options.limit;
+    if (options.offset) kwargs.offset = options.offset;
+    if (options.order) kwargs.order = options.order;
+    return this.callKw(model, 'search_read', [domain, fields], kwargs);
   },
 
   /**
