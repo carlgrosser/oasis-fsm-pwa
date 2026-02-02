@@ -94,8 +94,9 @@ const Journal = {
           </div>`;
       }).join('');
     } catch (err) {
-      console.warn('Failed to load journal:', err);
-      entriesContainer.innerHTML = '<p class="journal-empty">Could not load journal entries</p>';
+      console.error('Failed to load journal:', err);
+      const msg = err.message || 'Unknown error';
+      entriesContainer.innerHTML = `<p class="journal-empty">Could not load journal entries: ${this._escapeHtml(msg)}</p>`;
     }
   },
 

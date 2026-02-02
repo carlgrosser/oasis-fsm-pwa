@@ -212,7 +212,11 @@ const OdooAPI = {
    */
   async updateOrderStage(orderId, stageId, extraValues) {
     const values = { stage_id: stageId, ...(extraValues || {}) };
-    return this.write('fsm.order', [orderId], values);
+    // OCA fieldservice blocks direct writes to the Completed stage;
+    // bypass_order_completed_stage context allows it.
+    return this.callKw('fsm.order', 'write', [[orderId], values], {
+      context: { bypass_order_completed_stage: true },
+    });
   },
 
   /**
@@ -319,21 +323,39 @@ const OdooAPI = {
 
   /**
    * Get journal entries for an FSM order.
+   * Tries direct search_read on mail.message first; if access is denied,
+   * falls back to reading the order's message_ids and filtering client-side.
    */
   async getJournalEntries(orderId) {
     const subtypeId = await this.getJournalSubtypeId();
     if (!subtypeId) return [];
 
-    return this.searchRead(
-      'mail.message',
-      [
-        ['res_model', '=', 'fsm.order'],
-        ['res_id', '=', orderId],
-        ['subtype_id', '=', subtypeId],
-      ],
-      ['body', 'author_id', 'create_date'],
-      { order: 'create_date desc', limit: 50 }
-    );
+    try {
+      return await this.searchRead(
+        'mail.message',
+        [
+          ['res_model', '=', 'fsm.order'],
+          ['res_id', '=', orderId],
+          ['subtype_id', '=', subtypeId],
+        ],
+        ['body', 'author_id', 'create_date'],
+        { order: 'create_date desc', limit: 50 }
+      );
+    } catch (e) {
+      console.warn('Direct mail.message search failed, trying via order:', e);
+      // Fallback: read the order's message_ids, then filter by subtype
+      const orders = await this.read('fsm.order', [orderId], ['message_ids']);
+      if (!orders.length || !orders[0].message_ids || !orders[0].message_ids.length) return [];
+
+      const messages = await this.read('mail.message', orders[0].message_ids,
+        ['body', 'author_id', 'create_date', 'subtype_id']);
+      return messages
+        .filter(m => {
+          const sid = Array.isArray(m.subtype_id) ? m.subtype_id[0] : m.subtype_id;
+          return sid === subtypeId;
+        })
+        .sort((a, b) => (b.create_date || '').localeCompare(a.create_date || ''));
+    }
   },
 
   /**
