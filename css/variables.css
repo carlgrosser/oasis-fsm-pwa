@@ -1,0 +1,57 @@
+:root {
+  /* Brand Colors */
+  --primary-color: #0066cc;
+  --secondary-color: #00cc66;
+  --accent-color: #ff6600;
+
+  /* Status Colors */
+  --status-scheduled: #3498db;
+  --status-enroute: #f39c12;
+  --status-arrived: #e67e22;
+  --status-progress: #2ecc71;
+  --status-complete: #27ae60;
+  --status-cancelled: #e74c3c;
+
+  /* UI Colors */
+  --background: #f5f5f5;
+  --card-background: #ffffff;
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --border-color: #dddddd;
+  --error-color: #e74c3c;
+  --success-color: #27ae60;
+  --warning-color: #f39c12;
+
+  /* Fonts */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-size-base: 16px;
+  --font-size-large: 20px;
+  --font-size-xl: 24px;
+  --font-size-small: 14px;
+  --font-size-xs: 12px;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  /* Borders */
+  --border-radius: 8px;
+  --border-radius-sm: 4px;
+  --border-radius-lg: 12px;
+  --border-width: 1px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+
+  /* Safe area (for notched phones) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}

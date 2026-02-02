@@ -1,0 +1,202 @@
+/**
+ * Authentication module.
+ * Handles login, logout, session persistence, and user context.
+ */
+const Auth = {
+  _session: null,
+  _user: null,
+  _personId: null,
+  _employeeId: null,
+  _timezone: null,
+
+  /**
+   * Get stored session from localStorage.
+   */
+  getStoredSession() {
+    try {
+      const data = localStorage.getItem('fsm_session');
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Store session to localStorage.
+   */
+  _storeSession(sessionData) {
+    localStorage.setItem('fsm_session', JSON.stringify(sessionData));
+  },
+
+  /**
+   * Clear stored session.
+   */
+  _clearSession() {
+    localStorage.removeItem('fsm_session');
+    this._session = null;
+    this._user = null;
+    this._personId = null;
+    this._employeeId = null;
+    this._timezone = null;
+  },
+
+  /**
+   * Login with username and password.
+   * Returns { success, error, user }.
+   */
+  async login(username, password, remember) {
+    try {
+      const result = await OdooAPI.authenticate(username, password);
+
+      if (!result || !result.uid) {
+        return { success: false, error: 'Invalid username or password' };
+      }
+
+      // Get fsm.person for this user (match via partner_id from session)
+      const person = await OdooAPI.getMyPersonId(result.uid, result.partner_id);
+      if (!person) {
+        return {
+          success: false,
+          error: 'No field service worker profile found for this user. Contact your administrator.'
+        };
+      }
+
+      this._session = result;
+      this._user = {
+        uid: result.uid,
+        name: result.name || result.username,
+        username: username,
+        partnerId: result.partner_id,
+      };
+      this._personId = person.id;
+
+      // Get hr.employee for attendance tracking
+      const employee = await OdooAPI.getEmployeeId(result.uid);
+      this._employeeId = employee ? employee.id : null;
+
+      // Capture user timezone from Odoo session context
+      const userTz = (result.user_context && result.user_context.tz) || null;
+      this._timezone = userTz;
+
+      const sessionData = {
+        sessionId: result.session_id,
+        uid: result.uid,
+        name: result.name || result.username,
+        username: username,
+        partnerId: result.partner_id,
+        personId: person.id,
+        personName: person.name,
+        employeeId: this._employeeId,
+        timezone: userTz,
+        timestamp: Date.now(),
+      };
+
+      if (remember) {
+        this._storeSession(sessionData);
+      }
+
+      // Also save to IndexedDB for offline reference
+      await DB.setState('currentUser', sessionData);
+
+      return { success: true, user: sessionData };
+    } catch (err) {
+      let message = 'Connection failed. Check your internet and try again.';
+      if (err.message.includes('Authentication failed') || err.message.includes('Invalid')) {
+        message = 'Invalid username or password';
+      } else if (err.message.includes('fetch') || err.message.includes('network')) {
+        message = 'Cannot connect to server. Check your internet connection.';
+      }
+      return { success: false, error: message };
+    }
+  },
+
+  /**
+   * Try to restore a previous session.
+   * Returns true if session is valid.
+   */
+  async tryRestore() {
+    const stored = this.getStoredSession();
+    if (!stored) return false;
+
+    this._user = {
+      uid: stored.uid,
+      name: stored.name,
+      username: stored.username,
+      partnerId: stored.partnerId,
+    };
+    this._personId = stored.personId;
+    this._employeeId = stored.employeeId || null;
+    this._timezone = stored.timezone || null;
+
+    // If we're online, verify the session is still valid
+    if (navigator.onLine) {
+      try {
+        const valid = await OdooAPI.checkSession();
+        if (!valid) {
+          // Session expired — try to re-authenticate if we have credentials
+          // For now, just clear and require re-login
+          this._clearSession();
+          return false;
+        }
+        return true;
+      } catch {
+        // Network error — assume session might be OK (offline mode)
+        return true;
+      }
+    }
+
+    // Offline — trust the stored session
+    return true;
+  },
+
+  /**
+   * Logout — clear session and redirect.
+   */
+  async logout() {
+    try {
+      if (navigator.onLine) {
+        await OdooAPI.rpc('/web/session/destroy', {});
+      }
+    } catch {
+      // Ignore logout errors
+    }
+    this._clearSession();
+    await DB.setState('currentUser', null);
+    window.location.href = 'index.html';
+  },
+
+  /**
+   * Get current user info.
+   */
+  getUser() {
+    return this._user;
+  },
+
+  /**
+   * Get the fsm.person ID for the logged-in user.
+   */
+  getPersonId() {
+    return this._personId;
+  },
+
+  /**
+   * Get the hr.employee ID for attendance tracking.
+   */
+  getEmployeeId() {
+    return this._employeeId;
+  },
+
+  /**
+   * Get the user's timezone from Odoo (e.g. 'America/Phoenix').
+   */
+  getTimezone() {
+    return this._timezone;
+  },
+
+  /**
+   * Check if user is logged in.
+   */
+  isLoggedIn() {
+    return this._user !== null && this._personId !== null;
+  },
+};

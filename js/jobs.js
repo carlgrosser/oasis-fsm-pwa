@@ -1,0 +1,723 @@
+/**
+ * Jobs module — fetch, cache, display, and manage FSM orders.
+ */
+const Jobs = {
+  _stages: [],       // cached FSM stages
+  _stageMap: {},     // id → stage object
+  _jobs: [],         // current job list
+  _currentView: 'today',
+
+  /**
+   * Load stages from Odoo (or cache).
+   */
+  async loadStages() {
+    // Try cache first
+    const cached = await DB.getStages();
+    if (cached && cached.length > 0) {
+      this._stages = cached;
+    }
+
+    // Fetch fresh if online
+    if (navigator.onLine) {
+      try {
+        const stages = await OdooAPI.getStages();
+        this._stages = stages;
+        await DB.saveStages(stages);
+      } catch (err) {
+        console.warn('Failed to fetch stages:', err);
+      }
+    }
+
+    // Build lookup map
+    this._stageMap = {};
+    for (const s of this._stages) {
+      this._stageMap[s.id] = s;
+    }
+  },
+
+  /**
+   * Get stage info by ID.
+   */
+  getStage(stageId) {
+    // stageId from Odoo is often [id, name] tuple
+    const id = Array.isArray(stageId) ? stageId[0] : stageId;
+    return this._stageMap[id] || null;
+  },
+
+  /**
+   * Get stage name from stage_id field value.
+   */
+  getStageName(stageId) {
+    if (Array.isArray(stageId)) return stageId[1];
+    const stage = this._stageMap[stageId];
+    return stage ? stage.name : 'Unknown';
+  },
+
+  /**
+   * Map a stage name to a CSS class suffix.
+   */
+  getStatusClass(stageName) {
+    const name = (stageName || '').toLowerCase();
+    if (name.includes('route')) return 'enroute';
+    if (name.includes('arrived')) return 'arrived';
+    if (name.includes('progress')) return 'progress';
+    if (name.includes('complete') || name.includes('done') || name.includes('closed')) return 'complete';
+    if (name.includes('cancel')) return 'cancelled';
+    return 'scheduled'; // default for new/scheduled
+  },
+
+  /**
+   * Fetch jobs from Odoo for the given date range.
+   */
+  async fetchJobs(view) {
+    const personId = Auth.getPersonId();
+    if (!personId) throw new Error('Not logged in');
+
+    const now = new Date();
+    let dateFrom, dateTo;
+
+    if (view === 'today') {
+      dateFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      dateTo = new Date(dateFrom);
+      dateTo.setDate(dateTo.getDate() + 1);
+    } else if (view === 'week') {
+      dateFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      dateTo = new Date(dateFrom);
+      dateTo.setDate(dateTo.getDate() + 7);
+    } else {
+      // history — last 30 days
+      dateFrom = new Date(now);
+      dateFrom.setDate(dateFrom.getDate() - 30);
+      dateTo = new Date(now);
+      dateTo.setDate(dateTo.getDate() + 1);
+    }
+
+    const fromStr = dateFrom.toISOString().replace('T', ' ').slice(0, 19);
+    const toStr = dateTo.toISOString().replace('T', ' ').slice(0, 19);
+
+    let jobs;
+    if (view === 'history') {
+      jobs = await OdooAPI.getCompletedOrders(personId, fromStr);
+    } else {
+      jobs = await OdooAPI.getMyOrders(personId, fromStr, toStr);
+    }
+
+    return jobs;
+  },
+
+  /**
+   * Load jobs — from Odoo if online, from cache if offline.
+   */
+  async loadJobs(view) {
+    this._currentView = view || 'today';
+    let jobs;
+
+    if (navigator.onLine) {
+      try {
+        jobs = await this.fetchJobs(this._currentView);
+        await DB.saveJobs(jobs);
+        await DB.setState('lastSync', Date.now());
+      } catch (err) {
+        console.warn('Failed to fetch from Odoo, using cache:', err);
+        jobs = await DB.getJobs();
+      }
+    } else {
+      jobs = await DB.getJobs();
+    }
+
+    // Filter cached jobs based on current view
+    if (!navigator.onLine && jobs) {
+      jobs = this._filterCachedJobs(jobs, this._currentView);
+    }
+
+    this._jobs = jobs || [];
+    return this._jobs;
+  },
+
+  /**
+   * Filter cached jobs for the requested view.
+   */
+  _filterCachedJobs(jobs, view) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    return jobs.filter(job => {
+      const start = this._parseOdooDatetime(job.scheduled_date_start);
+      if (!start) return false;
+
+      if (view === 'today') {
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return start >= today && start < tomorrow;
+      } else if (view === 'week') {
+        const weekEnd = new Date(today);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        return start >= today && start < weekEnd;
+      } else {
+        // history
+        const stageName = this.getStageName(job.stage_id);
+        return this.getStatusClass(stageName) === 'complete';
+      }
+    });
+  },
+
+  /**
+   * Render the job list into a container element.
+   */
+  renderJobList(container) {
+    container.innerHTML = '';
+
+    if (this._jobs.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div style="font-size: 48px; opacity: 0.3;">📋</div>
+          <p>No jobs ${this._currentView === 'history' ? 'in history' : 'scheduled'}</p>
+        </div>
+      `;
+      return;
+    }
+
+    for (const job of this._jobs) {
+      const card = this._createJobCard(job);
+      container.appendChild(card);
+    }
+  },
+
+  /**
+   * Create a job card DOM element.
+   */
+  _createJobCard(job) {
+    const card = document.createElement('div');
+    const stageName = this.getStageName(job.stage_id);
+    const statusClass = this.getStatusClass(stageName);
+
+    card.className = `job-card status-${statusClass}`;
+    card.dataset.jobId = job.id;
+
+    // Location name from location_id [id, name]
+    const locationName = Array.isArray(job.location_id)
+      ? job.location_id[1]
+      : (job.location_id || 'Unknown Location');
+
+    // Build address from direct fields on fsm.order
+    const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
+    const address = addressParts.join(', ') || locationName;
+
+    // Format time — context-aware per view
+    const timeStr = this._formatCardTime(job.scheduled_date_start);
+
+    // Multi-worker indicator
+    const crewCount = job.person_ids ? job.person_ids.length : 1;
+    const crewHtml = crewCount > 1
+      ? `<span class="crew-badge">👥 ${crewCount}</span>`
+      : '';
+
+    // Gate code indicator
+    const gateHtml = job.gate_code
+      ? '<span class="gate-code-hint" title="Gate code available">🔑</span>'
+      : '';
+
+    card.innerHTML = `
+      <div class="job-card-header">
+        <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
+        <span class="job-card-time">${timeStr}</span>
+      </div>
+      <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
+      <div class="job-card-footer">
+        <span class="job-card-id">${this._escapeHtml(job.name || '')}</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${crewHtml}
+          <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      App.showJobDetail(job.id);
+    });
+
+    return card;
+  },
+
+  /**
+   * Render a single job's detail view.
+   */
+  async renderJobDetail(jobId, container) {
+    let job = this._jobs.find(j => j.id === jobId);
+    if (!job) {
+      job = await DB.getJob(jobId);
+    }
+    if (!job) {
+      container.innerHTML = '<div class="empty-state"><p>Job not found</p></div>';
+      return;
+    }
+
+    const stageName = this.getStageName(job.stage_id);
+    const statusClass = this.getStatusClass(stageName);
+
+    const locationName = Array.isArray(job.location_id) ? job.location_id[1] : (job.location_id || 'No location');
+    const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
+    const fullAddress = addressParts.join(', ') || locationName;
+
+    const scheduledRange = this._formatScheduleRange(job.scheduled_date_start, job.scheduled_date_end);
+
+    // Build address for map link — prefer street address for accuracy
+    const addressForMap = encodeURIComponent(fullAddress);
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${addressForMap}`;
+
+    // Phone link
+    const phoneHtml = job.phone
+      ? `<a href="tel:${this._escapeHtml(job.phone)}" class="contact-link">📞 ${this._escapeHtml(job.phone)}</a>`
+      : '';
+
+    // Gate code (editable)
+    const locationId = Array.isArray(job.location_id) ? job.location_id[0] : null;
+    const gateCodeHtml = `<div class="gate-code-row" id="gateCodeRow">
+           <span class="gate-code-label">🔑 Gate Code:</span>
+           <span class="gate-code-value" id="gateCodeValue">${job.gate_code ? this._escapeHtml(job.gate_code) : '<em style="opacity:0.5">None</em>'}</span>
+           <span class="gate-code-edit" title="Tap to edit">✏️</span>
+         </div>`;
+
+    // Crew / multi-worker info
+    const primaryWorker = Array.isArray(job.person_id) ? job.person_id[1] : '';
+    const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
+    let crewHtml = '';
+    if (primaryWorker) {
+      crewHtml = `
+        <div class="detail-row">
+          <span class="label">Assigned</span>
+          <span class="value">${this._escapeHtml(primaryWorker)}${workerCount > 1 ? ` <span class="crew-badge">+${workerCount - 1} more</span>` : ''}</span>
+        </div>`;
+      if (workerCount > 1) {
+        crewHtml += `<div class="crew-list" id="crewList"></div>`;
+      }
+    }
+
+    // Build status workflow buttons
+    const workflowHtml = this._buildWorkflowButtons(job, stageName);
+
+    container.innerHTML = `
+      <div class="detail-header">
+        <button class="back-btn" id="backToList">←</button>
+        <h2 style="flex:1; font-size:18px;">${this._escapeHtml(job.name || 'Job')}</h2>
+        <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
+      </div>
+
+      <!-- Customer & Location -->
+      <div class="detail-section">
+        <h3>${this._escapeHtml(locationName)}</h3>
+        <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
+          📍 ${this._escapeHtml(fullAddress)}
+        </a>
+        ${phoneHtml ? '<div style="margin-top:4px;">' + phoneHtml + '</div>' : ''}
+        ${gateCodeHtml}
+        <div class="divider"></div>
+        <div class="detail-row">
+          <span class="label">Scheduled</span>
+          <span class="value">${scheduledRange}</span>
+        </div>
+        ${crewHtml}
+        ${job.description ? `
+        <div class="detail-row">
+          <span class="label">Notes</span>
+          <span class="value">${this._escapeHtml(job.description)}</span>
+        </div>` : ''}
+      </div>
+
+      <!-- Status Management -->
+      <div class="detail-section">
+        <h3>Status</h3>
+        <div class="status-actions" id="statusActions">
+          ${workflowHtml}
+        </div>
+      </div>
+
+      <!-- Photos -->
+      <div class="detail-section">
+        <h3>Photos</h3>
+        <div id="photoSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- Journal -->
+      <div class="detail-section">
+        <h3>Journal</h3>
+        <div id="journalSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="detail-section">
+        <h3>Actions</h3>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-outline btn-block">
+            🗺️ Navigate
+          </a>
+        </div>
+      </div>
+    `;
+
+    // Bind back button
+    document.getElementById('backToList').addEventListener('click', () => {
+      App.showJobList();
+    });
+
+    // Bind gate code edit modal
+    const gateCodeRow = document.getElementById('gateCodeRow');
+    if (gateCodeRow && locationId) {
+      gateCodeRow.addEventListener('click', () => {
+        this._showGateCodeModal(job, locationId);
+      });
+    }
+
+    // Load additional worker names
+    if (workerCount > 1 && job.additional_worker_ids && job.additional_worker_ids.length > 0) {
+      this._loadCrewNames(job);
+    }
+
+    // Bind status buttons
+    this._bindStatusButtons(job);
+
+    // Render photo gallery
+    const photoSection = document.getElementById('photoSection');
+    if (photoSection) {
+      Photos.renderPhotoSection(job.id, photoSection);
+    }
+
+    // Render journal section
+    const journalSection = document.getElementById('journalSection');
+    if (journalSection && typeof Journal !== 'undefined') {
+      Journal.renderSection(job.id, journalSection);
+    }
+  },
+
+  /**
+   * Build workflow status buttons for a job.
+   */
+  _buildWorkflowButtons(job, currentStageName) {
+    const workflow = CONFIG.WORKFLOW;
+    const currentIdx = workflow.findIndex(s =>
+      currentStageName.toLowerCase().includes(s.toLowerCase()) ||
+      s.toLowerCase().includes(currentStageName.toLowerCase())
+    );
+
+    // Find the next step in the workflow
+    const nextIdx = currentIdx + 1;
+    if (nextIdx >= workflow.length) {
+      return '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">Job completed</p>';
+    }
+
+    const nextStage = workflow[nextIdx];
+    const btnClass = nextStage.toLowerCase().includes('complete') ? 'btn-success' :
+                     nextStage.toLowerCase().includes('route') ? 'btn-warning' :
+                     'btn-primary';
+
+    return `<button class="btn ${btnClass} btn-block btn-lg" data-next-stage="${this._escapeHtml(nextStage)}">
+      → ${this._escapeHtml(nextStage)}
+    </button>`;
+  },
+
+  /**
+   * Bind click handlers on status workflow buttons.
+   */
+  _bindStatusButtons(job) {
+    const container = document.getElementById('statusActions');
+    if (!container) return;
+
+    container.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-next-stage]');
+      if (!btn) return;
+
+      const nextStageName = btn.dataset.nextStage;
+      btn.disabled = true;
+      btn.textContent = 'Updating...';
+
+      try {
+        await this.changeJobStatus(job, nextStageName);
+        App.showToast('Status updated', 'success');
+        // Re-render the detail view
+        const container = document.getElementById('jobDetail');
+        await this.renderJobDetail(job.id, container);
+      } catch (err) {
+        App.showToast('Failed to update: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '→ ' + nextStageName;
+      }
+    });
+  },
+
+  /**
+   * Change a job's status to the named stage.
+   * Stage changes are pushed to Odoo immediately (triggers backend automations).
+   * GPS is captured for En Route/Arrived and sent as a follow-up if needed.
+   */
+  async changeJobStatus(job, stageName) {
+    // En Route gate: must be clocked in
+    const name = stageName.toLowerCase();
+    if (name.includes('route') && typeof TimeTracking !== 'undefined') {
+      const ok = await TimeTracking.ensureClockedIn();
+      if (!ok) return; // user declined
+    }
+
+    // Find the stage ID for this name
+    const stage = this._stages.find(s =>
+      s.name.toLowerCase() === stageName.toLowerCase() ||
+      s.name.toLowerCase().includes(stageName.toLowerCase()) ||
+      stageName.toLowerCase().includes(s.name.toLowerCase())
+    );
+
+    if (!stage) {
+      throw new Error('Stage not found: ' + stageName);
+    }
+
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const extraValues = {};
+
+    // Determine if we need GPS for this stage
+    const needsGps = name.includes('route') || name.includes('arrived');
+
+    // Try to get a quick GPS fix (non-blocking, 3s timeout)
+    let gpsCoords = null;
+    if (needsGps && typeof GPS !== 'undefined') {
+      const pos = await GPS.getQuickPosition();
+      if (pos) {
+        gpsCoords = GPS.formatCoords(pos);
+        if (name.includes('route')) {
+          extraValues.gps_enroute = gpsCoords;
+          extraValues.gps_enroute_timestamp = timestamp;
+        }
+      }
+    }
+
+    if (navigator.onLine) {
+      // Push stage change immediately — backend automations depend on this
+      await OdooAPI.updateOrderStage(job.id, stage.id, extraValues);
+
+      // If we didn't get GPS yet but need it, capture in background and follow up
+      if (needsGps && !gpsCoords && typeof GPS !== 'undefined') {
+        GPS.getCurrentPosition().then(pos => {
+          if (pos) {
+            const coords = GPS.formatCoords(pos);
+            const gpsValues = { gps_enroute: coords, gps_enroute_timestamp: timestamp };
+            OdooAPI.write('fsm.order', [job.id], gpsValues).catch(err => {
+              console.warn('GPS follow-up write failed:', err);
+            });
+          }
+        });
+      }
+
+      // Update local cache
+      job.stage_id = [stage.id, stage.name];
+      await DB.put('jobs', job);
+    } else {
+      // Queue for sync — include GPS if we got it
+      await DB.queueStatusChange(job.id, stage.id, timestamp, gpsCoords);
+      // Update local cache optimistically
+      job.stage_id = [stage.id, stage.name];
+      await DB.put('jobs', job);
+    }
+
+    // Auto clock-out prompt when completing a job
+    if (CONFIG.AUTO_CLOCK_OUT_ON_COMPLETE && name.includes('complete') &&
+        typeof TimeTracking !== 'undefined' && TimeTracking.isClockedIn()) {
+      // Check if all today's jobs are now complete
+      const allDone = this._jobs.every(j => {
+        const sn = this.getStageName(j.stage_id);
+        return this.getStatusClass(sn) === 'complete' || this.getStatusClass(sn) === 'cancelled';
+      });
+      if (allDone) {
+        setTimeout(() => {
+          if (confirm('All jobs complete. Clock off?')) {
+            TimeTracking.clockOut();
+          }
+        }, 500);
+      }
+    }
+  },
+
+  /**
+   * Load and display additional worker names in the crew list.
+   */
+  async _loadCrewNames(job) {
+    const crewList = document.getElementById('crewList');
+    if (!crewList) return;
+
+    if (!navigator.onLine) {
+      crewList.innerHTML = `<span class="crew-list-note">${job.additional_worker_ids.length} additional worker(s)</span>`;
+      return;
+    }
+
+    try {
+      const persons = await OdooAPI.readPersonNames(job.additional_worker_ids);
+      if (persons.length > 0) {
+        const names = persons.map(p => this._escapeHtml(p.name));
+        crewList.innerHTML = `<span class="crew-list-label">Crew:</span> ${names.join(', ')}`;
+      }
+    } catch (err) {
+      console.warn('Failed to load crew names:', err);
+    }
+  },
+
+  /**
+   * Show modal to edit gate code.
+   */
+  _showGateCodeModal(job, locationId) {
+    const currentCode = job.gate_code || '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Update Gate Code</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Gate Code</label>
+            <input type="text" class="form-input" id="gateCodeInput"
+                   value="${this._escapeHtml(currentCode)}"
+                   placeholder="e.g., #1234* or 5678">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="gateCodeCancel">Cancel</button>
+          <button class="btn btn-primary" id="gateCodeSave">Save</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const input = document.getElementById('gateCodeInput');
+    input.focus();
+    input.select();
+
+    const close = () => overlay.remove();
+
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    document.getElementById('gateCodeCancel').addEventListener('click', close);
+
+    document.getElementById('gateCodeSave').addEventListener('click', async () => {
+      const newCode = input.value.trim();
+      if (newCode === currentCode) { close(); return; }
+
+      if (!confirm('Are you sure you want to update the gate code?')) return;
+
+      const saveBtn = document.getElementById('gateCodeSave');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        if (navigator.onLine) {
+          await OdooAPI.updateLocationGateCode(locationId, newCode);
+        }
+        // Update local cache
+        job.gate_code = newCode;
+        await DB.put('jobs', job);
+
+        close();
+        App.showToast('Gate code updated', 'success');
+
+        // Re-render detail
+        const container = document.getElementById('jobDetail');
+        if (container) await this.renderJobDetail(job.id, container);
+      } catch (err) {
+        App.showToast('Failed to save: ' + err.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
+    });
+  },
+
+  // ========== HELPERS ==========
+
+  /**
+   * Parse an Odoo datetime string as UTC.
+   * Odoo returns "2026-01-31 08:00:00" which is UTC but has no indicator.
+   * We normalize it to ISO 8601 so the browser interprets it correctly.
+   */
+  _parseOdooDatetime(dateStr) {
+    if (!dateStr) return null;
+    // "2026-01-31 08:00:00" → "2026-01-31T08:00:00Z"
+    const iso = dateStr.replace(' ', 'T') + (dateStr.includes('Z') || dateStr.includes('+') ? '' : 'Z');
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+  },
+
+  /**
+   * Get timezone options for Intl formatting.
+   * Uses the Odoo user's timezone so times match what Odoo displays.
+   */
+  _tzOptions(extra) {
+    const tz = (typeof Auth !== 'undefined' && Auth.getTimezone) ? Auth.getTimezone() : null;
+    const opts = Object.assign({}, extra || {});
+    if (tz) opts.timeZone = tz;
+    return opts;
+  },
+
+  _formatScheduledTime(dateStr) {
+    const d = this._parseOdooDatetime(dateStr);
+    if (!d) return '';
+    return d.toLocaleTimeString([], this._tzOptions({ hour: 'numeric', minute: '2-digit' }));
+  },
+
+  /**
+   * Format time for job cards — context-aware per current view.
+   * Today: "8:00 AM"
+   * Week: "Mon · 8:00 AM"
+   * History: "Jan 28"
+   */
+  _formatCardTime(dateStr) {
+    const d = this._parseOdooDatetime(dateStr);
+    if (!d) return '';
+    const time = d.toLocaleTimeString([], this._tzOptions({ hour: 'numeric', minute: '2-digit' }));
+    if (this._currentView === 'week') {
+      const day = d.toLocaleDateString([], this._tzOptions({ weekday: 'short' }));
+      return `${day} · ${time}`;
+    }
+    if (this._currentView === 'history') {
+      return d.toLocaleDateString([], this._tzOptions({ month: 'short', day: 'numeric' }));
+    }
+    return time;
+  },
+
+  _formatDateTime(dateStr) {
+    const d = this._parseOdooDatetime(dateStr);
+    if (!d) return '';
+    return d.toLocaleDateString([], this._tzOptions({ month: 'short', day: 'numeric' })) +
+      ' ' + d.toLocaleTimeString([], this._tzOptions({ hour: 'numeric', minute: '2-digit' }));
+  },
+
+  /**
+   * Format a schedule range: "Monday, Feb 2 8:00 AM - 12:00 PM"
+   * Shows the date once with day of week, then a time range.
+   */
+  _formatScheduleRange(startStr, endStr) {
+    const start = this._parseOdooDatetime(startStr);
+    if (!start) return '';
+    const datePart = start.toLocaleDateString([], this._tzOptions({
+      weekday: 'long', month: 'short', day: 'numeric'
+    }));
+    const startTime = start.toLocaleTimeString([], this._tzOptions({
+      hour: 'numeric', minute: '2-digit'
+    }));
+    const end = this._parseOdooDatetime(endStr);
+    if (!end) return `${datePart} ${startTime}`;
+    const endTime = end.toLocaleTimeString([], this._tzOptions({
+      hour: 'numeric', minute: '2-digit'
+    }));
+    return `${datePart} ${startTime} - ${endTime}`;
+  },
+
+  _escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+  },
+};

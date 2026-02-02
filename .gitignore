@@ -1,0 +1,13 @@
+# Dev proxy
+server.py
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
