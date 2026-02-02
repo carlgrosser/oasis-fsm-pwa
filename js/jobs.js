@@ -217,12 +217,18 @@ const Jobs = {
       ? '<span class="gate-code-hint" title="Gate code available">🔑</span>'
       : '';
 
+    // Phone number on card
+    const phoneHtml = job.phone
+      ? `<div class="job-card-phone"><a href="tel:${this._escapeHtml(job.phone)}" class="contact-link">📞 ${this._escapeHtml(job.phone)}</a></div>`
+      : '';
+
     card.innerHTML = `
       <div class="job-card-header">
         <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
         <span class="job-card-time">${timeStr}</span>
       </div>
       <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
+      ${phoneHtml}
       <div class="job-card-footer">
         <span class="job-card-id">${this._escapeHtml(job.name || '')}</span>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -231,6 +237,12 @@ const Jobs = {
         </div>
       </div>
     `;
+
+    // Phone link should not trigger job detail navigation
+    const phoneLink = card.querySelector('.job-card-phone a');
+    if (phoneLink) {
+      phoneLink.addEventListener('click', (e) => e.stopPropagation());
+    }
 
     card.addEventListener('click', () => {
       App.showJobDetail(job.id);

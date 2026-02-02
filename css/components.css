@@ -186,6 +186,10 @@ textarea.form-input {
   margin-bottom: var(--spacing-sm);
 }
 
+.job-card-phone {
+  margin-bottom: var(--spacing-sm);
+}
+
 .job-card-footer {
   display: flex;
   justify-content: space-between;
@@ -436,7 +440,7 @@ textarea.form-input {
 
 .menu-dropdown {
   position: absolute;
-  right: 0;
+  left: 0;
   top: calc(100% + 4px);
   background: var(--bg-primary);
   border-radius: var(--border-radius);
