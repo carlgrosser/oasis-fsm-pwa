@@ -301,105 +301,20 @@ const OdooAPI = {
 
   // ========== JOURNAL ==========
 
-  _journalSubtypeId: null,
-
-  /**
-   * Get the "Journal" mail.message.subtype ID (cached after first call).
-   * Uses ir.model.data XML ID lookup first (most reliable), then falls
-   * back to searching the subtype by name.
-   */
-  async getJournalSubtypeId() {
-    if (this._journalSubtypeId) return this._journalSubtypeId;
-
-    // Primary: look up by XML ID via ir.model.data
-    try {
-      const refs = await this.searchRead('ir.model.data',
-        [['module', '=', 'fieldservice_journal'], ['name', '=', 'mt_order_journal']],
-        ['res_id'],
-        { limit: 1 }
-      );
-      if (refs.length > 0) {
-        this._journalSubtypeId = refs[0].res_id;
-        return this._journalSubtypeId;
-      }
-    } catch (e) {
-      console.warn('ir.model.data lookup failed, trying direct search:', e);
-    }
-
-    // Fallback: search by name
-    try {
-      const subtypes = await this.searchRead(
-        'mail.message.subtype',
-        [['name', '=', 'Journal'], ['res_model', '=', 'fsm.order']],
-        ['id'],
-        { limit: 1 }
-      );
-      if (subtypes.length > 0) {
-        this._journalSubtypeId = subtypes[0].id;
-      }
-    } catch (e) {
-      console.warn('mail.message.subtype search failed:', e);
-    }
-
-    return this._journalSubtypeId;
-  },
-
   /**
    * Get journal entries for an FSM order.
-   * Tries direct search_read on mail.message first; if access is denied,
-   * falls back to reading the order's message_ids and filtering client-side.
+   * Calls a server-side method that handles subtype resolution in Python.
    */
   async getJournalEntries(orderId) {
-    const subtypeId = await this.getJournalSubtypeId();
-    if (!subtypeId) return [];
-
-    try {
-      return await this.searchRead(
-        'mail.message',
-        [
-          ['res_model', '=', 'fsm.order'],
-          ['res_id', '=', orderId],
-          ['subtype_id', '=', subtypeId],
-        ],
-        ['body', 'author_id', 'create_date'],
-        { order: 'create_date desc', limit: 50 }
-      );
-    } catch (e) {
-      console.warn('Direct mail.message search failed, trying via order:', e);
-      // Fallback: read the order's message_ids, then filter by subtype
-      const orders = await this.read('fsm.order', [orderId], ['message_ids']);
-      if (!orders.length || !orders[0].message_ids || !orders[0].message_ids.length) return [];
-
-      const messages = await this.read('mail.message', orders[0].message_ids,
-        ['body', 'author_id', 'create_date', 'subtype_id']);
-      return messages
-        .filter(m => {
-          const sid = Array.isArray(m.subtype_id) ? m.subtype_id[0] : m.subtype_id;
-          return sid === subtypeId;
-        })
-        .sort((a, b) => (b.create_date || '').localeCompare(a.create_date || ''));
-    }
+    return this.callKw('fsm.order', 'get_journal_entries', [[orderId]], {});
   },
 
   /**
    * Post a journal entry to an FSM order's chatter.
+   * Calls a server-side method that handles subtype resolution in Python.
    */
   async postJournalEntry(orderId, body) {
-    const subtypeId = await this.getJournalSubtypeId();
-
-    const kwargs = {
-      body: '<p>' + body + '</p>',
-      message_type: 'comment',
-    };
-
-    if (subtypeId) {
-      kwargs.subtype_id = subtypeId;
-    } else {
-      // Let Odoo resolve the XML ID server-side
-      kwargs.subtype_xmlid = 'fieldservice_journal.mt_order_journal';
-    }
-
-    return this.callKw('fsm.order', 'message_post', [[orderId]], kwargs);
+    return this.callKw('fsm.order', 'post_journal_entry', [[orderId], body], {});
   },
 
   // ========== ATTENDANCE / TIME TRACKING ==========
