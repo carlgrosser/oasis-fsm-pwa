@@ -305,19 +305,42 @@ const OdooAPI = {
 
   /**
    * Get the "Journal" mail.message.subtype ID (cached after first call).
+   * Uses ir.model.data XML ID lookup first (most reliable), then falls
+   * back to searching the subtype by name.
    */
   async getJournalSubtypeId() {
     if (this._journalSubtypeId) return this._journalSubtypeId;
 
-    const subtypes = await this.searchRead(
-      'mail.message.subtype',
-      [['name', '=', 'Journal'], ['res_model', '=', 'fsm.order']],
-      ['id'],
-      { limit: 1 }
-    );
-    if (subtypes.length > 0) {
-      this._journalSubtypeId = subtypes[0].id;
+    // Primary: look up by XML ID via ir.model.data
+    try {
+      const refs = await this.searchRead('ir.model.data',
+        [['module', '=', 'fieldservice_journal'], ['name', '=', 'mt_order_journal']],
+        ['res_id'],
+        { limit: 1 }
+      );
+      if (refs.length > 0) {
+        this._journalSubtypeId = refs[0].res_id;
+        return this._journalSubtypeId;
+      }
+    } catch (e) {
+      console.warn('ir.model.data lookup failed, trying direct search:', e);
     }
+
+    // Fallback: search by name
+    try {
+      const subtypes = await this.searchRead(
+        'mail.message.subtype',
+        [['name', '=', 'Journal'], ['res_model', '=', 'fsm.order']],
+        ['id'],
+        { limit: 1 }
+      );
+      if (subtypes.length > 0) {
+        this._journalSubtypeId = subtypes[0].id;
+      }
+    } catch (e) {
+      console.warn('mail.message.subtype search failed:', e);
+    }
+
     return this._journalSubtypeId;
   },
 
@@ -363,13 +386,20 @@ const OdooAPI = {
    */
   async postJournalEntry(orderId, body) {
     const subtypeId = await this.getJournalSubtypeId();
-    if (!subtypeId) throw new Error('Journal subtype not found. Install the fieldservice_journal module.');
 
-    return this.callKw('fsm.order', 'message_post', [[orderId]], {
+    const kwargs = {
       body: '<p>' + body + '</p>',
       message_type: 'comment',
-      subtype_id: subtypeId,
-    });
+    };
+
+    if (subtypeId) {
+      kwargs.subtype_id = subtypeId;
+    } else {
+      // Let Odoo resolve the XML ID server-side
+      kwargs.subtype_xmlid = 'fieldservice_journal.mt_order_journal';
+    }
+
+    return this.callKw('fsm.order', 'message_post', [[orderId]], kwargs);
   },
 
   // ========== ATTENDANCE / TIME TRACKING ==========
