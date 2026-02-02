@@ -186,7 +186,16 @@ const Photos = {
     ];
 
     let html = '';
+    let addedDivider = false;
     for (const cat of categories) {
+      // Insert a divider when transitioning from required to optional
+      if (!addedDivider && !cat.required) {
+        addedDivider = true;
+        html += `<div class="photo-section-divider">
+          <span class="photo-section-divider-label">Optional</span>
+        </div>`;
+      }
+
       const catPhotos = photos.filter(p => p.category === cat.key);
       const countLabel = cat.required
         ? `${catPhotos.length}/${cat.required}`

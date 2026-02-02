@@ -10,9 +10,9 @@ const CONFIG = {
 
   // PHOTO CATEGORIES
   PHOTO_CATEGORIES: [
+    { key: 'equipment_off', label: 'Equipment is Off', required: 1 },
     { key: 'before', label: 'Before Photos', required: 2 },
     { key: 'after', label: 'After Photos', required: 2 },
-    { key: 'equipment_off', label: 'Equipment is Off', required: 0 },
     { key: 'problem_areas', label: 'Problem Areas', required: 0 },
     { key: 'other', label: 'Other', required: 0 },
   ],

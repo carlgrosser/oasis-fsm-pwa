@@ -442,6 +442,29 @@ textarea.form-input {
 }
 
 /* ========== PHOTOS ========== */
+.photo-section-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0;
+}
+
+.photo-section-divider::before,
+.photo-section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.photo-section-divider-label {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
 .photo-category {
   margin-bottom: var(--spacing-md);
 }
