@@ -59,6 +59,7 @@ const Sync = {
       await this._syncStatusChanges();
       await this._syncPhotos();
       await this._syncJournal();
+      await this._syncMaterials();
       await this._syncTimeEntries();
       await this._updatePendingCount();
       App.showToast('Sync complete', 'success');
@@ -123,6 +124,18 @@ const Sync = {
   },
 
   /**
+   * Sync queued material entries.
+   */
+  async _syncMaterials() {
+    if (typeof Materials !== 'undefined') {
+      const result = await Materials.syncAll();
+      if (result.synced > 0) {
+        console.log(`Synced ${result.synced} material entries, ${result.failed} failed`);
+      }
+    }
+  },
+
+  /**
    * Sync queued time entries (clock in/out, lunch).
    */
   async _syncTimeEntries() {
@@ -147,7 +160,12 @@ const Sync = {
         const journalItems = await DB.getUnsyncedItems('journalQueue');
         journalCount = journalItems.length;
       } catch { /* store may not exist yet */ }
-      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount;
+      let materialsCount = 0;
+      try {
+        const materialsItems = await DB.getUnsyncedItems('materialsQueue');
+        materialsCount = materialsItems.length;
+      } catch { /* store may not exist yet */ }
+      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount;
     } catch {
       this._pendingCount = 0;
     }

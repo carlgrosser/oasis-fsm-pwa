@@ -262,6 +262,22 @@ const OdooAPI = {
     return null;
   },
 
+  // ========== MATERIALS ==========
+
+  /**
+   * Get material config for an FSM order (based on its categories).
+   */
+  async getMaterialConfig(orderId) {
+    return this.callKw('fsm.order', 'get_material_config', [[orderId]], {});
+  },
+
+  /**
+   * Save material usage for an FSM order.
+   */
+  async saveMaterials(orderId, lines) {
+    return this.callKw('fsm.order', 'save_materials', [[orderId], lines], {});
+  },
+
   /**
    * Update gate code on an fsm.location.
    */

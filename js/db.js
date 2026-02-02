@@ -66,6 +66,13 @@ const DB = {
           jqStore.createIndex('job_id', 'job_id', { unique: false });
           jqStore.createIndex('synced', 'synced', { unique: false });
         }
+
+        // Materials queue (offline material entries)
+        if (!db.objectStoreNames.contains('materialsQueue')) {
+          const mqStore = db.createObjectStore('materialsQueue', { keyPath: 'temp_id' });
+          mqStore.createIndex('job_id', 'job_id', { unique: false });
+          mqStore.createIndex('synced', 'synced', { unique: false });
+        }
       };
 
       request.onsuccess = (event) => {

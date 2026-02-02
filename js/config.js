@@ -24,8 +24,7 @@ const CONFIG = {
   AUTO_CLOCK_IN_ON_START: true,
   AUTO_CLOCK_OUT_ON_COMPLETE: true,
 
-  // MATERIALS
-  TILE_CLEANING_PRODUCT_ID: null, // Set to your Odoo product ID
+  // MATERIALS — configured in Odoo via Field Service > Configuration > Material Config
 
   // UI
   JOBS_PER_PAGE: 50,
@@ -38,7 +37,7 @@ const CONFIG = {
 
   // INDEXEDDB
   DB_NAME: 'fsm_pwa',
-  DB_VERSION: 2,
+  DB_VERSION: 3,
 
   // MULTI-COMPANY: list all company IDs this user should see orders from
   ALLOWED_COMPANY_IDS: [1, 2],  // 1=Oasis Pool Tile Cleaning, 2=Oasis Holiday Lighting
@@ -48,7 +47,7 @@ const CONFIG = {
   FSM_ORDER_FIELDS: [
     'name', 'location_id', 'stage_id',
     'scheduled_date_start', 'scheduled_date_end',
-    'person_id', 'person_ids', 'sale_id',
+    'person_id', 'person_ids', 'sale_id', 'category_ids',
     'description', 'request_early',
     'date_start', 'date_end',
     'company_id', 'street', 'street2', 'city',

@@ -340,6 +340,14 @@ const Jobs = {
         </div>
       </div>
 
+      <!-- Materials -->
+      <div class="detail-section" id="materialsWrapper" style="display:none;">
+        <h3>Materials Used</h3>
+        <div id="materialsSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+
       <!-- Journal -->
       <div class="detail-section">
         <h3>Journal</h3>
@@ -355,6 +363,7 @@ const Jobs = {
           <a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-outline btn-block">
             🗺️ Navigate
           </a>
+          ${this._buildSaleOrderLink(job)}
         </div>
       </div>
     `;
@@ -384,6 +393,12 @@ const Jobs = {
     const photoSection = document.getElementById('photoSection');
     if (photoSection) {
       Photos.renderPhotoSection(job.id, photoSection);
+    }
+
+    // Render materials section (hidden if no config for this job)
+    const materialsSection = document.getElementById('materialsSection');
+    if (materialsSection && typeof Materials !== 'undefined') {
+      Materials.renderSection(job.id, materialsSection);
     }
 
     // Render journal section
@@ -632,6 +647,18 @@ const Jobs = {
         saveBtn.textContent = 'Save';
       }
     });
+  },
+
+  /**
+   * Build a link to the Sales Order PDF if the job has a linked sale order.
+   */
+  _buildSaleOrderLink(job) {
+    if (!job.sale_id) return '';
+    const saleId = Array.isArray(job.sale_id) ? job.sale_id[0] : job.sale_id;
+    const saleName = Array.isArray(job.sale_id) ? job.sale_id[1] : 'Sales Order';
+    if (!saleId) return '';
+    const url = CONFIG.ODOO_URL + '/report/pdf/sale.report_saleorder/' + saleId;
+    return `<a href="${url}" target="_blank" rel="noopener" class="btn btn-outline btn-block">📄 ${this._escapeHtml(saleName)}</a>`;
   },
 
   // ========== HELPERS ==========
