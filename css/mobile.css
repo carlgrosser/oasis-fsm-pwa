@@ -69,24 +69,44 @@ body {
   min-height: 100dvh;
 }
 
-/* Header */
+/* Header — Two bars */
 .app-header {
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: var(--shadow-md);
+}
+
+.app-header-top {
   background: var(--primary-color);
   color: #fff;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: var(--shadow-md);
-  min-height: 56px;
+  min-height: 44px;
 }
 
-.app-header h1 {
-  font-size: 18px;
+.app-brand {
+  font-size: 16px;
   font-weight: 600;
+}
+
+.app-header-bottom {
+  background: var(--card-background);
+  padding: var(--spacing-xs) var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+  min-height: 44px;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
 }
 
 .header-actions {
@@ -126,35 +146,6 @@ body {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
-}
-
-/* Tab navigation */
-.tab-bar {
-  display: flex;
-  background: var(--card-background);
-  border-bottom: 1px solid var(--border-color);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.tab-bar button {
-  flex: 1;
-  min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: none;
-  background: none;
-  font-size: var(--font-size-small);
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-bottom: 3px solid transparent;
-  white-space: nowrap;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-.tab-bar button.active {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
 }
 
 /* Main content area */

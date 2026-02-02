@@ -15,32 +15,34 @@
 <body>
   <div class="app-container">
 
-    <!-- Header -->
+    <!-- Header — Two bars -->
     <header class="app-header">
-      <h1>Oasis FSM</h1>
-      <div class="header-actions">
-        <span id="lunchTimer" class="lunch-timer" style="display:none;"></span>
-        <button id="clockBtn" class="clock-btn state-out" style="display:none;">Clock On</button>
-        <span id="syncBadge" class="sync-badge online">
-          <span class="sync-dot"></span> Online
-        </span>
-        <span id="pendingBadge" class="pending-badge" style="display:none;">0</span>
+      <div class="app-header-top">
+        <span class="app-brand">Oasis FSM</span>
+        <div class="header-actions">
+          <span id="lunchTimer" class="lunch-timer" style="display:none;"></span>
+          <button id="clockBtn" class="clock-btn state-out" style="display:none;">Clock On</button>
+          <span id="syncBadge" class="sync-badge online">
+            <span class="sync-dot"></span> Online
+          </span>
+          <span id="pendingBadge" class="pending-badge" style="display:none;">0</span>
+        </div>
+      </div>
+      <div class="app-header-bottom">
         <div class="menu-wrapper">
-          <button id="menuBtn" class="icon-btn" title="Menu">&#9776;</button>
+          <button id="menuBtn" class="icon-btn icon-btn-dark" title="Menu">&#9776;</button>
           <div id="menuDropdown" class="menu-dropdown" style="display:none;">
+            <button data-view="today" class="menu-item menu-view active">📅 Today</button>
+            <button data-view="week" class="menu-item menu-view">📅 This Week</button>
+            <button data-view="history" class="menu-item menu-view">📅 History</button>
+            <div class="menu-divider"></div>
             <button id="syncBtn" class="menu-item">&#10227; Sync Now</button>
             <button id="logoutBtn" class="menu-item menu-item-danger">&#9211; Log Out</button>
           </div>
         </div>
+        <h2 id="pageTitle" class="page-title">Today's Jobs</h2>
       </div>
     </header>
-
-    <!-- Tab navigation -->
-    <nav class="tab-bar">
-      <button data-view="today" class="active">Today</button>
-      <button data-view="week">This Week</button>
-      <button data-view="history">History</button>
-    </nav>
 
     <!-- Main content -->
     <main class="app-content">

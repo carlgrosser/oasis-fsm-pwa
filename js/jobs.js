@@ -259,26 +259,36 @@ const Jobs = {
     const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
     const fullAddress = addressParts.join(', ') || locationName;
 
-    const scheduledRange = this._formatScheduleRange(job.scheduled_date_start, job.scheduled_date_end);
+    const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
+    const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
     // Build address for map link — prefer street address for accuracy
     const addressForMap = encodeURIComponent(fullAddress);
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${addressForMap}`;
 
-    // Phone link
-    const phoneHtml = job.phone
-      ? `<a href="tel:${this._escapeHtml(job.phone)}" class="contact-link">📞 ${this._escapeHtml(job.phone)}</a>`
-      : '';
+    // Phone — Call + SMS buttons
+    let phoneHtml = '';
+    if (job.phone) {
+      const escapedPhone = this._escapeHtml(job.phone);
+      phoneHtml = `
+        <div style="margin-top:4px; font-size:var(--font-size-small); color:var(--text-secondary);">📞 ${escapedPhone}</div>
+        <div class="contact-buttons">
+          <a href="tel:${escapedPhone}" class="btn btn-outline btn-sm">📞 Call</a>
+          <a href="sms:${escapedPhone}" class="btn btn-outline btn-sm">💬 SMS</a>
+        </div>`;
+    }
 
-    // Gate code (editable)
+    // Gate code (editable) — inline detail-row style
     const locationId = Array.isArray(job.location_id) ? job.location_id[0] : null;
-    const gateCodeHtml = `<div class="gate-code-row" id="gateCodeRow">
-           <span class="gate-code-label">🔑 Gate Code:</span>
-           <span class="gate-code-value" id="gateCodeValue">${job.gate_code ? this._escapeHtml(job.gate_code) : '<em style="opacity:0.5">None</em>'}</span>
-           <span class="gate-code-edit" title="Tap to edit">✏️</span>
+    const gateCodeHtml = `<div class="detail-row gate-code-row" id="gateCodeRow">
+           <span class="label">Gate Code</span>
+           <span class="value">
+             <span class="gate-code-value" id="gateCodeValue">${job.gate_code ? this._escapeHtml(job.gate_code) : '<em style="opacity:0.5">None</em>'}</span>
+             <span class="gate-code-edit" title="Tap to edit">✏️</span>
+           </span>
          </div>`;
 
-    // Crew / multi-worker info
+    // Crew / multi-worker info — stacked names
     const primaryWorker = Array.isArray(job.person_id) ? job.person_id[1] : '';
     const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
     let crewHtml = '';
@@ -286,11 +296,13 @@ const Jobs = {
       crewHtml = `
         <div class="detail-row">
           <span class="label">Assigned</span>
-          <span class="value">${this._escapeHtml(primaryWorker)}${workerCount > 1 ? ` <span class="crew-badge">+${workerCount - 1} more</span>` : ''}</span>
+          <span class="value">
+            <div class="crew-stack" id="crewStack">
+              <div>${this._escapeHtml(primaryWorker)}</div>
+              ${workerCount > 1 ? '<div class="crew-list-note" id="crewLoading">Loading crew...</div>' : ''}
+            </div>
+          </span>
         </div>`;
-      if (workerCount > 1) {
-        crewHtml += `<div class="crew-list" id="crewList"></div>`;
-      }
     }
 
     // Build status workflow buttons
@@ -309,12 +321,15 @@ const Jobs = {
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
           📍 ${this._escapeHtml(fullAddress)}
         </a>
-        ${phoneHtml ? '<div style="margin-top:4px;">' + phoneHtml + '</div>' : ''}
+        ${phoneHtml}
         ${gateCodeHtml}
         <div class="divider"></div>
         <div class="detail-row">
           <span class="label">Scheduled</span>
-          <span class="value">${scheduledRange}</span>
+          <span class="value">
+            <div>${scheduledDate}</div>
+            <div>${scheduledTime}</div>
+          </span>
         </div>
         ${crewHtml}
         ${job.description ? `
@@ -556,22 +571,26 @@ const Jobs = {
    * Load and display additional worker names in the crew list.
    */
   async _loadCrewNames(job) {
-    const crewList = document.getElementById('crewList');
-    if (!crewList) return;
+    const crewStack = document.getElementById('crewStack');
+    const crewLoading = document.getElementById('crewLoading');
+    if (!crewStack) return;
 
     if (!navigator.onLine) {
-      crewList.innerHTML = `<span class="crew-list-note">${job.additional_worker_ids.length} additional worker(s)</span>`;
+      if (crewLoading) crewLoading.textContent = `+${job.additional_worker_ids.length} more`;
       return;
     }
 
     try {
       const persons = await OdooAPI.readPersonNames(job.additional_worker_ids);
-      if (persons.length > 0) {
-        const names = persons.map(p => this._escapeHtml(p.name));
-        crewList.innerHTML = `<span class="crew-list-label">Crew:</span> ${names.join(', ')}`;
+      if (crewLoading) crewLoading.remove();
+      for (const p of persons) {
+        const div = document.createElement('div');
+        div.textContent = p.name;
+        crewStack.appendChild(div);
       }
     } catch (err) {
       console.warn('Failed to load crew names:', err);
+      if (crewLoading) crewLoading.textContent = `+${job.additional_worker_ids.length} more`;
     }
   },
 
@@ -721,24 +740,31 @@ const Jobs = {
   },
 
   /**
-   * Format a schedule range: "Monday, Feb 2 8:00 AM - 12:00 PM"
-   * Shows the date once with day of week, then a time range.
+   * Format the date part of a schedule: "Monday, February 2"
    */
-  _formatScheduleRange(startStr, endStr) {
+  _formatScheduleDate(startStr) {
     const start = this._parseOdooDatetime(startStr);
     if (!start) return '';
-    const datePart = start.toLocaleDateString([], this._tzOptions({
-      weekday: 'long', month: 'short', day: 'numeric'
+    return start.toLocaleDateString([], this._tzOptions({
+      weekday: 'long', month: 'long', day: 'numeric'
     }));
+  },
+
+  /**
+   * Format the time range of a schedule: "8:00 AM - 12:00 PM"
+   */
+  _formatScheduleTimeRange(startStr, endStr) {
+    const start = this._parseOdooDatetime(startStr);
+    if (!start) return '';
     const startTime = start.toLocaleTimeString([], this._tzOptions({
       hour: 'numeric', minute: '2-digit'
     }));
     const end = this._parseOdooDatetime(endStr);
-    if (!end) return `${datePart} ${startTime}`;
+    if (!end) return startTime;
     const endTime = end.toLocaleTimeString([], this._tzOptions({
       hour: 'numeric', minute: '2-digit'
     }));
-    return `${datePart} ${startTime} - ${endTime}`;
+    return `${startTime} - ${endTime}`;
   },
 
   _escapeHtml(str) {

@@ -42,18 +42,14 @@ const App = {
     await this.switchTab('today');
   },
 
-  /**
-   * Bind global UI events.
-   */
-  _bindEvents() {
-    // Tab buttons
-    document.querySelectorAll('.tab-bar button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const view = btn.dataset.view;
-        if (view) this.switchTab(view);
-      });
-    });
+  /** Map view keys to page titles. */
+  _viewTitles: {
+    today: "Today's Jobs",
+    week: 'This Week',
+    history: 'History',
+  },
 
+  _bindEvents() {
     // Hamburger menu
     const menuBtn = document.getElementById('menuBtn');
     const menuDropdown = document.getElementById('menuDropdown');
@@ -69,11 +65,22 @@ const App = {
       menuDropdown.addEventListener('click', (e) => e.stopPropagation());
     }
 
+    // View menu items (Today / This Week / History)
+    document.querySelectorAll('.menu-view').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        if (view) {
+          if (menuDropdown) menuDropdown.style.display = 'none';
+          this.switchTab(view);
+        }
+      });
+    });
+
     // Sync button (inside menu)
     const syncBtn = document.getElementById('syncBtn');
     if (syncBtn) {
       syncBtn.addEventListener('click', () => {
-        menuDropdown.style.display = 'none';
+        if (menuDropdown) menuDropdown.style.display = 'none';
         Sync.manualSync();
       });
     }
@@ -90,7 +97,7 @@ const App = {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', () => {
-        menuDropdown.style.display = 'none';
+        if (menuDropdown) menuDropdown.style.display = 'none';
         if (confirm('Log out?')) Auth.logout();
       });
     }
@@ -103,10 +110,13 @@ const App = {
     this._currentView = view;
     this._currentScreen = 'list';
 
-    // Update tab buttons
-    document.querySelectorAll('.tab-bar button').forEach(btn => {
+    // Update active state on menu view items
+    document.querySelectorAll('.menu-view').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.view === view);
     });
+
+    // Update page title
+    this._updatePageTitle(this._viewTitles[view] || "Today's Jobs");
 
     // Show list view, hide detail view
     this._showScreen('list');
@@ -134,6 +144,12 @@ const App = {
     this._currentScreen = 'detail';
     this._showScreen('detail');
 
+    // Find the job to get its name for the title
+    const job = Jobs._jobs.find(j => j.id === jobId);
+    if (job) {
+      this._updatePageTitle(job.name || 'Job Detail');
+    }
+
     const container = document.getElementById('jobDetail');
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
@@ -154,6 +170,16 @@ const App = {
   showJobList() {
     this._currentScreen = 'list';
     this._showScreen('list');
+    // Restore page title to current view name
+    this._updatePageTitle(this._viewTitles[this._currentView] || "Today's Jobs");
+  },
+
+  /**
+   * Update the page title in the bottom header bar.
+   */
+  _updatePageTitle(title) {
+    const el = document.getElementById('pageTitle');
+    if (el) el.textContent = title;
   },
 
   /**
