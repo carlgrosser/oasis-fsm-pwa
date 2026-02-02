@@ -1,23 +1,23 @@
 const CACHE_NAME = 'fsm-pwa-v5';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/app.html',
-  '/css/variables.css',
-  '/css/mobile.css',
-  '/css/components.css',
-  '/js/config.js',
-  '/js/odoo-api.js',
-  '/js/db.js',
-  '/js/auth.js',
-  '/js/gps.js',
-  '/js/photos.js',
-  '/js/jobs.js',
-  '/js/journal.js',
-  '/js/timetracking.js',
-  '/js/sync.js',
-  '/js/app.js',
-  '/manifest.json',
+  './',
+  'index.html',
+  'app.html',
+  'css/variables.css',
+  'css/mobile.css',
+  'css/components.css',
+  'js/config.js',
+  'js/odoo-api.js',
+  'js/db.js',
+  'js/auth.js',
+  'js/gps.js',
+  'js/photos.js',
+  'js/jobs.js',
+  'js/journal.js',
+  'js/timetracking.js',
+  'js/sync.js',
+  'js/app.js',
+  'manifest.json',
 ];
 
 // Install — cache static assets
@@ -70,7 +70,7 @@ self.addEventListener('fetch', (event) => {
       }).catch(() => {
         // Offline fallback for navigation requests
         if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
+          return caches.match('index.html');
         }
       });
     })

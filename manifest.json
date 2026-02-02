@@ -2,7 +2,7 @@
   "name": "Oasis Field Service",
   "short_name": "Oasis FSM",
   "description": "Field service job management for Oasis Pool Tile Cleaning & Christmas Lights",
-  "start_url": "/index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f5f5f5",
