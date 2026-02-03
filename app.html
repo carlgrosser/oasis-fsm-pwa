@@ -50,33 +50,35 @@
 
     <!-- Footer Bar -->
     <footer class="app-footer" id="appFooter">
-      <button class="footer-btn footer-btn-call" id="footerCallBtn" title="Call">
-        <span class="footer-btn-icon">📞</span>
-      </button>
-      <button class="footer-btn footer-btn-sms" id="footerSmsBtn" title="SMS">
-        <span class="footer-btn-icon">💬</span>
-      </button>
-      <button class="footer-btn footer-btn-placeholder" id="footerPlaceholderBtn" title="Coming Soon" disabled>
-        <span class="footer-btn-icon">⭐</span>
-      </button>
-      <button class="footer-btn footer-btn-journal" id="footerJournalBtn" title="Journal">
-        <span class="footer-btn-icon">📝</span>
-      </button>
-      <div class="footer-menu-wrapper">
-        <button class="footer-btn footer-btn-menu" id="menuBtn" title="Menu">
-          <span class="footer-btn-icon">☰</span>
+      <div class="footer-inner">
+        <button class="footer-btn footer-btn-call" id="footerCallBtn" title="Call">
+          <span class="footer-btn-icon">📞</span>
         </button>
-        <div id="menuDropdown" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu" aria-hidden="true">
-          <button data-view="today" class="menu-item menu-view active">📅 Today</button>
-          <button data-view="week" class="menu-item menu-view">📅 This Week</button>
-          <button data-view="history" class="menu-item menu-view">📅 History</button>
-          <div class="menu-divider"></div>
-          <button id="syncBtn" class="menu-item">&#10227; Sync Now</button>
-          <button id="logoutBtn" class="menu-item menu-item-danger">&#9211; Log Out</button>
+        <button class="footer-btn footer-btn-sms" id="footerSmsBtn" title="SMS">
+          <span class="footer-btn-icon">💬</span>
+        </button>
+        <button class="footer-btn footer-btn-placeholder" id="footerPlaceholderBtn" title="Coming Soon" disabled>
+          <span class="footer-btn-icon">⭐</span>
+        </button>
+        <button class="footer-btn footer-btn-journal" id="footerJournalBtn" title="Journal">
+          <span class="footer-btn-icon">📝</span>
+        </button>
+        <div class="footer-menu-wrapper">
+          <button class="footer-btn footer-btn-menu" id="menuBtn" title="Menu">
+            <span class="footer-btn-icon">☰</span>
+          </button>
+          <div id="menuDropdown" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu" aria-hidden="true">
+            <button data-view="today" class="menu-item menu-view active">📅 Today</button>
+            <button data-view="week" class="menu-item menu-view">📅 This Week</button>
+            <button data-view="history" class="menu-item menu-view">📅 History</button>
+            <div class="menu-divider"></div>
+            <button id="syncBtn" class="menu-item">&#10227; Sync Now</button>
+            <button id="logoutBtn" class="menu-item menu-item-danger">&#9211; Log Out</button>
+          </div>
         </div>
+        <!-- Contact picker popup -->
+        <div id="contactPicker" class="contact-picker" style="display:none;"></div>
       </div>
-      <!-- Contact picker popup -->
-      <div id="contactPicker" class="contact-picker" style="display:none;"></div>
     </footer>
 
   </div>

@@ -154,12 +154,19 @@ body {
   background: var(--card-background);
   border-top: 1px solid var(--border-color);
   display: flex;
-  align-items: center;
-  justify-content: space-around;
+  justify-content: center;
   padding: var(--spacing-xs) var(--spacing-sm);
   padding-bottom: calc(var(--spacing-xs) + var(--safe-bottom));
   z-index: 100;
   min-height: 60px;
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+  max-width: 400px;
 }
 
 .footer-btn {
