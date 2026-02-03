@@ -408,10 +408,14 @@ const Jobs = {
         const escapedMobile = this._escapeHtml(job.mobile);
         phoneHtml += `
           <div class="contact-item">
-            <span class="contact-item-label">📱</span>
-            <span class="contact-item-number">${escapedMobile}</span>
-            <a href="tel:${escapedMobile}" class="contact-action-btn contact-action-call">📞</a>
-            <a href="sms:${escapedMobile}" class="contact-action-btn contact-action-sms">💬</a>
+            <div class="contact-number-line">
+              <span class="contact-item-label">📱</span>
+              <span class="contact-item-number">${escapedMobile}</span>
+            </div>
+            <div class="contact-actions">
+              <a href="tel:${escapedMobile}" class="contact-action-btn contact-action-call">📞</a>
+              <a href="sms:${escapedMobile}" class="contact-action-btn contact-action-sms">💬</a>
+            </div>
           </div>`;
       }
 
@@ -419,9 +423,13 @@ const Jobs = {
         const escapedPhone = this._escapeHtml(job.phone);
         phoneHtml += `
           <div class="contact-item">
-            <span class="contact-item-label">🏠</span>
-            <span class="contact-item-number">${escapedPhone}</span>
-            <a href="tel:${escapedPhone}" class="contact-action-btn contact-action-home">📞</a>
+            <div class="contact-number-line">
+              <span class="contact-item-label">🏠</span>
+              <span class="contact-item-number">${escapedPhone}</span>
+            </div>
+            <div class="contact-actions">
+              <a href="tel:${escapedPhone}" class="contact-action-btn contact-action-home">📞</a>
+            </div>
           </div>`;
       }
 
