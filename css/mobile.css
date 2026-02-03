@@ -166,10 +166,28 @@ body {
 }
 
 /* Detail view — flex column for swipeable panels */
+.app-content.detail-active {
+  overflow: hidden;
+  padding: 0;
+}
+
 #detailView.active {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+#detailView #jobDetail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#detailView .detail-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: 0;
 }
 
 #detailView .detail-panels {

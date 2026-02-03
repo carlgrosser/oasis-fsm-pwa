@@ -190,9 +190,12 @@ const App = {
   _showScreen(screen) {
     const listView = document.getElementById('listView');
     const detailView = document.getElementById('detailView');
+    const appContent = document.querySelector('.app-content');
 
     if (listView) listView.classList.toggle('active', screen === 'list');
     if (detailView) detailView.classList.toggle('active', screen === 'detail');
+    // Disable outer scroll & padding when in detail view (panels scroll independently)
+    if (appContent) appContent.classList.toggle('detail-active', screen === 'detail');
   },
 
   /**
