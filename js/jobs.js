@@ -263,7 +263,7 @@ const Jobs = {
     `;
 
     // Contact buttons should not trigger job detail navigation
-    card.querySelectorAll('.card-contact-btn').forEach(btn => {
+    card.querySelectorAll('.card-sms-btn').forEach(btn => {
       btn.addEventListener('click', (e) => e.stopPropagation());
     });
 

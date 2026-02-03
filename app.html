@@ -30,8 +30,8 @@
       </div>
       <div class="app-header-bottom">
         <div class="menu-wrapper">
-          <button id="menuBtn" class="icon-btn icon-btn-dark" title="Menu">&#9776;</button>
-          <div id="menuDropdown" class="menu-dropdown" style="display:none;">
+          <button id="menuBtn" class="icon-btn icon-btn-dark" title="Menu" aria-controls="menuDropdown" aria-expanded="false">&#9776;</button>
+          <div id="menuDropdown" class="menu-dropdown" style="display:none;" role="menu" aria-hidden="true">
             <button data-view="today" class="menu-item menu-view active">📅 Today</button>
             <button data-view="week" class="menu-item menu-view">📅 This Week</button>
             <button data-view="history" class="menu-item menu-view">📅 History</button>

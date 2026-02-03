@@ -50,17 +50,27 @@ const App = {
   },
 
   _bindEvents() {
+    let closeMenu = null;
+
     // Hamburger menu
     const menuBtn = document.getElementById('menuBtn');
     const menuDropdown = document.getElementById('menuDropdown');
     if (menuBtn && menuDropdown) {
+      closeMenu = () => {
+        menuDropdown.style.display = 'none';
+        menuBtn.setAttribute('aria-expanded', 'false');
+        menuDropdown.setAttribute('aria-hidden', 'true');
+      };
+
       menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const open = menuDropdown.style.display !== 'none';
         menuDropdown.style.display = open ? 'none' : 'block';
+        menuBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+        menuDropdown.setAttribute('aria-hidden', open ? 'true' : 'false');
       });
       document.addEventListener('click', () => {
-        menuDropdown.style.display = 'none';
+        closeMenu();
       });
       menuDropdown.addEventListener('click', (e) => e.stopPropagation());
     }
@@ -70,7 +80,7 @@ const App = {
       btn.addEventListener('click', () => {
         const view = btn.dataset.view;
         if (view) {
-          if (menuDropdown) menuDropdown.style.display = 'none';
+          if (closeMenu) closeMenu();
           this.switchTab(view);
         }
       });
@@ -80,7 +90,7 @@ const App = {
     const syncBtn = document.getElementById('syncBtn');
     if (syncBtn) {
       syncBtn.addEventListener('click', () => {
-        if (menuDropdown) menuDropdown.style.display = 'none';
+        if (closeMenu) closeMenu();
         Sync.manualSync();
       });
     }
@@ -97,7 +107,7 @@ const App = {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', () => {
-        if (menuDropdown) menuDropdown.style.display = 'none';
+        if (closeMenu) closeMenu();
         if (confirm('Log out?')) Auth.logout();
       });
     }

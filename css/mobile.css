@@ -25,6 +25,18 @@ body {
   padding-right: var(--safe-right);
 }
 
+@media (max-width: 640px) {
+  .job-card-contact {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .card-contact-sep {
+    display: none;
+  }
+}
+
 /* ========== LOGIN PAGE ========== */
 .login-container {
   display: flex;
