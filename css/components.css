@@ -279,6 +279,7 @@ textarea.form-input {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+  flex-wrap: nowrap;
 }
 
 .contact-actions {
@@ -297,6 +298,11 @@ textarea.form-input {
   color: var(--text-primary);
   margin-right: 4px;
   white-space: nowrap;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: keep-all;
 }
 
 .contact-action-btn {
