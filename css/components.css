@@ -278,6 +278,7 @@ textarea.form-input {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .contact-actions {
@@ -295,6 +296,7 @@ textarea.form-input {
   font-weight: 500;
   color: var(--text-primary);
   margin-right: 4px;
+  white-space: nowrap;
 }
 
 .contact-action-btn {
