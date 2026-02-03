@@ -88,18 +88,13 @@ body {
   min-height: 44px;
 }
 
-.app-brand {
-  font-size: 16px;
-  font-weight: 600;
-}
 
 .page-title {
   flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
   margin: 0;
-  text-align: center;
 }
 
 .header-actions {
@@ -237,9 +232,9 @@ body {
 }
 
 /* Menu dropdown opens upward from footer */
-.menu-dropdown-up {
-  position: absolute;
-  top: auto;
+.footer-menu-wrapper .menu-dropdown,
+.menu-dropdown.menu-dropdown-up {
+  top: auto !important;
   bottom: 100%;
   right: 0;
   left: auto;
