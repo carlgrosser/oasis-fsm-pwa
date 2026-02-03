@@ -223,28 +223,16 @@ const Jobs = {
     const cardHasPhone = job.phone && job.phone.trim();
 
     if (cardHasMobile || cardHasPhone) {
-      cardContactHtml = '<div class="job-card-contact">';
-
+      const parts = [];
       if (cardHasMobile) {
         const escapedMobile = this._escapeHtml(job.mobile);
-        cardContactHtml += `
-          <span class="card-contact-line">
-            <span class="card-contact-label">📱</span>
-            <span class="card-contact-number">${escapedMobile}</span>
-            <a href="sms:${escapedMobile}" class="card-sms-btn">💬</a>
-          </span>`;
+        parts.push(`<span class="card-contact-item">📱 ${escapedMobile}<a href="sms:${escapedMobile}" class="card-sms-btn">💬</a></span>`);
       }
-
       if (cardHasPhone) {
         const escapedPhone = this._escapeHtml(job.phone);
-        cardContactHtml += `
-          <span class="card-contact-line">
-            <span class="card-contact-label">🏠</span>
-            <span class="card-contact-number">${escapedPhone}</span>
-          </span>`;
+        parts.push(`<span class="card-contact-item">🏠 ${escapedPhone}</span>`);
       }
-
-      cardContactHtml += '</div>';
+      cardContactHtml = `<div class="job-card-contact">${parts.join('<span class="card-contact-sep">|</span>')}</div>`;
     }
 
     // Notes preview (instructions + description)
@@ -419,30 +407,26 @@ const Jobs = {
     const hasMobile = job.mobile && job.mobile.trim();
 
     if (hasPhone || hasMobile) {
-      phoneHtml = '<div class="contact-lines">';
+      phoneHtml = '<div class="contact-row">';
 
       if (hasMobile) {
         const escapedMobile = this._escapeHtml(job.mobile);
         phoneHtml += `
-          <div class="contact-line">
-            <span class="contact-line-label">Mobile:</span>
-            <span class="contact-line-number">${escapedMobile}</span>
-            <div class="contact-line-actions">
-              <a href="tel:${escapedMobile}" class="contact-action-btn contact-action-call">📞</a>
-              <a href="sms:${escapedMobile}" class="contact-action-btn contact-action-sms">💬</a>
-            </div>
+          <div class="contact-item">
+            <span class="contact-item-label">📱</span>
+            <span class="contact-item-number">${escapedMobile}</span>
+            <a href="tel:${escapedMobile}" class="contact-action-btn contact-action-call">📞</a>
+            <a href="sms:${escapedMobile}" class="contact-action-btn contact-action-sms">💬</a>
           </div>`;
       }
 
       if (hasPhone) {
         const escapedPhone = this._escapeHtml(job.phone);
         phoneHtml += `
-          <div class="contact-line">
-            <span class="contact-line-label">Phone:</span>
-            <span class="contact-line-number">${escapedPhone}</span>
-            <div class="contact-line-actions">
-              <a href="tel:${escapedPhone}" class="contact-action-btn contact-action-home">📞</a>
-            </div>
+          <div class="contact-item">
+            <span class="contact-item-label">🏠</span>
+            <span class="contact-item-number">${escapedPhone}</span>
+            <a href="tel:${escapedPhone}" class="contact-action-btn contact-action-home">📞</a>
           </div>`;
       }
 

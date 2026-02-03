@@ -259,47 +259,40 @@ textarea.form-input {
 }
 
 /* ========== CONTACT BUTTONS ========== */
-/* ========== CONTACT LINES (Detail View) ========== */
-.contact-lines {
+/* ========== CONTACT ROW (Detail View) ========== */
+.contact-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
   margin-top: var(--spacing-sm);
 }
 
-.contact-line {
+.contact-item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 4px;
 }
 
-.contact-line-label {
-  font-size: var(--font-size-small);
-  color: var(--text-secondary);
-  min-width: 55px;
+.contact-item-label {
+  font-size: 14px;
 }
 
-.contact-line-number {
-  flex: 1;
+.contact-item-number {
   font-size: var(--font-size-small);
   font-weight: 500;
   color: var(--text-primary);
-}
-
-.contact-line-actions {
-  display: flex;
-  gap: 6px;
+  margin-right: 4px;
 }
 
 .contact-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   text-decoration: none;
-  font-size: 16px;
+  font-size: 14px;
   transition: transform 0.1s;
 }
 
@@ -325,38 +318,36 @@ textarea.form-input {
 /* ========== CONTACT INFO (Job Card) ========== */
 .job-card-contact {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: var(--spacing-sm);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.card-contact-line {
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-xs);
-}
-
-.card-contact-label {
-  font-size: 12px;
-}
-
-.card-contact-number {
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
+}
+
+.card-contact-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.card-contact-sep {
+  color: var(--text-muted);
+  margin: 0 4px;
 }
 
 .card-sms-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: linear-gradient(135deg, #3498db, #5dade2);
   text-decoration: none;
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: 10px;
+  margin-left: 3px;
   transition: transform 0.1s;
 }
 
