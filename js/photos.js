@@ -263,6 +263,49 @@ const Photos = {
   },
 
   /**
+   * Render a read-only gallery of all photos for a job, grouped by category.
+   * Used in the journal modal to display all captured photos.
+   *
+   * @param {number} jobId
+   * @param {HTMLElement} container
+   */
+  async renderAllPhotosGallery(jobId, container) {
+    const photos = await this.getPhotosForJob(jobId);
+    const categories = CONFIG.PHOTO_CATEGORIES || [];
+
+    if (photos.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
+      return;
+    }
+
+    let html = '';
+    for (const cat of categories) {
+      const catPhotos = photos.filter(p => p.category === cat.key);
+      if (catPhotos.length === 0) continue;
+
+      html += `
+        <div class="photo-category photo-category-readonly">
+          <div class="photo-category-header">
+            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-count complete">${catPhotos.length}</span>
+          </div>
+          <div class="photo-grid">
+            ${this._renderThumbnails(catPhotos)}
+          </div>
+        </div>`;
+    }
+
+    container.innerHTML = html || '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
+
+    // Bind thumbnail clicks (view full size)
+    container.querySelectorAll('.photo-thumb').forEach(thumb => {
+      thumb.addEventListener('click', () => {
+        this._showFullPhoto(thumb.dataset.tempId);
+      });
+    });
+  },
+
+  /**
    * Render the photo section for a job's detail view.
    *
    * @param {number} jobId

@@ -318,7 +318,7 @@ const Jobs = {
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
-        <button class="detail-tab" data-tab="2">Journal</button>
+        <button class="detail-tab" data-tab="2">Sales</button>
       </div>
 
       <div class="detail-panels" id="detailPanels">
@@ -329,7 +329,7 @@ const Jobs = {
           ${this._renderWorkPanel(job, stageName)}
         </div>
         <div class="detail-panel" data-panel="2">
-          ${this._renderJournalPanel(job)}
+          ${this._renderSalesPanel(job)}
         </div>
       </div>
     `;
@@ -381,16 +381,6 @@ const Jobs = {
 
     // Bind En Route button on Info tab (pre-work stage only)
     this._bindEnRouteButton(job);
-
-    // Render journal tab — all photos + journal entries
-    const journalPhotoSection = document.getElementById('journalPhotoSection');
-    if (journalPhotoSection) {
-      Photos.renderPhotoSection(job.id, journalPhotoSection);
-    }
-    const journalSection = document.getElementById('journalSection');
-    if (journalSection && typeof Journal !== 'undefined') {
-      Journal.renderSection(job.id, journalSection);
-    }
 
     // Show journal FAB
     this._showJournalFab(job.id);
@@ -529,16 +519,7 @@ const Jobs = {
             → En Route
           </button>
         </div>
-      </div>` : ''}
-      <div class="detail-section">
-        <h3>Actions</h3>
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          <a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-outline btn-block">
-            🗺️ Navigate
-          </a>
-          ${this._buildSaleOrderLink(job)}
-        </div>
-      </div>`;
+      </div>` : ''}`;
   },
 
   /**
@@ -594,21 +575,14 @@ const Jobs = {
   },
 
   /**
-   * Render the Journal panel (tab 3) — all photos gallery + journal entries.
+   * Render the Sales panel (tab 3) — sales order link and future sales features.
    */
-  _renderJournalPanel(job) {
+  _renderSalesPanel(job) {
+    const saleOrderLink = this._buildSaleOrderLink(job);
     return `
       <div class="detail-section">
-        <h3>All Photos</h3>
-        <div id="journalPhotoSection">
-          <div class="loading"><div class="spinner"></div></div>
-        </div>
-      </div>
-      <div class="detail-section">
-        <h3>Journal</h3>
-        <div id="journalSection">
-          <div class="loading"><div class="spinner"></div></div>
-        </div>
+        <h3>Sales Order</h3>
+        ${saleOrderLink || '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">No sales order linked to this job.</p>'}
       </div>`;
   },
 
@@ -827,10 +801,14 @@ const Jobs = {
     nextBtn.textContent = 'Updating...';
 
     try {
-      // If bypassing, post journal entry first
+      // If bypassing, post journal entry first with stage-specific label
       if (bypassCheck && bypassCheck.checked && bypassReason && bypassReason.value.trim()) {
         const reason = bypassReason.value.trim();
-        const entry = `[PHOTO BYPASS] ${reason}`;
+        // Determine bypass label based on which stage we're advancing to
+        const bypassLabel = nextStageName.toLowerCase().includes('progress')
+          ? '[EQUIPMENT/BEFORE PHOTO BYPASS]'
+          : '[AFTER PHOTO BYPASS]';
+        const entry = `${bypassLabel} ${reason}`;
         if (navigator.onLine) {
           await OdooAPI.postJournalEntry(job.id, entry);
         } else {
@@ -850,7 +828,7 @@ const Jobs = {
       // Determine which tab to switch to after re-render
       const newStageName = this.getStageName(job.stage_id);
       if (newStageName.toLowerCase().includes('complete')) {
-        this._pendingTabSwitch = 2; // Journal tab
+        this._pendingTabSwitch = 2; // Sales tab
       } else {
         this._pendingTabSwitch = 1; // Work tab
       }
@@ -995,11 +973,20 @@ const Jobs = {
     overlay.innerHTML = `
       <div class="modal modal-journal">
         <div class="modal-header">
-          <h3>Journal</h3>
+          <h3>Journal & Photos</h3>
           <button class="modal-close">&times;</button>
         </div>
-        <div class="modal-body" id="journalModalBody">
-          <div class="loading"><div class="spinner"></div></div>
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-modal-tab="journal">Journal</button>
+          <button class="modal-tab" data-modal-tab="photos">Photos</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-tab-content active" data-modal-content="journal" id="journalModalBody">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
+          <div class="modal-tab-content" data-modal-content="photos" id="photosModalBody">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
         </div>
       </div>
     `;
@@ -1012,9 +999,27 @@ const Jobs = {
       if (e.target === overlay) close();
     });
 
-    const body = document.getElementById('journalModalBody');
-    if (body && typeof Journal !== 'undefined') {
-      Journal.renderSection(jobId, body);
+    // Tab switching
+    const tabs = overlay.querySelectorAll('.modal-tab');
+    const contents = overlay.querySelectorAll('.modal-tab-content');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.modalTab;
+        tabs.forEach(t => t.classList.toggle('active', t.dataset.modalTab === target));
+        contents.forEach(c => c.classList.toggle('active', c.dataset.modalContent === target));
+      });
+    });
+
+    // Load journal content
+    const journalBody = document.getElementById('journalModalBody');
+    if (journalBody && typeof Journal !== 'undefined') {
+      Journal.renderSection(jobId, journalBody);
+    }
+
+    // Load photos content (all categories, read-only gallery)
+    const photosBody = document.getElementById('photosModalBody');
+    if (photosBody && typeof Photos !== 'undefined') {
+      Photos.renderAllPhotosGallery(jobId, photosBody);
     }
   },
 

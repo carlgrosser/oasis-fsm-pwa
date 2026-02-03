@@ -1139,6 +1139,41 @@ textarea.form-input {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding: 0;
+}
+
+/* Modal tabs (for journal/photos popup) */
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.modal-tab {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: var(--font-size-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.modal-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.modal-tab-content {
+  display: none;
+  padding: var(--spacing-md);
+}
+
+.modal-tab-content.active {
+  display: block;
 }
 
 /* ========== MATERIALS MODAL ========== */
