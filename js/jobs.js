@@ -299,7 +299,7 @@ const Jobs = {
 
       <div class="detail-panels" id="detailPanels">
         <div class="detail-panel" data-panel="0">
-          ${this._renderInfoPanel(job)}
+          ${this._renderInfoPanel(job, stageName)}
         </div>
         <div class="detail-panel" data-panel="1">
           ${this._renderWorkPanel(job, stageName)}
@@ -355,6 +355,9 @@ const Jobs = {
     // Bind stage gate (checks photos, enables/disables next-stage button)
     this._bindStageGate(job, stageName);
 
+    // Bind En Route button on Info tab (pre-work stage only)
+    this._bindEnRouteButton(job);
+
     // Render journal tab — all photos + journal entries
     const journalPhotoSection = document.getElementById('journalPhotoSection');
     if (journalPhotoSection) {
@@ -376,9 +379,17 @@ const Jobs = {
   },
 
   /**
+   * Check if job is in a "pre-work" stage where En Route button shows on Info tab.
+   */
+  _isPreWorkStage(stageName) {
+    const name = stageName.toLowerCase();
+    return name.includes('new') || name.includes('scheduled');
+  },
+
+  /**
    * Render the Info panel (tab 1).
    */
-  _renderInfoPanel(job) {
+  _renderInfoPanel(job, stageName) {
     const locationName = Array.isArray(job.location_id) ? job.location_id[1] : (job.location_id || 'No location');
     const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
     const fullAddress = addressParts.join(', ') || locationName;
@@ -462,6 +473,15 @@ const Jobs = {
         ${todoHtml}
         ${descHtml}
       </div>
+      ${this._isPreWorkStage(stageName) ? `
+      <div class="detail-section">
+        <h3>Start Job</h3>
+        <div class="status-actions" id="infoStatusActions">
+          <button class="btn btn-warning btn-block btn-lg" id="enRouteBtn" data-next-stage="En Route">
+            → En Route
+          </button>
+        </div>
+      </div>` : ''}
       <div class="detail-section">
         <h3>Actions</h3>
         <div style="display:flex; flex-direction:column; gap:8px;">
@@ -477,10 +497,21 @@ const Jobs = {
    * Render the Work panel (tab 2) — status + stage-gated photos + materials.
    */
   _renderWorkPanel(job, stageName) {
-    const workflowHtml = this._buildWorkflowButtons(job, stageName);
+    const isPreWork = this._isPreWorkStage(stageName);
+    const workflowHtml = isPreWork ? '' : this._buildWorkflowButtons(job, stageName);
     const cats = this._getStagePhotoCategories(stageName);
     const showMaterials = stageName.toLowerCase().includes('progress') ||
                           stageName.toLowerCase().includes('complete');
+
+    // Pre-work stage: show message that work hasn't started
+    if (isPreWork) {
+      return `
+        <div class="detail-section">
+          <p style="color:var(--text-secondary); text-align:center; padding:var(--spacing-lg);">
+            Tap "En Route" on the Info tab to start this job.
+          </p>
+        </div>`;
+    }
 
     return `
       <div class="detail-section">
@@ -766,6 +797,36 @@ const Jobs = {
         App.showToast('Failed to update: ' + err.message, 'error');
         nextBtn.disabled = false;
         nextBtn.textContent = '→ ' + nextStageName;
+      }
+    });
+  },
+
+  /**
+   * Bind the En Route button on the Info tab (for pre-work stage).
+   */
+  _bindEnRouteButton(job) {
+    const enRouteBtn = document.getElementById('enRouteBtn');
+    if (!enRouteBtn) return;
+
+    enRouteBtn.addEventListener('click', async () => {
+      const nextStageName = enRouteBtn.dataset.nextStage;
+      enRouteBtn.disabled = true;
+      enRouteBtn.textContent = 'Updating...';
+
+      try {
+        await this.changeJobStatus(job, nextStageName);
+        App.showToast('Status updated', 'success');
+
+        // Switch to Work tab after going En Route
+        this._pendingTabSwitch = 1;
+
+        // Re-render
+        const container = document.getElementById('jobDetail');
+        await this.renderJobDetail(job.id, container);
+      } catch (err) {
+        App.showToast('Failed to update: ' + err.message, 'error');
+        enRouteBtn.disabled = false;
+        enRouteBtn.textContent = '→ ' + nextStageName;
       }
     });
   },
