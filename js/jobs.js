@@ -399,16 +399,41 @@ const Jobs = {
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
-    // Phone
+    // Phone and Mobile
     let phoneHtml = '';
-    if (job.phone) {
-      const escapedPhone = this._escapeHtml(job.phone);
-      phoneHtml = `
-        <div style="margin-top:4px; font-size:var(--font-size-small); color:var(--text-secondary);">📞 ${escapedPhone}</div>
-        <div class="contact-buttons">
-          <a href="tel:${escapedPhone}" class="btn btn-outline btn-sm">📞 Call</a>
-          <a href="sms:${escapedPhone}" class="btn btn-outline btn-sm">💬 SMS</a>
-        </div>`;
+    const hasPhone = job.phone && job.phone.trim();
+    const hasMobile = job.mobile && job.mobile.trim();
+
+    if (hasPhone || hasMobile) {
+      phoneHtml = '<div class="contact-numbers">';
+
+      if (hasPhone) {
+        const escapedPhone = this._escapeHtml(job.phone);
+        phoneHtml += `
+          <div class="contact-row">
+            <span class="contact-label">Phone:</span>
+            <span class="contact-value">${escapedPhone}</span>
+          </div>
+          <div class="contact-buttons">
+            <a href="tel:${escapedPhone}" class="btn btn-outline btn-sm">📞 Call</a>
+            <a href="sms:${escapedPhone}" class="btn btn-outline btn-sm">💬 SMS</a>
+          </div>`;
+      }
+
+      if (hasMobile) {
+        const escapedMobile = this._escapeHtml(job.mobile);
+        phoneHtml += `
+          <div class="contact-row" style="${hasPhone ? 'margin-top:var(--spacing-sm);' : ''}">
+            <span class="contact-label">Mobile:</span>
+            <span class="contact-value">${escapedMobile}</span>
+          </div>
+          <div class="contact-buttons">
+            <a href="tel:${escapedMobile}" class="btn btn-outline btn-sm">📞 Call</a>
+            <a href="sms:${escapedMobile}" class="btn btn-outline btn-sm">💬 SMS</a>
+          </div>`;
+      }
+
+      phoneHtml += '</div>';
     }
 
     // Gate code
@@ -758,45 +783,128 @@ const Jobs = {
     // Next-stage button click
     nextBtn.addEventListener('click', async () => {
       const nextStageName = nextBtn.dataset.nextStage;
-      nextBtn.disabled = true;
-      nextBtn.textContent = 'Updating...';
+
+      // If completing, show materials popup first
+      if (nextStageName.toLowerCase().includes('complete')) {
+        this._showMaterialsModal(job, async () => {
+          await this._proceedWithStatusChange(job, nextStageName, nextBtn, bypassCheck, bypassReason);
+        });
+        return;
+      }
+
+      await this._proceedWithStatusChange(job, nextStageName, nextBtn, bypassCheck, bypassReason);
+    });
+  },
+
+  /**
+   * Proceed with the status change (extracted for materials modal callback).
+   */
+  async _proceedWithStatusChange(job, nextStageName, nextBtn, bypassCheck, bypassReason) {
+    nextBtn.disabled = true;
+    nextBtn.textContent = 'Updating...';
+
+    try {
+      // If bypassing, post journal entry first
+      if (bypassCheck && bypassCheck.checked && bypassReason && bypassReason.value.trim()) {
+        const reason = bypassReason.value.trim();
+        const entry = `[PHOTO BYPASS] ${reason}`;
+        if (navigator.onLine) {
+          await OdooAPI.postJournalEntry(job.id, entry);
+        } else {
+          await DB.put('journalQueue', {
+            temp_id: 'jq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+            job_id: job.id,
+            body: entry,
+            timestamp: new Date().toISOString(),
+            synced: 0,
+          });
+        }
+      }
+
+      await this.changeJobStatus(job, nextStageName);
+      App.showToast('Status updated', 'success');
+
+      // Determine which tab to switch to after re-render
+      const newStageName = this.getStageName(job.stage_id);
+      if (newStageName.toLowerCase().includes('complete')) {
+        this._pendingTabSwitch = 2; // Journal tab
+      } else {
+        this._pendingTabSwitch = 1; // Work tab
+      }
+
+      // Re-render
+      const container = document.getElementById('jobDetail');
+      await this.renderJobDetail(job.id, container);
+    } catch (err) {
+      App.showToast('Failed to update: ' + err.message, 'error');
+      nextBtn.disabled = false;
+      nextBtn.textContent = '→ ' + nextStageName;
+    }
+  },
+
+  /**
+   * Show materials modal before completing a job.
+   */
+  async _showMaterialsModal(job, onComplete) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal modal-materials">
+        <div class="modal-header">
+          <h3>Materials Used</h3>
+        </div>
+        <div class="modal-body" id="materialsModalBody">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="materialsSkipBtn">Skip</button>
+          <button class="btn btn-primary" id="materialsDoneBtn">Save & Complete</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const body = document.getElementById('materialsModalBody');
+    const skipBtn = document.getElementById('materialsSkipBtn');
+    const doneBtn = document.getElementById('materialsDoneBtn');
+
+    // Load materials form into modal
+    if (typeof Materials !== 'undefined') {
+      await Materials.renderSection(job.id, body);
+      // Hide the save button in the form since we have modal buttons
+      const formSaveBtn = body.querySelector('.materials-save');
+      if (formSaveBtn) formSaveBtn.style.display = 'none';
+    } else {
+      body.innerHTML = '<p>Materials tracking not available.</p>';
+    }
+
+    // Skip button - just complete without saving materials
+    skipBtn.addEventListener('click', () => {
+      overlay.remove();
+      onComplete();
+    });
+
+    // Save & Complete button - save materials then complete
+    doneBtn.addEventListener('click', async () => {
+      doneBtn.disabled = true;
+      doneBtn.textContent = 'Saving...';
 
       try {
-        // If bypassing, post journal entry first
-        if (bypassCheck && bypassCheck.checked && bypassReason && bypassReason.value.trim()) {
-          const reason = bypassReason.value.trim();
-          const entry = `[PHOTO BYPASS] ${reason}`;
-          if (navigator.onLine) {
-            await OdooAPI.postJournalEntry(job.id, entry);
-          } else {
-            await DB.put('journalQueue', {
-              temp_id: 'jq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-              job_id: job.id,
-              body: entry,
-              timestamp: new Date().toISOString(),
-              synced: 0,
-            });
+        // Trigger materials save
+        if (typeof Materials !== 'undefined') {
+          const saveBtn = body.querySelector('.materials-save');
+          if (saveBtn) {
+            // Manually trigger save logic
+            await Materials._save(job.id, body);
           }
         }
-
-        await this.changeJobStatus(job, nextStageName);
-        App.showToast('Status updated', 'success');
-
-        // Determine which tab to switch to after re-render
-        const newStageName = this.getStageName(job.stage_id);
-        if (newStageName.toLowerCase().includes('complete')) {
-          this._pendingTabSwitch = 2; // Journal tab
-        } else {
-          this._pendingTabSwitch = 1; // Work tab
-        }
-
-        // Re-render
-        const container = document.getElementById('jobDetail');
-        await this.renderJobDetail(job.id, container);
+        overlay.remove();
+        onComplete();
       } catch (err) {
-        App.showToast('Failed to update: ' + err.message, 'error');
-        nextBtn.disabled = false;
-        nextBtn.textContent = '→ ' + nextStageName;
+        App.showToast('Failed to save materials: ' + err.message, 'error');
+        doneBtn.disabled = false;
+        doneBtn.textContent = 'Save & Complete';
       }
     });
   },

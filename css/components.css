@@ -263,6 +263,27 @@ textarea.form-input {
 }
 
 /* ========== CONTACT BUTTONS ========== */
+.contact-numbers {
+  margin-top: var(--spacing-sm);
+}
+
+.contact-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-small);
+}
+
+.contact-label {
+  color: var(--text-secondary);
+  min-width: 50px;
+}
+
+.contact-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
 .contact-buttons {
   display: flex;
   gap: var(--spacing-sm);
@@ -1048,4 +1069,30 @@ textarea.form-input {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* ========== MATERIALS MODAL ========== */
+.modal-materials {
+  max-width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-materials .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--spacing-md);
+}
+
+.modal-materials .modal-footer {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+}
+
+.modal-materials .modal-footer .btn {
+  flex: 1;
 }

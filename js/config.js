@@ -51,7 +51,7 @@ const CONFIG = {
     'description', 'todo', 'request_early',
     'date_start', 'date_end',
     'company_id', 'street', 'street2', 'city',
-    'state_name', 'phone', 'stage_name'
+    'state_name', 'phone', 'mobile', 'stage_name'
   ],
 
   // Extra fields added by fieldservice_multi_worker / fieldservice_gate_code modules
