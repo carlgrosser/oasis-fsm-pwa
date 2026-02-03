@@ -186,8 +186,13 @@ body {
 }
 
 #detailView .detail-header {
+  flex-shrink: 0;
   padding: var(--spacing-sm) var(--spacing-md);
   margin-bottom: 0;
+}
+
+#detailView .detail-tabs {
+  flex-shrink: 0;
 }
 
 #detailView .detail-panels {
