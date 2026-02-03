@@ -399,38 +399,31 @@ const Jobs = {
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
-    // Phone and Mobile
+    // Phone and Mobile - inline buttons with number
     let phoneHtml = '';
     const hasPhone = job.phone && job.phone.trim();
     const hasMobile = job.mobile && job.mobile.trim();
 
     if (hasPhone || hasMobile) {
-      phoneHtml = '<div class="contact-numbers">';
+      phoneHtml = '<div class="contact-buttons-row">';
 
       if (hasPhone) {
         const escapedPhone = this._escapeHtml(job.phone);
         phoneHtml += `
-          <div class="contact-row">
-            <span class="contact-label">Phone:</span>
-            <span class="contact-value">${escapedPhone}</span>
-          </div>
-          <div class="contact-buttons">
-            <a href="tel:${escapedPhone}" class="btn btn-outline btn-sm">📞 Call</a>
-            <a href="sms:${escapedPhone}" class="btn btn-outline btn-sm">💬 SMS</a>
-          </div>`;
+          <a href="tel:${escapedPhone}" class="btn btn-outline btn-sm contact-btn">
+            📞 ${escapedPhone}
+          </a>`;
       }
 
       if (hasMobile) {
         const escapedMobile = this._escapeHtml(job.mobile);
         phoneHtml += `
-          <div class="contact-row" style="${hasPhone ? 'margin-top:var(--spacing-sm);' : ''}">
-            <span class="contact-label">Mobile:</span>
-            <span class="contact-value">${escapedMobile}</span>
-          </div>
-          <div class="contact-buttons">
-            <a href="tel:${escapedMobile}" class="btn btn-outline btn-sm">📞 Call</a>
-            <a href="sms:${escapedMobile}" class="btn btn-outline btn-sm">💬 SMS</a>
-          </div>`;
+          <a href="tel:${escapedMobile}" class="btn btn-outline btn-sm contact-btn">
+            📱 ${escapedMobile}
+          </a>
+          <a href="sms:${escapedMobile}" class="btn btn-outline btn-sm contact-btn contact-sms">
+            💬
+          </a>`;
       }
 
       phoneHtml += '</div>';

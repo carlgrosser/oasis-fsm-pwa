@@ -263,35 +263,23 @@ textarea.form-input {
 }
 
 /* ========== CONTACT BUTTONS ========== */
-.contact-numbers {
+.contact-buttons-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
   margin-top: var(--spacing-sm);
 }
 
-.contact-row {
-  display: flex;
+.contact-btn {
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   font-size: var(--font-size-small);
 }
 
-.contact-label {
-  color: var(--text-secondary);
-  min-width: 50px;
-}
-
-.contact-value {
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.contact-buttons {
-  display: flex;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-xs);
-}
-
-.contact-buttons .btn {
-  flex: 1;
+.contact-sms {
+  padding-left: var(--spacing-sm);
+  padding-right: var(--spacing-sm);
 }
 
 /* ========== CREW STACK ========== */
