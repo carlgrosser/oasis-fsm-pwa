@@ -304,8 +304,8 @@ body {
 }
 
 .footer-btn-menu {
-  background: linear-gradient(135deg, #9b59b6, #a569bd);
-  box-shadow: 0 2px 8px rgba(155, 89, 182, 0.3);
+  background: linear-gradient(135deg, #4a5568, #718096);
+  box-shadow: 0 2px 8px rgba(74, 85, 104, 0.3);
 }
 
 .footer-menu-wrapper {
