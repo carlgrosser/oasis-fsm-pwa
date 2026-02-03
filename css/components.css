@@ -195,11 +195,21 @@ textarea.form-input {
   white-space: nowrap;
 }
 
+.job-card-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: var(--spacing-sm) 0;
+}
+
 .job-card-field {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   margin-bottom: var(--spacing-xs);
   line-height: 1.4;
+}
+
+.job-card-field:last-of-type {
+  margin-bottom: 0;
 }
 
 .job-card-field-label {

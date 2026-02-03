@@ -333,7 +333,7 @@ const Jobs = {
       </div>
       <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
       ${cardContactHtml}
-      ${notesHtml}
+      ${notesHtml ? `<div class="job-card-divider"></div>${notesHtml}<div class="job-card-divider"></div>` : ''}
       <div class="job-card-footer">
         <span class="job-card-id">${this._escapeHtml(job.name || '')}</span>
         <div style="display:flex; align-items:center; gap:8px;">
