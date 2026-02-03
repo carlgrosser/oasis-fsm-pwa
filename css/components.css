@@ -542,11 +542,14 @@ textarea.form-input {
 /* ========== HAMBURGER MENU ========== */
 .menu-wrapper {
   position: relative;
+  margin-left: auto;
+  order: 2;
 }
 
 .menu-dropdown {
   position: absolute;
-  left: 0;
+  right: 0;
+  left: auto;
   top: calc(100% + 4px);
   background: var(--bg-primary);
   border-radius: var(--border-radius);

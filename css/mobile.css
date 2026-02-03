@@ -108,6 +108,7 @@ body {
   gap: var(--spacing-sm);
   border-bottom: 1px solid var(--border-color);
   min-height: 44px;
+  justify-content: space-between;
 }
 
 .page-title {
@@ -115,6 +116,8 @@ body {
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
+  flex: 1;
+  order: 1;
 }
 
 .header-actions {
