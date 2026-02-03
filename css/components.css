@@ -195,6 +195,18 @@ textarea.form-input {
   white-space: nowrap;
 }
 
+.job-card-field {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+  line-height: 1.4;
+}
+
+.job-card-field-label {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .job-card-footer {
   display: flex;
   justify-content: space-between;

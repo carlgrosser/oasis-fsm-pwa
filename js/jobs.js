@@ -311,15 +311,19 @@ const Jobs = {
       cardContactHtml = `<div class="job-card-contact">${parts.join('<span class="card-contact-sep">|</span>')}</div>`;
     }
 
-    // Notes preview (instructions + description)
+    // Instructions (todo) and Notes (description) - shown separately
     const rawTodo = job.todo ? this._stripHtml(job.todo) : '';
     const rawDesc = job.description ? this._stripHtml(job.description) : '';
-    const notesCombined = [rawTodo, rawDesc].filter(Boolean).join(' | ');
-    const notesHtml = notesCombined
-      ? `<div class="job-card-notes">${this._escapeHtml(
-          notesCombined.length > 80 ? notesCombined.slice(0, 80) + '...' : notesCombined
-        )}</div>`
-      : '';
+
+    let notesHtml = '';
+    if (rawTodo) {
+      const truncTodo = rawTodo.length > 100 ? rawTodo.slice(0, 100) + '...' : rawTodo;
+      notesHtml += `<div class="job-card-field"><span class="job-card-field-label">Instructions:</span> ${this._escapeHtml(truncTodo)}</div>`;
+    }
+    if (rawDesc) {
+      const truncDesc = rawDesc.length > 100 ? rawDesc.slice(0, 100) + '...' : rawDesc;
+      notesHtml += `<div class="job-card-field"><span class="job-card-field-label">Notes:</span> ${this._escapeHtml(truncDesc)}</div>`;
+    }
 
     card.innerHTML = `
       ${overdueHtml}
