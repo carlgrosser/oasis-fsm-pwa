@@ -239,8 +239,10 @@ body {
 /* Menu dropdown opens upward from footer */
 .menu-dropdown-up {
   position: absolute;
+  top: auto;
   bottom: 100%;
   right: 0;
+  left: auto;
   margin-bottom: var(--spacing-sm);
 }
 
