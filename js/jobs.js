@@ -217,16 +217,34 @@ const Jobs = {
       ? '<span class="gate-code-hint" title="Gate code available">🔑</span>'
       : '';
 
-    // Contact buttons on card (mobile preferred)
+    // Contact info on card (simple text with SMS link for mobile)
     let cardContactHtml = '';
     const cardHasMobile = job.mobile && job.mobile.trim();
-    if (cardHasMobile) {
-      const escapedMobile = this._escapeHtml(job.mobile);
-      cardContactHtml = `
-        <div class="job-card-contact">
-          <a href="tel:${escapedMobile}" class="card-contact-btn card-contact-call">📞</a>
-          <a href="sms:${escapedMobile}" class="card-contact-btn card-contact-sms">💬</a>
-        </div>`;
+    const cardHasPhone = job.phone && job.phone.trim();
+
+    if (cardHasMobile || cardHasPhone) {
+      cardContactHtml = '<div class="job-card-contact">';
+
+      if (cardHasMobile) {
+        const escapedMobile = this._escapeHtml(job.mobile);
+        cardContactHtml += `
+          <span class="card-contact-line">
+            <span class="card-contact-label">📱</span>
+            <span class="card-contact-number">${escapedMobile}</span>
+            <a href="sms:${escapedMobile}" class="card-sms-btn">💬</a>
+          </span>`;
+      }
+
+      if (cardHasPhone) {
+        const escapedPhone = this._escapeHtml(job.phone);
+        cardContactHtml += `
+          <span class="card-contact-line">
+            <span class="card-contact-label">🏠</span>
+            <span class="card-contact-number">${escapedPhone}</span>
+          </span>`;
+      }
+
+      cardContactHtml += '</div>';
     }
 
     // Notes preview (instructions + description)
@@ -405,35 +423,37 @@ const Jobs = {
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
-    // Phone and Mobile - beautiful colored buttons
-    // Order: Mobile Call, Mobile SMS, Phone (home)
+    // Phone and Mobile - inline with round action buttons
     let phoneHtml = '';
     const hasPhone = job.phone && job.phone.trim();
     const hasMobile = job.mobile && job.mobile.trim();
 
     if (hasPhone || hasMobile) {
-      phoneHtml = '<div class="contact-buttons-row">';
+      phoneHtml = '<div class="contact-lines">';
 
       if (hasMobile) {
         const escapedMobile = this._escapeHtml(job.mobile);
         phoneHtml += `
-          <a href="tel:${escapedMobile}" class="contact-btn contact-btn-call">
-            <span class="contact-btn-icon">📞</span>
-            <span class="contact-btn-text">${escapedMobile}</span>
-          </a>
-          <a href="sms:${escapedMobile}" class="contact-btn contact-btn-sms">
-            <span class="contact-btn-icon">💬</span>
-            <span class="contact-btn-text">${escapedMobile}</span>
-          </a>`;
+          <div class="contact-line">
+            <span class="contact-line-label">Mobile:</span>
+            <span class="contact-line-number">${escapedMobile}</span>
+            <div class="contact-line-actions">
+              <a href="tel:${escapedMobile}" class="contact-action-btn contact-action-call">📞</a>
+              <a href="sms:${escapedMobile}" class="contact-action-btn contact-action-sms">💬</a>
+            </div>
+          </div>`;
       }
 
       if (hasPhone) {
         const escapedPhone = this._escapeHtml(job.phone);
         phoneHtml += `
-          <a href="tel:${escapedPhone}" class="contact-btn contact-btn-home">
-            <span class="contact-btn-icon">🏠</span>
-            <span class="contact-btn-text">${escapedPhone}</span>
-          </a>`;
+          <div class="contact-line">
+            <span class="contact-line-label">Phone:</span>
+            <span class="contact-line-number">${escapedPhone}</span>
+            <div class="contact-line-actions">
+              <a href="tel:${escapedPhone}" class="contact-action-btn contact-action-home">📞</a>
+            </div>
+          </div>`;
       }
 
       phoneHtml += '</div>';

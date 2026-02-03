@@ -259,64 +259,39 @@ textarea.form-input {
 }
 
 /* ========== CONTACT BUTTONS ========== */
-/* ========== CONTACT BUTTONS (Detail View) ========== */
-.contact-buttons-row {
+/* ========== CONTACT LINES (Detail View) ========== */
+.contact-lines {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
   margin-top: var(--spacing-sm);
 }
 
-.contact-btn {
+.contact-line {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--border-radius);
-  text-decoration: none;
+}
+
+.contact-line-label {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  min-width: 55px;
+}
+
+.contact-line-number {
+  flex: 1;
   font-size: var(--font-size-small);
   font-weight: 500;
-  transition: transform 0.1s, box-shadow 0.1s;
+  color: var(--text-primary);
 }
 
-.contact-btn:active {
-  transform: scale(0.98);
-}
-
-.contact-btn-icon {
-  font-size: 18px;
-}
-
-.contact-btn-text {
-  flex: 1;
-}
-
-.contact-btn-call {
-  background: linear-gradient(135deg, #27ae60, #2ecc71);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
-}
-
-.contact-btn-sms {
-  background: linear-gradient(135deg, #3498db, #5dade2);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
-}
-
-.contact-btn-home {
-  background: linear-gradient(135deg, #9b59b6, #a569bd);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(155, 89, 182, 0.3);
-}
-
-/* ========== CONTACT BUTTONS (Job Card) ========== */
-.job-card-contact {
+.contact-line-actions {
   display: flex;
-  gap: var(--spacing-xs);
-  margin-bottom: var(--spacing-sm);
+  gap: 6px;
 }
 
-.card-contact-btn {
+.contact-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -328,18 +303,65 @@ textarea.form-input {
   transition: transform 0.1s;
 }
 
-.card-contact-btn:active {
+.contact-action-btn:active {
   transform: scale(0.9);
 }
 
-.card-contact-call {
+.contact-action-call {
   background: linear-gradient(135deg, #27ae60, #2ecc71);
   box-shadow: 0 2px 6px rgba(39, 174, 96, 0.3);
 }
 
-.card-contact-sms {
+.contact-action-sms {
   background: linear-gradient(135deg, #3498db, #5dade2);
   box-shadow: 0 2px 6px rgba(52, 152, 219, 0.3);
+}
+
+.contact-action-home {
+  background: linear-gradient(135deg, #9b59b6, #a569bd);
+  box-shadow: 0 2px 6px rgba(155, 89, 182, 0.3);
+}
+
+/* ========== CONTACT INFO (Job Card) ========== */
+.job-card-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.card-contact-line {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.card-contact-label {
+  font-size: 12px;
+}
+
+.card-contact-number {
+  color: var(--text-primary);
+}
+
+.card-sms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3498db, #5dade2);
+  text-decoration: none;
+  font-size: 11px;
+  margin-left: 4px;
+  transition: transform 0.1s;
+}
+
+.card-sms-btn:active {
+  transform: scale(0.9);
 }
 
 /* ========== CREW STACK ========== */
