@@ -484,8 +484,8 @@ const Jobs = {
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
           📍 ${this._escapeHtml(fullAddress)}
         </a>
-        ${phoneHtml}
         ${gateCodeHtml}
+        ${phoneHtml}
         <div class="divider"></div>
         <div class="detail-row">
           <span class="label">Scheduled</span>
