@@ -18,7 +18,6 @@
     <!-- Header — Single bar -->
     <header class="app-header">
       <div class="app-header-top">
-        <h2 id="pageTitle" class="page-title">Today's Jobs</h2>
         <div class="header-actions">
           <span id="lunchTimer" class="lunch-timer" style="display:none;"></span>
           <button id="clockBtn" class="clock-btn state-out" style="display:none;">Clock On</button>
@@ -33,11 +32,33 @@
     <!-- Main content -->
     <main class="app-content">
 
-      <!-- Job List View -->
+      <!-- Job List Views (swipable) -->
       <div id="listView" class="view active">
-        <div id="lastSync" class="pull-hint"></div>
-        <div id="jobList" class="job-list">
-          <div class="loading"><div class="spinner"></div></div>
+        <div class="list-title-bar">
+          <h2 id="listTitle" class="list-title">Today's Jobs</h2>
+        </div>
+        <div class="list-tabs" id="listTabs">
+          <button class="list-tab active" data-view="today">Today</button>
+          <button class="list-tab" data-view="week">This Week</button>
+          <button class="list-tab" data-view="history">History</button>
+        </div>
+        <div class="list-panels" id="listPanels">
+          <div class="list-panel" data-panel="today">
+            <div id="lastSync" class="pull-hint"></div>
+            <div id="jobListToday" class="job-list">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
+          </div>
+          <div class="list-panel" data-panel="week">
+            <div id="jobListWeek" class="job-list">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
+          </div>
+          <div class="list-panel" data-panel="history">
+            <div id="jobListHistory" class="job-list">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -50,30 +71,51 @@
 
     <!-- Footer Bar -->
     <footer class="app-footer" id="appFooter">
-      <div class="footer-inner">
+      <!-- List view footer (5 buttons, only menu active for now) -->
+      <div class="footer-inner footer-list" id="footerList">
+        <button class="footer-btn footer-btn-placeholder" disabled>
+          <span class="footer-btn-icon">·</span>
+        </button>
+        <button class="footer-btn footer-btn-placeholder" disabled>
+          <span class="footer-btn-icon">·</span>
+        </button>
+        <button class="footer-btn footer-btn-placeholder" disabled>
+          <span class="footer-btn-icon">·</span>
+        </button>
+        <button class="footer-btn footer-btn-placeholder" disabled>
+          <span class="footer-btn-icon">·</span>
+        </button>
+        <div class="footer-menu-wrapper">
+          <button class="footer-btn footer-btn-menu" id="menuBtnList" title="Menu">
+            <span class="footer-btn-icon">☰</span>
+          </button>
+          <div id="menuDropdownList" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu">
+            <button id="syncBtnList" class="menu-item">&#10227; Sync Now</button>
+            <button id="logoutBtnList" class="menu-item menu-item-danger">&#9211; Log Out</button>
+          </div>
+        </div>
+      </div>
+      <!-- Detail view footer (call, sms, placeholder, journal, menu) -->
+      <div class="footer-inner footer-detail" id="footerDetail" style="display:none;">
         <button class="footer-btn footer-btn-call" id="footerCallBtn" title="Call">
           <span class="footer-btn-icon">📞</span>
         </button>
         <button class="footer-btn footer-btn-sms" id="footerSmsBtn" title="SMS">
           <span class="footer-btn-icon">💬</span>
         </button>
-        <button class="footer-btn footer-btn-placeholder" id="footerPlaceholderBtn" title="Coming Soon" disabled>
+        <button class="footer-btn footer-btn-placeholder" disabled>
           <span class="footer-btn-icon">⭐</span>
         </button>
         <button class="footer-btn footer-btn-journal" id="footerJournalBtn" title="Journal">
           <span class="footer-btn-icon">📝</span>
         </button>
         <div class="footer-menu-wrapper">
-          <button class="footer-btn footer-btn-menu" id="menuBtn" title="Menu">
+          <button class="footer-btn footer-btn-menu" id="menuBtnDetail" title="Menu">
             <span class="footer-btn-icon">☰</span>
           </button>
-          <div id="menuDropdown" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu" aria-hidden="true">
-            <button data-view="today" class="menu-item menu-view active">📅 Today</button>
-            <button data-view="week" class="menu-item menu-view">📅 This Week</button>
-            <button data-view="history" class="menu-item menu-view">📅 History</button>
-            <div class="menu-divider"></div>
-            <button id="syncBtn" class="menu-item">&#10227; Sync Now</button>
-            <button id="logoutBtn" class="menu-item menu-item-danger">&#9211; Log Out</button>
+          <div id="menuDropdownDetail" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu">
+            <button id="syncBtnDetail" class="menu-item">&#10227; Sync Now</button>
+            <button id="logoutBtnDetail" class="menu-item menu-item-danger">&#9211; Log Out</button>
           </div>
         </div>
         <!-- Contact picker popup -->

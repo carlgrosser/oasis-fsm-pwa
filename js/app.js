@@ -4,6 +4,7 @@
 const App = {
   _currentView: 'today', // 'today' | 'week' | 'history'
   _currentScreen: 'list', // 'list' | 'detail'
+  _viewsLoaded: { today: false, week: false, history: false },
 
   /**
    * Initialize the app after login.
@@ -38,8 +39,11 @@ const App = {
     // Bind UI events
     this._bindEvents();
 
-    // Load and display today's jobs
-    await this.switchTab('today');
+    // Init list tab swiping
+    this._initListTabs();
+
+    // Load today's jobs initially
+    await this._loadViewJobs('today');
   },
 
   /** Map view keys to page titles. */
@@ -49,51 +53,28 @@ const App = {
     history: 'History',
   },
 
+  /** Map view keys to panel indices. */
+  _viewIndices: { today: 0, week: 1, history: 2 },
+  _indexViews: ['today', 'week', 'history'],
+
   _bindEvents() {
-    let closeMenu = null;
+    // Bind both menu buttons (list and detail)
+    this._bindMenuButton('menuBtnList', 'menuDropdownList');
+    this._bindMenuButton('menuBtnDetail', 'menuDropdownDetail');
 
-    // Hamburger menu
-    const menuBtn = document.getElementById('menuBtn');
-    const menuDropdown = document.getElementById('menuDropdown');
-    if (menuBtn && menuDropdown) {
-      closeMenu = () => {
-        menuDropdown.style.display = 'none';
-        menuBtn.setAttribute('aria-expanded', 'false');
-        menuDropdown.setAttribute('aria-hidden', 'true');
-      };
-
-      menuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const open = menuDropdown.style.display !== 'none';
-        menuDropdown.style.display = open ? 'none' : 'block';
-        menuBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
-        menuDropdown.setAttribute('aria-hidden', open ? 'true' : 'false');
-      });
-      document.addEventListener('click', () => {
-        closeMenu();
-      });
-      menuDropdown.addEventListener('click', (e) => e.stopPropagation());
-    }
-
-    // View menu items (Today / This Week / History)
-    document.querySelectorAll('.menu-view').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const view = btn.dataset.view;
-        if (view) {
-          if (closeMenu) closeMenu();
-          this.switchTab(view);
-        }
-      });
+    // Sync buttons
+    ['syncBtnList', 'syncBtnDetail'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', () => Sync.manualSync());
     });
 
-    // Sync button (inside menu)
-    const syncBtn = document.getElementById('syncBtn');
-    if (syncBtn) {
-      syncBtn.addEventListener('click', () => {
-        if (closeMenu) closeMenu();
-        Sync.manualSync();
+    // Logout buttons
+    ['logoutBtnList', 'logoutBtnDetail'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', () => {
+        if (confirm('Log out?')) Auth.logout();
       });
-    }
+    });
 
     // Clock button
     const clockBtn = document.getElementById('clockBtn');
@@ -103,16 +84,7 @@ const App = {
       });
     }
 
-    // Logout button (inside menu)
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', () => {
-        if (closeMenu) closeMenu();
-        if (confirm('Log out?')) Auth.logout();
-      });
-    }
-
-    // Footer bar buttons
+    // Footer detail buttons
     const footerCallBtn = document.getElementById('footerCallBtn');
     if (footerCallBtn) {
       footerCallBtn.addEventListener('click', () => {
@@ -139,33 +111,126 @@ const App = {
         }
       });
     }
+
+    // List tab clicks
+    document.querySelectorAll('.list-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const view = tab.dataset.view;
+        if (view) this.switchTab(view);
+      });
+    });
   },
 
   /**
-   * Switch between Today / Week / History tabs.
+   * Bind a menu button and its dropdown.
+   */
+  _bindMenuButton(btnId, dropdownId) {
+    const btn = document.getElementById(btnId);
+    const dropdown = document.getElementById(dropdownId);
+    if (!btn || !dropdown) return;
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = dropdown.style.display !== 'none';
+      // Close all dropdowns first
+      document.querySelectorAll('.menu-dropdown').forEach(d => d.style.display = 'none');
+      dropdown.style.display = open ? 'none' : 'block';
+    });
+
+    document.addEventListener('click', () => {
+      dropdown.style.display = 'none';
+    });
+
+    dropdown.addEventListener('click', (e) => e.stopPropagation());
+  },
+
+  /**
+   * Initialize list tab swiping and scroll sync.
+   */
+  _initListTabs() {
+    const panels = document.getElementById('listPanels');
+    if (!panels) return;
+
+    let ticking = false;
+    panels.addEventListener('scroll', () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const panelWidth = panels.offsetWidth;
+        if (panelWidth > 0) {
+          const idx = Math.round(panels.scrollLeft / panelWidth);
+          const view = this._indexViews[idx];
+          if (view && view !== this._currentView) {
+            this._setActiveTab(view);
+            this._loadViewJobs(view);
+          }
+        }
+        ticking = false;
+      });
+    });
+  },
+
+  /**
+   * Switch to a specific list tab.
    */
   async switchTab(view) {
     this._currentView = view;
     this._currentScreen = 'list';
 
-    // Update active state on menu view items
-    document.querySelectorAll('.menu-view').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.view === view);
-    });
+    // Update tab UI
+    this._setActiveTab(view);
 
-    // Update page title
-    this._updatePageTitle(this._viewTitles[view] || "Today's Jobs");
+    // Update title
+    this._updateListTitle(this._viewTitles[view] || "Today's Jobs");
 
-    // Show list view, hide detail view
+    // Scroll to panel
+    const panels = document.getElementById('listPanels');
+    if (panels) {
+      const idx = this._viewIndices[view];
+      const panelWidth = panels.offsetWidth;
+      panels.scrollTo({ left: idx * panelWidth, behavior: 'smooth' });
+    }
+
+    // Show list view
     this._showScreen('list');
 
-    // Show loading
-    const container = document.getElementById('jobList');
+    // Load jobs for this view
+    await this._loadViewJobs(view);
+  },
+
+  /**
+   * Set the active tab visually.
+   */
+  _setActiveTab(view) {
+    this._currentView = view;
+    document.querySelectorAll('.list-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.view === view);
+    });
+    this._updateListTitle(this._viewTitles[view] || "Today's Jobs");
+  },
+
+  /**
+   * Load jobs for a specific view if not already loaded.
+   */
+  async _loadViewJobs(view) {
+    const containerMap = {
+      today: 'jobListToday',
+      week: 'jobListWeek',
+      history: 'jobListHistory',
+    };
+
+    const container = document.getElementById(containerMap[view]);
+    if (!container) return;
+
+    // Skip if already loaded (unless forced refresh)
+    if (this._viewsLoaded[view]) return;
+
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
     try {
       await Jobs.loadJobs(view);
       Jobs.renderJobList(container);
+      this._viewsLoaded[view] = true;
     } catch (err) {
       container.innerHTML = `
         <div class="alert alert-error">
@@ -176,17 +241,19 @@ const App = {
   },
 
   /**
+   * Force refresh all views.
+   */
+  async refreshAllViews() {
+    this._viewsLoaded = { today: false, week: false, history: false };
+    await this._loadViewJobs(this._currentView);
+  },
+
+  /**
    * Show the job detail view for a specific job.
    */
   async showJobDetail(jobId) {
     this._currentScreen = 'detail';
     this._showScreen('detail');
-
-    // Find the job to get its name for the title
-    const job = Jobs._jobs.find(j => j.id === jobId);
-    if (job) {
-      this._updatePageTitle(job.name || 'Job Detail');
-    }
 
     const container = document.getElementById('jobDetail');
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -208,17 +275,15 @@ const App = {
   showJobList() {
     this._currentScreen = 'list';
     this._showScreen('list');
-    // Restore page title to current view name
-    this._updatePageTitle(this._viewTitles[this._currentView] || "Today's Jobs");
     // Reset footer bar (disable call/sms buttons)
     Jobs._resetFooter();
   },
 
   /**
-   * Update the page title in the bottom header bar.
+   * Update the list title bar.
    */
-  _updatePageTitle(title) {
-    const el = document.getElementById('pageTitle');
+  _updateListTitle(title) {
+    const el = document.getElementById('listTitle');
     if (el) el.textContent = title;
   },
 
@@ -228,12 +293,15 @@ const App = {
   _showScreen(screen) {
     const listView = document.getElementById('listView');
     const detailView = document.getElementById('detailView');
-    const appContent = document.querySelector('.app-content');
+    const footerList = document.getElementById('footerList');
+    const footerDetail = document.getElementById('footerDetail');
 
     if (listView) listView.classList.toggle('active', screen === 'list');
     if (detailView) detailView.classList.toggle('active', screen === 'detail');
-    // Disable outer scroll & padding when in detail view (panels scroll independently)
-    if (appContent) appContent.classList.toggle('detail-active', screen === 'detail');
+
+    // Switch footer
+    if (footerList) footerList.style.display = screen === 'list' ? 'flex' : 'none';
+    if (footerDetail) footerDetail.style.display = screen === 'detail' ? 'flex' : 'none';
   },
 
   /**

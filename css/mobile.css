@@ -139,10 +139,84 @@ body {
 /* Main content area */
 .app-content {
   flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========== LIST VIEW (swipeable tabs) ========== */
+#listView {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+#listView.active {
+  display: flex;
+}
+
+.list-title-bar {
+  background: var(--card-background);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.list-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.list-tabs {
+  display: flex;
+  background: var(--card-background);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.list-tab {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-xs);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: var(--font-size-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.list-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.list-panels {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.list-panels::-webkit-scrollbar {
+  display: none;
+}
+
+.list-panel {
+  flex: 0 0 100%;
+  width: 100%;
+  scroll-snap-align: start;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--spacing-md);
-  padding-bottom: calc(var(--spacing-md) + 70px); /* Space for footer */
+  padding-bottom: calc(var(--spacing-md) + 70px);
 }
 
 /* ========== FOOTER BAR ========== */
@@ -317,20 +391,15 @@ body {
   display: none;
 }
 
-.view.active {
-  display: block;
-}
-
 /* Detail view — flex column for swipeable panels */
-.app-content.detail-active {
-  overflow: hidden;
-  padding: 0;
+#detailView {
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 #detailView.active {
   display: flex;
-  flex-direction: column;
-  height: 100%;
 }
 
 #detailView #jobDetail {
@@ -354,6 +423,10 @@ body {
 #detailView .detail-panels {
   flex: 1;
   min-height: 0;
+}
+
+#detailView .detail-panel {
+  padding-bottom: calc(var(--spacing-md) + 70px);
 }
 
 /* Job list */
