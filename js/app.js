@@ -76,6 +76,12 @@ const App = {
       });
     });
 
+    // Clear cache buttons
+    ['clearCacheBtnList', 'clearCacheBtnDetail'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', () => this._clearCache());
+    });
+
     // Clock button
     const clockBtn = document.getElementById('clockBtn');
     if (clockBtn) {
@@ -302,6 +308,39 @@ const App = {
     // Switch footer
     if (footerList) footerList.style.display = screen === 'list' ? 'flex' : 'none';
     if (footerDetail) footerDetail.style.display = screen === 'detail' ? 'flex' : 'none';
+  },
+
+  /**
+   * Clear all caches and reload the app.
+   */
+  async _clearCache() {
+    if (!confirm('Clear cache and reload? This will refresh all app data.')) return;
+
+    try {
+      // Unregister service workers
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+        }
+      }
+
+      // Clear all caches
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          await caches.delete(name);
+        }
+      }
+
+      // Reload the page
+      this.showToast('Cache cleared, reloading...', 'success');
+      setTimeout(() => {
+        window.location.reload(true);
+      }, 500);
+    } catch (err) {
+      this.showToast('Failed to clear cache: ' + err.message, 'error');
+    }
   },
 
   /**
