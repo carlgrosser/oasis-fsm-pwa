@@ -6,26 +6,30 @@ const Journal = {
 
   /**
    * Render the journal section for a job's detail view.
+   * All DOM lookups are scoped to `container` to avoid ID collisions
+   * when rendered in both the Journal tab and the Journal modal.
    */
   async renderSection(jobId, container) {
     container.innerHTML = `
       <div class="journal-compose">
-        <textarea class="form-input journal-input" id="journalInput"
+        <textarea class="form-input journal-input"
                   placeholder="Write a note..." rows="2"></textarea>
-        <button class="btn btn-primary btn-sm" id="journalPostBtn">Post</button>
+        <button class="btn btn-primary btn-sm journal-post-btn">Post</button>
       </div>
-      <div class="journal-entries" id="journalEntries">
+      <div class="journal-entries">
         <div class="loading"><div class="spinner"></div></div>
       </div>
     `;
 
+    const input = container.querySelector('.journal-input');
+    const btn = container.querySelector('.journal-post-btn');
+    const entriesEl = container.querySelector('.journal-entries');
+
     // Bind post button
-    document.getElementById('journalPostBtn').addEventListener('click', async () => {
-      const input = document.getElementById('journalInput');
+    btn.addEventListener('click', async () => {
       const text = input.value.trim();
       if (!text) return;
 
-      const btn = document.getElementById('journalPostBtn');
       btn.disabled = true;
       btn.textContent = 'Posting...';
 
@@ -35,7 +39,7 @@ const Journal = {
           input.value = '';
           App.showToast('Journal entry posted', 'success');
           // Refresh entries
-          await this._loadEntries(jobId);
+          await this._loadEntries(jobId, entriesEl);
         } else {
           // Queue for later
           await DB.put('journalQueue', {
@@ -57,14 +61,13 @@ const Journal = {
     });
 
     // Load entries
-    await this._loadEntries(jobId);
+    await this._loadEntries(jobId, entriesEl);
   },
 
   /**
    * Load and render journal entries from Odoo.
    */
-  async _loadEntries(jobId) {
-    const entriesContainer = document.getElementById('journalEntries');
+  async _loadEntries(jobId, entriesContainer) {
     if (!entriesContainer) return;
 
     if (!navigator.onLine) {

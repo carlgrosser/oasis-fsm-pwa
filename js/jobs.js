@@ -923,14 +923,29 @@ const Jobs = {
     const crewLoading = document.getElementById('crewLoading');
     if (!crewStack) return;
 
+    const ids = job.additional_worker_ids;
+
+    // Try cached names first (stored on the job object after first successful fetch)
+    if (job._cachedCrewNames && job._cachedCrewNames.length > 0) {
+      if (crewLoading) crewLoading.remove();
+      for (const name of job._cachedCrewNames) {
+        const div = document.createElement('div');
+        div.textContent = name;
+        crewStack.appendChild(div);
+      }
+      return;
+    }
+
     if (!navigator.onLine) {
-      if (crewLoading) crewLoading.textContent = `+${job.additional_worker_ids.length} more`;
+      if (crewLoading) crewLoading.textContent = `+${ids.length} more`;
       return;
     }
 
     try {
-      const persons = await OdooAPI.readPersonNames(job.additional_worker_ids);
+      const persons = await OdooAPI.readPersonNames(ids);
       if (crewLoading) crewLoading.remove();
+      // Cache names on the job object so subsequent renders don't re-fetch
+      job._cachedCrewNames = persons.map(p => p.name);
       for (const p of persons) {
         const div = document.createElement('div');
         div.textContent = p.name;
@@ -938,7 +953,7 @@ const Jobs = {
       }
     } catch (err) {
       console.warn('Failed to load crew names:', err);
-      if (crewLoading) crewLoading.textContent = `+${job.additional_worker_ids.length} more`;
+      if (crewLoading) crewLoading.textContent = `+${ids.length} more`;
     }
   },
 
