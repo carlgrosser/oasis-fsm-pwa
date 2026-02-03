@@ -111,6 +111,34 @@ const App = {
         if (confirm('Log out?')) Auth.logout();
       });
     }
+
+    // Footer bar buttons
+    const footerCallBtn = document.getElementById('footerCallBtn');
+    if (footerCallBtn) {
+      footerCallBtn.addEventListener('click', () => {
+        if (!footerCallBtn.classList.contains('disabled')) {
+          Jobs._showContactPicker();
+        }
+      });
+    }
+
+    const footerSmsBtn = document.getElementById('footerSmsBtn');
+    if (footerSmsBtn) {
+      footerSmsBtn.addEventListener('click', () => {
+        if (!footerSmsBtn.classList.contains('disabled')) {
+          Jobs._handleSmsButton();
+        }
+      });
+    }
+
+    const footerJournalBtn = document.getElementById('footerJournalBtn');
+    if (footerJournalBtn) {
+      footerJournalBtn.addEventListener('click', () => {
+        if (Jobs._currentJob) {
+          Jobs._showJournalModal(Jobs._currentJob.id);
+        }
+      });
+    }
   },
 
   /**
@@ -182,8 +210,8 @@ const App = {
     this._showScreen('list');
     // Restore page title to current view name
     this._updatePageTitle(this._viewTitles[this._currentView] || "Today's Jobs");
-    // Remove journal FAB
-    Jobs._hideJournalFab();
+    // Reset footer bar (disable call/sms buttons)
+    Jobs._resetFooter();
   },
 
   /**

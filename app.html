@@ -15,10 +15,11 @@
 <body>
   <div class="app-container">
 
-    <!-- Header — Two bars -->
+    <!-- Header — Single bar -->
     <header class="app-header">
       <div class="app-header-top">
         <span class="app-brand">Oasis FSM</span>
+        <h2 id="pageTitle" class="page-title">Today's Jobs</h2>
         <div class="header-actions">
           <span id="lunchTimer" class="lunch-timer" style="display:none;"></span>
           <button id="clockBtn" class="clock-btn state-out" style="display:none;">Clock On</button>
@@ -27,20 +28,6 @@
           </span>
           <span id="pendingBadge" class="pending-badge" style="display:none;">0</span>
         </div>
-      </div>
-      <div class="app-header-bottom">
-        <div class="menu-wrapper">
-          <button id="menuBtn" class="icon-btn icon-btn-dark" title="Menu" aria-controls="menuDropdown" aria-expanded="false">&#9776;</button>
-          <div id="menuDropdown" class="menu-dropdown" style="display:none;" role="menu" aria-hidden="true">
-            <button data-view="today" class="menu-item menu-view active">📅 Today</button>
-            <button data-view="week" class="menu-item menu-view">📅 This Week</button>
-            <button data-view="history" class="menu-item menu-view">📅 History</button>
-            <div class="menu-divider"></div>
-            <button id="syncBtn" class="menu-item">&#10227; Sync Now</button>
-            <button id="logoutBtn" class="menu-item menu-item-danger">&#9211; Log Out</button>
-          </div>
-        </div>
-        <h2 id="pageTitle" class="page-title">Today's Jobs</h2>
       </div>
     </header>
 
@@ -61,6 +48,37 @@
       </div>
 
     </main>
+
+    <!-- Footer Bar -->
+    <footer class="app-footer" id="appFooter">
+      <button class="footer-btn footer-btn-call" id="footerCallBtn" title="Call">
+        <span class="footer-btn-icon">📞</span>
+      </button>
+      <button class="footer-btn footer-btn-sms" id="footerSmsBtn" title="SMS">
+        <span class="footer-btn-icon">💬</span>
+      </button>
+      <button class="footer-btn footer-btn-placeholder" id="footerPlaceholderBtn" title="Coming Soon" disabled>
+        <span class="footer-btn-icon">⭐</span>
+      </button>
+      <button class="footer-btn footer-btn-journal" id="footerJournalBtn" title="Journal">
+        <span class="footer-btn-icon">📝</span>
+      </button>
+      <div class="footer-menu-wrapper">
+        <button class="footer-btn footer-btn-menu" id="menuBtn" title="Menu">
+          <span class="footer-btn-icon">☰</span>
+        </button>
+        <div id="menuDropdown" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu" aria-hidden="true">
+          <button data-view="today" class="menu-item menu-view active">📅 Today</button>
+          <button data-view="week" class="menu-item menu-view">📅 This Week</button>
+          <button data-view="history" class="menu-item menu-view">📅 History</button>
+          <div class="menu-divider"></div>
+          <button id="syncBtn" class="menu-item">&#10227; Sync Now</button>
+          <button id="logoutBtn" class="menu-item menu-item-danger">&#9211; Log Out</button>
+        </div>
+      </div>
+      <!-- Contact picker popup -->
+      <div id="contactPicker" class="contact-picker" style="display:none;"></div>
+    </footer>
 
   </div>
 

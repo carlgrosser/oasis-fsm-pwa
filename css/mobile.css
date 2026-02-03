@@ -70,7 +70,7 @@ body {
   min-height: 100dvh;
 }
 
-/* Header — Two bars */
+/* Header — Single bar */
 .app-header {
   position: sticky;
   top: 0;
@@ -84,7 +84,7 @@ body {
   padding: var(--spacing-xs) var(--spacing-md);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--spacing-sm);
   min-height: 44px;
 }
 
@@ -93,24 +93,13 @@ body {
   font-weight: 600;
 }
 
-.app-header-bottom {
-  background: var(--card-background);
-  padding: var(--spacing-xs) var(--spacing-md);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  border-bottom: 1px solid var(--border-color);
-  min-height: 44px;
-  justify-content: space-between;
-}
-
 .page-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
   flex: 1;
-  order: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  text-align: center;
 }
 
 .header-actions {
@@ -158,6 +147,165 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--spacing-md);
+  padding-bottom: calc(var(--spacing-md) + 70px); /* Space for footer */
+}
+
+/* ========== FOOTER BAR ========== */
+.app-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--card-background);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  padding-bottom: calc(var(--spacing-xs) + var(--safe-bottom));
+  z-index: 100;
+  min-height: 60px;
+}
+
+.footer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.2s;
+}
+
+.footer-btn:active {
+  transform: scale(0.9);
+}
+
+.footer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.footer-btn:disabled:active {
+  transform: none;
+}
+
+.footer-btn-icon {
+  font-size: 20px;
+}
+
+.footer-btn-call {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
+}
+
+.footer-btn-call.disabled {
+  background: linear-gradient(135deg, #95a5a6, #bdc3c7);
+  box-shadow: none;
+}
+
+.footer-btn-sms {
+  background: linear-gradient(135deg, #3498db, #5dade2);
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+}
+
+.footer-btn-sms.disabled {
+  background: linear-gradient(135deg, #95a5a6, #bdc3c7);
+  box-shadow: none;
+}
+
+.footer-btn-placeholder {
+  background: linear-gradient(135deg, #f39c12, #f1c40f);
+  box-shadow: 0 2px 8px rgba(243, 156, 18, 0.3);
+  opacity: 0.5;
+}
+
+.footer-btn-journal {
+  background: linear-gradient(135deg, #e74c3c, #ec7063);
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+}
+
+.footer-btn-menu {
+  background: linear-gradient(135deg, #9b59b6, #a569bd);
+  box-shadow: 0 2px 8px rgba(155, 89, 182, 0.3);
+}
+
+.footer-menu-wrapper {
+  position: relative;
+}
+
+/* Menu dropdown opens upward from footer */
+.menu-dropdown-up {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Contact picker popup */
+.contact-picker {
+  position: absolute;
+  bottom: 100%;
+  left: var(--spacing-sm);
+  right: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  background: var(--card-background);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-sm);
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+}
+
+.contact-picker.two-numbers {
+  justify-content: space-between;
+}
+
+.contact-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  text-decoration: none;
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius-md);
+  transition: background 0.2s;
+}
+
+.contact-picker-item:active {
+  background: var(--background);
+}
+
+.contact-picker-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.contact-picker-icon.mobile {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+}
+
+.contact-picker-icon.home {
+  background: linear-gradient(135deg, #9b59b6, #a569bd);
+}
+
+.contact-picker-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.contact-picker-number {
+  font-size: var(--font-size-small);
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 /* ========== VIEWS ========== */

@@ -365,8 +365,8 @@ const Jobs = {
     // Bind En Route button on Info tab (pre-work stage only)
     this._bindEnRouteButton(job);
 
-    // Show journal FAB
-    this._showJournalFab(job.id);
+    // Update footer bar for this job
+    this._updateFooter(job);
 
     // Auto-switch to pending tab (set before re-render)
     if (this._pendingTabSwitch !== null) {
@@ -395,46 +395,6 @@ const Jobs = {
 
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
-
-    // Phone and Mobile - inline with round action buttons
-    let phoneHtml = '';
-    const hasPhone = job.phone && job.phone.trim();
-    const hasMobile = job.mobile && job.mobile.trim();
-
-    if (hasPhone || hasMobile) {
-      phoneHtml = '<div class="contact-row">';
-
-      if (hasMobile) {
-        const escapedMobile = this._escapeHtml(job.mobile);
-        phoneHtml += `
-          <div class="contact-item">
-            <div class="contact-number-line">
-              <span class="contact-item-label">📱</span>
-              <span class="contact-item-number">${escapedMobile}</span>
-            </div>
-            <div class="contact-actions">
-              <a href="tel:${escapedMobile}" class="contact-action-btn contact-action-call">📞</a>
-              <a href="sms:${escapedMobile}" class="contact-action-btn contact-action-sms">💬</a>
-            </div>
-          </div>`;
-      }
-
-      if (hasPhone) {
-        const escapedPhone = this._escapeHtml(job.phone);
-        phoneHtml += `
-          <div class="contact-item">
-            <div class="contact-number-line">
-              <span class="contact-item-label">🏠</span>
-              <span class="contact-item-number">${escapedPhone}</span>
-            </div>
-            <div class="contact-actions">
-              <a href="tel:${escapedPhone}" class="contact-action-btn contact-action-home">📞</a>
-            </div>
-          </div>`;
-      }
-
-      phoneHtml += '</div>';
-    }
 
     // Gate code
     const gateCodeHtml = `<div class="detail-row gate-code-row" id="gateCodeRow">
@@ -485,7 +445,6 @@ const Jobs = {
           📍 ${this._escapeHtml(fullAddress)}
         </a>
         ${gateCodeHtml}
-        ${phoneHtml}
         <div class="divider"></div>
         <div class="detail-row">
           <span class="label">Scheduled</span>
@@ -927,28 +886,109 @@ const Jobs = {
     });
   },
 
-  // ========== JOURNAL FAB ==========
+  // ========== FOOTER BAR ==========
+
+  _currentJob: null, // Track current job for footer actions
 
   /**
-   * Show the floating journal button.
+   * Update footer bar state for the current job.
    */
-  _showJournalFab(jobId) {
-    this._hideJournalFab();
-    const fab = document.createElement('button');
-    fab.className = 'journal-fab';
-    fab.id = 'journalFab';
-    fab.title = 'Open Journal';
-    fab.innerHTML = '&#128221;';
-    fab.addEventListener('click', () => this._showJournalModal(jobId));
-    document.body.appendChild(fab);
+  _updateFooter(job) {
+    this._currentJob = job;
+    const hasPhone = job.phone && job.phone.trim();
+    const hasMobile = job.mobile && job.mobile.trim();
+    const hasAnyPhone = hasPhone || hasMobile;
+
+    const callBtn = document.getElementById('footerCallBtn');
+    const smsBtn = document.getElementById('footerSmsBtn');
+
+    if (callBtn) {
+      callBtn.classList.toggle('disabled', !hasAnyPhone);
+    }
+    if (smsBtn) {
+      smsBtn.classList.toggle('disabled', !hasMobile);
+    }
   },
 
   /**
-   * Remove the floating journal button.
+   * Reset footer bar to default (no job selected).
    */
-  _hideJournalFab() {
-    const existing = document.getElementById('journalFab');
-    if (existing) existing.remove();
+  _resetFooter() {
+    this._currentJob = null;
+    const callBtn = document.getElementById('footerCallBtn');
+    const smsBtn = document.getElementById('footerSmsBtn');
+    if (callBtn) callBtn.classList.add('disabled');
+    if (smsBtn) smsBtn.classList.add('disabled');
+    this._hideContactPicker();
+  },
+
+  /**
+   * Show contact picker popup above phone button.
+   */
+  _showContactPicker() {
+    if (!this._currentJob) return;
+
+    const job = this._currentJob;
+    const hasPhone = job.phone && job.phone.trim();
+    const hasMobile = job.mobile && job.mobile.trim();
+
+    if (!hasPhone && !hasMobile) return;
+
+    const picker = document.getElementById('contactPicker');
+    if (!picker) return;
+
+    let html = '';
+    const count = (hasPhone ? 1 : 0) + (hasMobile ? 1 : 0);
+
+    if (hasMobile) {
+      html += `
+        <a href="tel:${this._escapeHtml(job.mobile)}" class="contact-picker-item">
+          <span class="contact-picker-icon mobile">📱</span>
+          <span class="contact-picker-label">Mobile</span>
+          <span class="contact-picker-number">${this._escapeHtml(job.mobile)}</span>
+        </a>`;
+    }
+
+    if (hasPhone) {
+      html += `
+        <a href="tel:${this._escapeHtml(job.phone)}" class="contact-picker-item">
+          <span class="contact-picker-icon home">🏠</span>
+          <span class="contact-picker-label">Phone</span>
+          <span class="contact-picker-number">${this._escapeHtml(job.phone)}</span>
+        </a>`;
+    }
+
+    picker.innerHTML = html;
+    picker.classList.toggle('two-numbers', count === 2);
+    picker.style.display = 'flex';
+
+    // Close when clicking outside
+    const closeHandler = (e) => {
+      if (!picker.contains(e.target) && e.target.id !== 'footerCallBtn') {
+        this._hideContactPicker();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 10);
+  },
+
+  /**
+   * Hide contact picker popup.
+   */
+  _hideContactPicker() {
+    const picker = document.getElementById('contactPicker');
+    if (picker) picker.style.display = 'none';
+  },
+
+  /**
+   * Handle SMS button - direct SMS to mobile.
+   */
+  _handleSmsButton() {
+    if (!this._currentJob) return;
+    const mobile = this._currentJob.mobile;
+    if (mobile && mobile.trim()) {
+      window.location.href = 'sms:' + this._escapeHtml(mobile.trim());
+    }
   },
 
   /**
