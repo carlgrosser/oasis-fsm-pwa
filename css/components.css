@@ -272,14 +272,17 @@ textarea.form-input {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
+  max-width: 100%;
 }
 
 .contact-number-line {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
   flex-wrap: nowrap;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .contact-actions {
