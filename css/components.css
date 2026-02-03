@@ -190,6 +190,15 @@ textarea.form-input {
   margin-bottom: var(--spacing-sm);
 }
 
+.job-card-notes {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .job-card-footer {
   display: flex;
   justify-content: space-between;
@@ -911,4 +920,132 @@ textarea.form-input {
 
 .materials-save {
   margin-top: var(--spacing-sm);
+}
+
+/* ========== DETAIL TABS (Swipeable) ========== */
+.detail-tabs {
+  display: flex;
+  background: var(--card-background);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.detail-tab {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background: none;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  min-height: 44px;
+  font-family: var(--font-family);
+  touch-action: manipulation;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.detail-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+/* Swipeable panels container */
+.detail-panels {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex: 1;
+}
+
+.detail-panels::-webkit-scrollbar {
+  display: none;
+}
+
+.detail-panel {
+  min-width: 100%;
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--spacing-md);
+}
+
+/* ========== STAGE GATE ========== */
+.stage-gate-info {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(243, 156, 18, 0.1);
+  border: 1px solid rgba(243, 156, 18, 0.3);
+  border-radius: var(--border-radius);
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+}
+
+.stage-gate-info p {
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-primary);
+}
+
+.gate-missing {
+  padding: var(--spacing-xs) 0;
+}
+
+.stage-gate-bypass {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(231, 76, 60, 0.05);
+  border: 1px solid rgba(231, 76, 60, 0.2);
+  border-radius: var(--border-radius);
+}
+
+.stage-gate-bypass .form-check {
+  margin-bottom: var(--spacing-sm);
+}
+
+.stage-gate-bypass textarea {
+  margin-top: var(--spacing-sm);
+}
+
+/* ========== JOURNAL FAB ========== */
+.journal-fab {
+  position: fixed;
+  bottom: calc(var(--safe-bottom) + var(--spacing-lg));
+  right: var(--spacing-md);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 50;
+  touch-action: manipulation;
+  font-size: 24px;
+  transition: transform 0.15s;
+}
+
+.journal-fab:active {
+  transform: scale(0.92);
+}
+
+/* ========== JOURNAL MODAL ========== */
+.modal-journal {
+  max-width: 480px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-journal .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }

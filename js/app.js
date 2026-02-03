@@ -172,6 +172,8 @@ const App = {
     this._showScreen('list');
     // Restore page title to current view name
     this._updatePageTitle(this._viewTitles[this._currentView] || "Today's Jobs");
+    // Remove journal FAB
+    Jobs._hideJournalFab();
   },
 
   /**

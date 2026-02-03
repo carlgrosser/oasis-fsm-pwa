@@ -48,7 +48,7 @@ const CONFIG = {
     'name', 'location_id', 'stage_id',
     'scheduled_date_start', 'scheduled_date_end',
     'person_id', 'person_ids', 'sale_id', 'category_ids',
-    'description', 'request_early',
+    'description', 'todo', 'request_early',
     'date_start', 'date_end',
     'company_id', 'street', 'street2', 'city',
     'state_name', 'phone', 'stage_name'

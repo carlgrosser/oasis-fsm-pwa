@@ -222,6 +222,16 @@ const Jobs = {
       ? `<div class="job-card-phone"><a href="tel:${this._escapeHtml(job.phone)}" class="contact-link">📞 ${this._escapeHtml(job.phone)}</a></div>`
       : '';
 
+    // Notes preview (instructions + description)
+    const rawTodo = job.todo ? this._stripHtml(job.todo) : '';
+    const rawDesc = job.description ? this._stripHtml(job.description) : '';
+    const notesCombined = [rawTodo, rawDesc].filter(Boolean).join(' | ');
+    const notesHtml = notesCombined
+      ? `<div class="job-card-notes">${this._escapeHtml(
+          notesCombined.length > 80 ? notesCombined.slice(0, 80) + '...' : notesCombined
+        )}</div>`
+      : '';
+
     card.innerHTML = `
       <div class="job-card-header">
         <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
@@ -229,6 +239,7 @@ const Jobs = {
       </div>
       <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
       ${phoneHtml}
+      ${notesHtml}
       <div class="job-card-footer">
         <span class="job-card-id">${this._escapeHtml(job.name || '')}</span>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -251,8 +262,13 @@ const Jobs = {
     return card;
   },
 
+  // ========== DETAIL VIEW — Tabbed Layout ==========
+
+  _currentJobId: null,
+  _pendingTabSwitch: null,
+
   /**
-   * Render a single job's detail view.
+   * Render a single job's detail view with swipeable tabs.
    */
   async renderJobDetail(jobId, container) {
     let job = this._jobs.find(j => j.id === jobId);
@@ -264,21 +280,115 @@ const Jobs = {
       return;
     }
 
+    this._currentJobId = job.id;
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
 
+    container.innerHTML = `
+      <div class="detail-header">
+        <button class="back-btn" id="backToList">←</button>
+        <h2 style="flex:1; font-size:18px;">${this._escapeHtml(job.name || 'Job')}</h2>
+        <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
+      </div>
+
+      <div class="detail-tabs" id="detailTabs">
+        <button class="detail-tab active" data-tab="0">Info</button>
+        <button class="detail-tab" data-tab="1">Work</button>
+        <button class="detail-tab" data-tab="2">Journal</button>
+      </div>
+
+      <div class="detail-panels" id="detailPanels">
+        <div class="detail-panel" data-panel="0">
+          ${this._renderInfoPanel(job)}
+        </div>
+        <div class="detail-panel" data-panel="1">
+          ${this._renderWorkPanel(job, stageName)}
+        </div>
+        <div class="detail-panel" data-panel="2">
+          ${this._renderJournalPanel(job)}
+        </div>
+      </div>
+    `;
+
+    // Bind back button
+    document.getElementById('backToList').addEventListener('click', () => {
+      App.showJobList();
+    });
+
+    // Init tab swiping
+    this._initDetailTabs();
+
+    // Bind gate code edit
+    const locationId = Array.isArray(job.location_id) ? job.location_id[0] : null;
+    const gateCodeRow = document.getElementById('gateCodeRow');
+    if (gateCodeRow && locationId) {
+      gateCodeRow.addEventListener('click', () => {
+        this._showGateCodeModal(job, locationId);
+      });
+    }
+
+    // Load additional worker names
+    const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
+    if (workerCount > 1 && job.additional_worker_ids && job.additional_worker_ids.length > 0) {
+      this._loadCrewNames(job);
+    }
+
+    // Render work tab photos (stage-filtered)
+    const workPhotoSection = document.getElementById('workPhotoSection');
+    if (workPhotoSection) {
+      const cats = this._getStagePhotoCategories(stageName);
+      if (cats.length > 0) {
+        Photos.renderFilteredPhotoSection(job.id, workPhotoSection, cats, () => {
+          this._updateStageGate(job, stageName);
+        });
+      } else {
+        workPhotoSection.innerHTML = '';
+      }
+    }
+
+    // Render materials section
+    const materialsSection = document.getElementById('materialsSection');
+    if (materialsSection && typeof Materials !== 'undefined') {
+      Materials.renderSection(job.id, materialsSection);
+    }
+
+    // Bind stage gate (checks photos, enables/disables next-stage button)
+    this._bindStageGate(job, stageName);
+
+    // Render journal tab — all photos + journal entries
+    const journalPhotoSection = document.getElementById('journalPhotoSection');
+    if (journalPhotoSection) {
+      Photos.renderPhotoSection(job.id, journalPhotoSection);
+    }
+    const journalSection = document.getElementById('journalSection');
+    if (journalSection && typeof Journal !== 'undefined') {
+      Journal.renderSection(job.id, journalSection);
+    }
+
+    // Show journal FAB
+    this._showJournalFab(job.id);
+
+    // Auto-switch to pending tab (set before re-render)
+    if (this._pendingTabSwitch !== null) {
+      this._switchToTab(this._pendingTabSwitch);
+      this._pendingTabSwitch = null;
+    }
+  },
+
+  /**
+   * Render the Info panel (tab 1).
+   */
+  _renderInfoPanel(job) {
     const locationName = Array.isArray(job.location_id) ? job.location_id[1] : (job.location_id || 'No location');
     const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
     const fullAddress = addressParts.join(', ') || locationName;
+    const addressForMap = encodeURIComponent(fullAddress);
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${addressForMap}`;
 
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
-    // Build address for map link — prefer street address for accuracy
-    const addressForMap = encodeURIComponent(fullAddress);
-    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${addressForMap}`;
-
-    // Phone — Call + SMS buttons
+    // Phone
     let phoneHtml = '';
     if (job.phone) {
       const escapedPhone = this._escapeHtml(job.phone);
@@ -290,8 +400,7 @@ const Jobs = {
         </div>`;
     }
 
-    // Gate code (editable) — inline detail-row style
-    const locationId = Array.isArray(job.location_id) ? job.location_id[0] : null;
+    // Gate code
     const gateCodeHtml = `<div class="detail-row gate-code-row" id="gateCodeRow">
            <span class="label">Gate Code</span>
            <span class="value">
@@ -300,7 +409,7 @@ const Jobs = {
            </span>
          </div>`;
 
-    // Crew / multi-worker info — stacked names
+    // Crew
     const primaryWorker = Array.isArray(job.person_id) ? job.person_id[1] : '';
     const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
     let crewHtml = '';
@@ -317,17 +426,23 @@ const Jobs = {
         </div>`;
     }
 
-    // Build status workflow buttons
-    const workflowHtml = this._buildWorkflowButtons(job, stageName);
+    // Instructions (todo field)
+    const todoText = job.todo ? this._stripHtml(job.todo) : '';
+    const todoHtml = todoText ? `
+        <div class="detail-row">
+          <span class="label">Instructions</span>
+          <span class="value">${this._escapeHtml(todoText)}</span>
+        </div>` : '';
 
-    container.innerHTML = `
-      <div class="detail-header">
-        <button class="back-btn" id="backToList">←</button>
-        <h2 style="flex:1; font-size:18px;">${this._escapeHtml(job.name || 'Job')}</h2>
-        <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
-      </div>
+    // Notes (description field)
+    const descText = job.description ? this._stripHtml(job.description) : '';
+    const descHtml = descText ? `
+        <div class="detail-row">
+          <span class="label">Notes</span>
+          <span class="value">${this._escapeHtml(descText)}</span>
+        </div>` : '';
 
-      <!-- Customer & Location -->
+    return `
       <div class="detail-section">
         <h3>${this._escapeHtml(locationName)}</h3>
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
@@ -344,46 +459,9 @@ const Jobs = {
           </span>
         </div>
         ${crewHtml}
-        ${job.description ? `
-        <div class="detail-row">
-          <span class="label">Notes</span>
-          <span class="value">${this._escapeHtml(job.description)}</span>
-        </div>` : ''}
+        ${todoHtml}
+        ${descHtml}
       </div>
-
-      <!-- Status Management -->
-      <div class="detail-section">
-        <h3>Status</h3>
-        <div class="status-actions" id="statusActions">
-          ${workflowHtml}
-        </div>
-      </div>
-
-      <!-- Photos -->
-      <div class="detail-section">
-        <h3>Photos</h3>
-        <div id="photoSection">
-          <div class="loading"><div class="spinner"></div></div>
-        </div>
-      </div>
-
-      <!-- Materials -->
-      <div class="detail-section" id="materialsWrapper" style="display:none;">
-        <h3>Materials Used</h3>
-        <div id="materialsSection">
-          <div class="loading"><div class="spinner"></div></div>
-        </div>
-      </div>
-
-      <!-- Journal -->
-      <div class="detail-section">
-        <h3>Journal</h3>
-        <div id="journalSection">
-          <div class="loading"><div class="spinner"></div></div>
-        </div>
-      </div>
-
-      <!-- Quick Actions -->
       <div class="detail-section">
         <h3>Actions</h3>
         <div style="display:flex; flex-direction:column; gap:8px;">
@@ -392,48 +470,133 @@ const Jobs = {
           </a>
           ${this._buildSaleOrderLink(job)}
         </div>
-      </div>
-    `;
+      </div>`;
+  },
 
-    // Bind back button
-    document.getElementById('backToList').addEventListener('click', () => {
-      App.showJobList();
+  /**
+   * Render the Work panel (tab 2) — status + stage-gated photos + materials.
+   */
+  _renderWorkPanel(job, stageName) {
+    const workflowHtml = this._buildWorkflowButtons(job, stageName);
+    const cats = this._getStagePhotoCategories(stageName);
+    const showMaterials = stageName.toLowerCase().includes('progress') ||
+                          stageName.toLowerCase().includes('complete');
+
+    return `
+      <div class="detail-section">
+        <h3>Status</h3>
+        <div class="status-actions" id="statusActions">
+          ${workflowHtml}
+        </div>
+      </div>
+      ${cats.length > 0 ? `
+      <div class="detail-section">
+        <h3>Photos</h3>
+        <div id="workPhotoSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>` : ''}
+      <div id="stageGateStatus"></div>
+      <div class="stage-gate-bypass" id="stageGateBypass" style="display:none;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="bypassCheck">
+          <span style="font-size:var(--font-size-small);">Bypass photo requirement</span>
+        </label>
+        <textarea class="form-input" id="bypassReason"
+                  placeholder="Explain why photos could not be taken..."
+                  rows="2" style="display:none; margin-top:var(--spacing-sm);"></textarea>
+      </div>
+      <div class="detail-section" id="materialsWrapper" style="${showMaterials ? '' : 'display:none;'}">
+        <h3>Materials Used</h3>
+        <div id="materialsSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>`;
+  },
+
+  /**
+   * Render the Journal panel (tab 3) — all photos gallery + journal entries.
+   */
+  _renderJournalPanel(job) {
+    return `
+      <div class="detail-section">
+        <h3>All Photos</h3>
+        <div id="journalPhotoSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+      <div class="detail-section">
+        <h3>Journal</h3>
+        <div id="journalSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>`;
+  },
+
+  /**
+   * Get photo category keys relevant to the current stage.
+   */
+  _getStagePhotoCategories(stageName) {
+    const name = stageName.toLowerCase();
+    if (name.includes('arrived')) return ['equipment_off', 'before'];
+    if (name.includes('progress')) return ['after', 'problem_areas', 'other'];
+    return [];
+  },
+
+  // ========== TAB MANAGEMENT ==========
+
+  /**
+   * Initialize tab bar click handlers and scroll-snap sync.
+   */
+  _initDetailTabs() {
+    const tabs = document.getElementById('detailTabs');
+    const panels = document.getElementById('detailPanels');
+    if (!tabs || !panels) return;
+
+    // Tab click → scroll to panel
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.detail-tab');
+      if (!btn) return;
+      const idx = parseInt(btn.dataset.tab, 10);
+      this._switchToTab(idx);
     });
 
-    // Bind gate code edit modal
-    const gateCodeRow = document.getElementById('gateCodeRow');
-    if (gateCodeRow && locationId) {
-      gateCodeRow.addEventListener('click', () => {
-        this._showGateCodeModal(job, locationId);
+    // Scroll sync → update active tab
+    let ticking = false;
+    panels.addEventListener('scroll', () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const panelWidth = panels.offsetWidth;
+        if (panelWidth > 0) {
+          const idx = Math.round(panels.scrollLeft / panelWidth);
+          this._setActiveTab(idx);
+        }
+        ticking = false;
       });
-    }
-
-    // Load additional worker names
-    if (workerCount > 1 && job.additional_worker_ids && job.additional_worker_ids.length > 0) {
-      this._loadCrewNames(job);
-    }
-
-    // Bind status buttons
-    this._bindStatusButtons(job);
-
-    // Render photo gallery
-    const photoSection = document.getElementById('photoSection');
-    if (photoSection) {
-      Photos.renderPhotoSection(job.id, photoSection);
-    }
-
-    // Render materials section (hidden if no config for this job)
-    const materialsSection = document.getElementById('materialsSection');
-    if (materialsSection && typeof Materials !== 'undefined') {
-      Materials.renderSection(job.id, materialsSection);
-    }
-
-    // Render journal section
-    const journalSection = document.getElementById('journalSection');
-    if (journalSection && typeof Journal !== 'undefined') {
-      Journal.renderSection(job.id, journalSection);
-    }
+    });
   },
+
+  /**
+   * Programmatically switch to a tab by index.
+   */
+  _switchToTab(index) {
+    const panels = document.getElementById('detailPanels');
+    if (!panels) return;
+    const panelWidth = panels.offsetWidth;
+    panels.scrollTo({ left: index * panelWidth, behavior: 'smooth' });
+    this._setActiveTab(index);
+  },
+
+  /**
+   * Update the active tab indicator.
+   */
+  _setActiveTab(index) {
+    const tabs = document.querySelectorAll('.detail-tab');
+    tabs.forEach((t, i) => t.classList.toggle('active', i === index));
+  },
+
+  // ========== STAGE-GATED WORKFLOW ==========
 
   /**
    * Build workflow status buttons for a job.
@@ -445,7 +608,6 @@ const Jobs = {
       s.toLowerCase().includes(currentStageName.toLowerCase())
     );
 
-    // Find the next step in the workflow
     const nextIdx = currentIdx + 1;
     if (nextIdx >= workflow.length) {
       return '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">Job completed</p>';
@@ -456,38 +618,212 @@ const Jobs = {
                      nextStage.toLowerCase().includes('route') ? 'btn-warning' :
                      'btn-primary';
 
-    return `<button class="btn ${btnClass} btn-block btn-lg" data-next-stage="${this._escapeHtml(nextStage)}">
+    return `<button class="btn ${btnClass} btn-block btn-lg" id="nextStageBtn" data-next-stage="${this._escapeHtml(nextStage)}">
       → ${this._escapeHtml(nextStage)}
     </button>`;
   },
 
   /**
-   * Bind click handlers on status workflow buttons.
+   * Check if photo requirements are met for the gated stage transition.
+   * Returns { met: boolean, missing: [{category, label, have, need}] }
    */
-  _bindStatusButtons(job) {
-    const container = document.getElementById('statusActions');
-    if (!container) return;
+  async _checkPhotoGate(job, stageName) {
+    const name = stageName.toLowerCase();
+    let gatedCategories = [];
 
-    container.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button[data-next-stage]');
-      if (!btn) return;
+    if (name.includes('arrived')) {
+      gatedCategories = ['equipment_off', 'before'];
+    } else if (name.includes('progress')) {
+      gatedCategories = ['after'];
+    } else {
+      return { met: true, missing: [] };
+    }
 
-      const nextStageName = btn.dataset.nextStage;
-      btn.disabled = true;
-      btn.textContent = 'Updating...';
+    const counts = await Photos.getPhotoCountsByCategory(job.id);
+    const missing = [];
+
+    for (const key of gatedCategories) {
+      const cat = (CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === key);
+      if (cat && cat.required > 0 && (counts[key] || 0) < cat.required) {
+        missing.push({
+          category: key,
+          label: cat.label,
+          have: counts[key] || 0,
+          need: cat.required
+        });
+      }
+    }
+
+    return { met: missing.length === 0, missing };
+  },
+
+  /**
+   * Update the gate status UI (called after photo capture or on load).
+   */
+  async _updateStageGate(job, stageName) {
+    const nextBtn = document.getElementById('nextStageBtn');
+    const bypassSection = document.getElementById('stageGateBypass');
+    const bypassCheck = document.getElementById('bypassCheck');
+    const gateStatus = document.getElementById('stageGateStatus');
+    if (!nextBtn) return;
+
+    const gate = await this._checkPhotoGate(job, stageName);
+
+    if (gate.met) {
+      nextBtn.disabled = false;
+      if (gateStatus) gateStatus.innerHTML = '';
+      if (bypassSection) bypassSection.style.display = 'none';
+    } else {
+      // Only disable if bypass not active
+      if (!bypassCheck || !bypassCheck.checked) {
+        nextBtn.disabled = true;
+      }
+      const missingHtml = gate.missing.map(m =>
+        `<div class="gate-missing">${this._escapeHtml(m.label)}: ${m.have}/${m.need}</div>`
+      ).join('');
+      if (gateStatus) gateStatus.innerHTML = `
+        <div class="stage-gate-info">
+          <p>Required photos before proceeding:</p>
+          ${missingHtml}
+        </div>`;
+      if (bypassSection) bypassSection.style.display = '';
+    }
+  },
+
+  /**
+   * Bind the stage gate bypass UI and the next-stage button.
+   */
+  async _bindStageGate(job, stageName) {
+    const nextBtn = document.getElementById('nextStageBtn');
+    if (!nextBtn) return;
+
+    const bypassCheck = document.getElementById('bypassCheck');
+    const bypassReason = document.getElementById('bypassReason');
+
+    // Initial gate check
+    await this._updateStageGate(job, stageName);
+
+    // Bypass checkbox logic
+    if (bypassCheck) {
+      bypassCheck.addEventListener('change', () => {
+        if (bypassCheck.checked) {
+          bypassReason.style.display = '';
+          bypassReason.focus();
+        } else {
+          bypassReason.style.display = 'none';
+          nextBtn.disabled = true;
+        }
+      });
+    }
+
+    if (bypassReason) {
+      bypassReason.addEventListener('input', () => {
+        if (bypassCheck && bypassCheck.checked) {
+          nextBtn.disabled = !bypassReason.value.trim();
+        }
+      });
+    }
+
+    // Next-stage button click
+    nextBtn.addEventListener('click', async () => {
+      const nextStageName = nextBtn.dataset.nextStage;
+      nextBtn.disabled = true;
+      nextBtn.textContent = 'Updating...';
 
       try {
+        // If bypassing, post journal entry first
+        if (bypassCheck && bypassCheck.checked && bypassReason && bypassReason.value.trim()) {
+          const reason = bypassReason.value.trim();
+          const entry = `[PHOTO BYPASS] ${reason}`;
+          if (navigator.onLine) {
+            await OdooAPI.postJournalEntry(job.id, entry);
+          } else {
+            await DB.put('journalQueue', {
+              temp_id: 'jq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+              job_id: job.id,
+              body: entry,
+              timestamp: new Date().toISOString(),
+              synced: 0,
+            });
+          }
+        }
+
         await this.changeJobStatus(job, nextStageName);
         App.showToast('Status updated', 'success');
-        // Re-render the detail view
+
+        // Determine which tab to switch to after re-render
+        const newStageName = this.getStageName(job.stage_id);
+        if (newStageName.toLowerCase().includes('complete')) {
+          this._pendingTabSwitch = 2; // Journal tab
+        } else {
+          this._pendingTabSwitch = 1; // Work tab
+        }
+
+        // Re-render
         const container = document.getElementById('jobDetail');
         await this.renderJobDetail(job.id, container);
       } catch (err) {
         App.showToast('Failed to update: ' + err.message, 'error');
-        btn.disabled = false;
-        btn.textContent = '→ ' + nextStageName;
+        nextBtn.disabled = false;
+        nextBtn.textContent = '→ ' + nextStageName;
       }
     });
+  },
+
+  // ========== JOURNAL FAB ==========
+
+  /**
+   * Show the floating journal button.
+   */
+  _showJournalFab(jobId) {
+    this._hideJournalFab();
+    const fab = document.createElement('button');
+    fab.className = 'journal-fab';
+    fab.id = 'journalFab';
+    fab.title = 'Open Journal';
+    fab.innerHTML = '&#128221;';
+    fab.addEventListener('click', () => this._showJournalModal(jobId));
+    document.body.appendChild(fab);
+  },
+
+  /**
+   * Remove the floating journal button.
+   */
+  _hideJournalFab() {
+    const existing = document.getElementById('journalFab');
+    if (existing) existing.remove();
+  },
+
+  /**
+   * Open journal as a modal overlay.
+   */
+  _showJournalModal(jobId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal modal-journal">
+        <div class="modal-header">
+          <h3>Journal</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="journalModalBody">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    const body = document.getElementById('journalModalBody');
+    if (body && typeof Journal !== 'undefined') {
+      Journal.renderSection(jobId, body);
+    }
   },
 
   /**
@@ -777,6 +1113,13 @@ const Jobs = {
       hour: 'numeric', minute: '2-digit'
     }));
     return `${startTime} - ${endTime}`;
+  },
+
+  _stripHtml(html) {
+    if (!html) return '';
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return (div.textContent || div.innerText || '').trim();
   },
 
   _escapeHtml(str) {

@@ -165,6 +165,18 @@ body {
   display: block;
 }
 
+/* Detail view — flex column for swipeable panels */
+#detailView.active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#detailView .detail-panels {
+  flex: 1;
+  min-height: 0;
+}
+
 /* Job list */
 .job-list {
   display: flex;

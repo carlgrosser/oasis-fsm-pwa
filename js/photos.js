@@ -169,8 +169,98 @@ const Photos = {
   },
 
   // ------------------------------------------------------------------
+  // Photo counting helpers
+  // ------------------------------------------------------------------
+
+  /**
+   * Get photo counts by category for a job.
+   * @returns {Promise<Object>} e.g. { equipment_off: 1, before: 2, after: 0 }
+   */
+  async getPhotoCountsByCategory(jobId) {
+    const photos = await this.getPhotosForJob(jobId);
+    const counts = {};
+    for (const cat of (CONFIG.PHOTO_CATEGORIES || [])) {
+      counts[cat.key] = photos.filter(p => p.category === cat.key).length;
+    }
+    return counts;
+  },
+
+  // ------------------------------------------------------------------
   // UI rendering
   // ------------------------------------------------------------------
+
+  /**
+   * Render a filtered photo section — only specified category keys.
+   * Used by the Work tab to show stage-relevant categories.
+   *
+   * @param {number} jobId
+   * @param {HTMLElement} container
+   * @param {string[]} categoryKeys - e.g. ['equipment_off', 'before']
+   * @param {Function} [onPhotoAdded] - callback after a photo is captured
+   */
+  async renderFilteredPhotoSection(jobId, container, categoryKeys, onPhotoAdded) {
+    const photos = await this.getPhotosForJob(jobId);
+    const categories = (CONFIG.PHOTO_CATEGORIES || []).filter(c => categoryKeys.includes(c.key));
+
+    let html = '';
+    let addedDivider = false;
+    for (const cat of categories) {
+      if (!addedDivider && !cat.required) {
+        addedDivider = true;
+        html += `<div class="photo-section-divider">
+          <span class="photo-section-divider-label">Optional</span>
+        </div>`;
+      }
+
+      const catPhotos = photos.filter(p => p.category === cat.key);
+      const countLabel = cat.required
+        ? `${catPhotos.length}/${cat.required}`
+        : `${catPhotos.length}`;
+      const isComplete = cat.required ? catPhotos.length >= cat.required : catPhotos.length > 0;
+
+      html += `
+        <div class="photo-category">
+          <div class="photo-category-header">
+            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
+          </div>
+          <div class="photo-grid" id="photos_${cat.key}_grid">
+            ${this._renderThumbnails(catPhotos)}
+            <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
+              <span class="photo-add-icon">+</span>
+              <span class="photo-add-label">Add</span>
+            </button>
+          </div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+
+    // Bind add-photo buttons
+    container.querySelectorAll('.photo-add-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cat = btn.dataset.category;
+        const jid = parseInt(btn.dataset.jobId, 10);
+        try {
+          const photo = await this.capturePhoto(jid, cat);
+          if (photo) {
+            await this.renderFilteredPhotoSection(jid, container, categoryKeys, onPhotoAdded);
+            App.showToast('Photo added', 'success');
+            if (onPhotoAdded) onPhotoAdded();
+          }
+        } catch (err) {
+          App.showToast('Failed to capture photo', 'error');
+        }
+      });
+    });
+
+    // Bind thumbnail clicks (view full size)
+    container.querySelectorAll('.photo-thumb').forEach(thumb => {
+      thumb.addEventListener('click', () => {
+        this._showFullPhoto(thumb.dataset.tempId);
+      });
+    });
+  },
 
   /**
    * Render the photo section for a job's detail view.
