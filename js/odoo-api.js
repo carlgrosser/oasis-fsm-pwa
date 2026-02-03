@@ -187,9 +187,34 @@ const OdooAPI = {
   },
 
   /**
-   * Fetch completed orders for history view.
+   * Fetch uncompleted orders scheduled before today (overdue jobs).
+   * No date limit - these should always be visible until completed.
    */
-  async getCompletedOrders(personId, dateFrom) {
+  async getOverdueOrders(personId, beforeDate) {
+    const domain = [
+      '|', '|',
+      ['person_id', '=', personId],
+      ['person_ids', 'in', [personId]],
+      ['additional_worker_ids', 'in', [personId]],
+      ['stage_id.is_closed', '=', false],
+      ['scheduled_date_start', '<', beforeDate],
+    ];
+
+    return this.searchRead(
+      'fsm.order',
+      domain,
+      this._getOrderFields(),
+      { order: 'scheduled_date_start desc', limit: 100 }
+    );
+  },
+
+  /**
+   * Fetch completed orders for history view.
+   * @param {number} personId
+   * @param {string} dateFrom - ISO date string
+   * @param {number} offset - for pagination (load more)
+   */
+  async getCompletedOrders(personId, dateFrom, offset = 0) {
     const domain = [
       '|', '|',
       ['person_id', '=', personId],
@@ -203,7 +228,7 @@ const OdooAPI = {
       'fsm.order',
       domain,
       this._getOrderFields(),
-      { order: 'date_end desc', limit: CONFIG.JOBS_PER_PAGE }
+      { order: 'date_end desc', limit: CONFIG.JOBS_PER_PAGE, offset }
     );
   },
 

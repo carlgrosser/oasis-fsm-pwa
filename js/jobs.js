@@ -66,6 +66,9 @@ const Jobs = {
     return 'scheduled'; // default for new/scheduled
   },
 
+  _historyCompletedOffset: 0, // Pagination offset for "load more" in history
+  _historyHasMore: false, // Whether there are more completed jobs to load
+
   /**
    * Fetch jobs from Odoo for the given date range.
    */
@@ -85,24 +88,67 @@ const Jobs = {
       dateTo = new Date(dateFrom);
       dateTo.setDate(dateTo.getDate() + 7);
     } else {
-      // history — last 30 days
-      dateFrom = new Date(now);
-      dateFrom.setDate(dateFrom.getDate() - 30);
-      dateTo = new Date(now);
-      dateTo.setDate(dateTo.getDate() + 1);
+      // history — handled separately
+      return this._fetchHistoryJobs(personId);
     }
 
     const fromStr = dateFrom.toISOString().replace('T', ' ').slice(0, 19);
     const toStr = dateTo.toISOString().replace('T', ' ').slice(0, 19);
 
-    let jobs;
-    if (view === 'history') {
-      jobs = await OdooAPI.getCompletedOrders(personId, fromStr);
-    } else {
-      jobs = await OdooAPI.getMyOrders(personId, fromStr, toStr);
-    }
+    return OdooAPI.getMyOrders(personId, fromStr, toStr);
+  },
 
-    return jobs;
+  /**
+   * Fetch history jobs: overdue (uncompleted past) + completed (last 30 days).
+   */
+  async _fetchHistoryJobs(personId) {
+    const now = new Date();
+    const todayStr = now.toISOString().replace('T', ' ').slice(0, 19);
+
+    // 30 days ago for completed jobs
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().replace('T', ' ').slice(0, 19);
+
+    // Reset pagination
+    this._historyCompletedOffset = 0;
+
+    // Fetch both in parallel
+    const [overdueJobs, completedJobs] = await Promise.all([
+      OdooAPI.getOverdueOrders(personId, todayStr),
+      OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, 0),
+    ]);
+
+    // Mark overdue jobs
+    overdueJobs.forEach(job => { job._isOverdue = true; });
+
+    // Check if there might be more completed jobs
+    this._historyHasMore = completedJobs.length >= CONFIG.JOBS_PER_PAGE;
+
+    // Combine: overdue first, then completed
+    return [...overdueJobs, ...completedJobs];
+  },
+
+  /**
+   * Load more completed history jobs (pagination).
+   */
+  async loadMoreHistory() {
+    const personId = Auth.getPersonId();
+    if (!personId) return [];
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().replace('T', ' ').slice(0, 19);
+
+    this._historyCompletedOffset += CONFIG.JOBS_PER_PAGE;
+    const moreJobs = await OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, this._historyCompletedOffset);
+
+    this._historyHasMore = moreJobs.length >= CONFIG.JOBS_PER_PAGE;
+
+    // Append to current jobs list
+    this._jobs = [...this._jobs, ...moreJobs];
+    return moreJobs;
   },
 
   /**
@@ -181,6 +227,31 @@ const Jobs = {
       const card = this._createJobCard(job);
       container.appendChild(card);
     }
+
+    // Add "Load more" link for history view
+    if (this._currentView === 'history' && this._historyHasMore) {
+      const loadMoreDiv = document.createElement('div');
+      loadMoreDiv.className = 'load-more-container';
+      loadMoreDiv.innerHTML = `
+        <button class="load-more-btn" id="loadMoreHistory">
+          📥 Load older completed jobs
+        </button>
+      `;
+      container.appendChild(loadMoreDiv);
+
+      document.getElementById('loadMoreHistory').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        e.target.textContent = 'Loading...';
+        try {
+          await this.loadMoreHistory();
+          this.renderJobList(container);
+        } catch (err) {
+          App.showToast('Failed to load more jobs', 'error');
+          e.target.disabled = false;
+          e.target.textContent = '📥 Load older completed jobs';
+        }
+      });
+    }
   },
 
   /**
@@ -217,6 +288,11 @@ const Jobs = {
       ? '<span class="gate-code-hint" title="Gate code available">🔑</span>'
       : '';
 
+    // Overdue indicator for past uncompleted jobs
+    const overdueHtml = job._isOverdue
+      ? '<span class="overdue-badge" title="Needs completion">⚠️ OVERDUE</span>'
+      : '';
+
     // Contact info on card (simple text with SMS link for mobile)
     let cardContactHtml = '';
     const cardHasMobile = job.mobile && job.mobile.trim();
@@ -246,6 +322,7 @@ const Jobs = {
       : '';
 
     card.innerHTML = `
+      ${overdueHtml}
       <div class="job-card-header">
         <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
         <span class="job-card-time">${timeStr}</span>
