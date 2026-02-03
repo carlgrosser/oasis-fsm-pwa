@@ -525,11 +525,11 @@ const Jobs = {
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
           📍 ${this._escapeHtml(fullAddress)}
         </a>
-        ${gateCodeHtml}
         <div class="divider"></div>
-        ${todoHtml}
+        ${gateCodeHtml}
         ${descHtml}
-        ${(todoHtml || descHtml) ? '<div class="divider"></div>' : ''}
+        ${todoHtml}
+        <div class="divider"></div>
         <div class="detail-row">
           <span class="label">Scheduled</span>
           <span class="value">
