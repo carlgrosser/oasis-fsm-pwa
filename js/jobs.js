@@ -527,6 +527,9 @@ const Jobs = {
         </a>
         ${gateCodeHtml}
         <div class="divider"></div>
+        ${todoHtml}
+        ${descHtml}
+        ${(todoHtml || descHtml) ? '<div class="divider"></div>' : ''}
         <div class="detail-row">
           <span class="label">Scheduled</span>
           <span class="value">
@@ -535,8 +538,6 @@ const Jobs = {
           </span>
         </div>
         ${crewHtml}
-        ${todoHtml}
-        ${descHtml}
       </div>
       ${this._isPreWorkStage(stageName) ? `
       <div class="detail-section">
