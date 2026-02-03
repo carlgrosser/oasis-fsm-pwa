@@ -226,7 +226,7 @@ const Jobs = {
       const parts = [];
       if (cardHasMobile) {
         const escapedMobile = this._escapeHtml(job.mobile);
-        parts.push(`<span class="card-contact-item">📱 ${escapedMobile}<a href="sms:${escapedMobile}" class="card-sms-btn">💬</a></span>`);
+        parts.push(`<span class="card-contact-item">📱 ${escapedMobile}</span>`);
       }
       if (cardHasPhone) {
         const escapedPhone = this._escapeHtml(job.phone);
@@ -261,11 +261,6 @@ const Jobs = {
         </div>
       </div>
     `;
-
-    // Contact buttons should not trigger job detail navigation
-    card.querySelectorAll('.card-sms-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => e.stopPropagation());
-    });
 
     card.addEventListener('click', () => {
       App.showJobDetail(job.id);
