@@ -79,12 +79,12 @@ const Sync = {
     const pending = await DB.getUnsyncedItems('statusChanges');
     for (const item of pending) {
       try {
-        const extraValues = {};
-        if (item.gps) {
+        const extraValues = item.extra_values ? { ...item.extra_values } : {};
+        if (item.gps && !extraValues.gps_enroute) {
           extraValues.gps_enroute = item.gps;
-          if (item.timestamp) {
-            extraValues.gps_enroute_timestamp = item.timestamp;
-          }
+        }
+        if (item.timestamp && !extraValues.gps_enroute_timestamp && extraValues.gps_enroute) {
+          extraValues.gps_enroute_timestamp = item.timestamp;
         }
 
         await OdooAPI.updateOrderStage(item.job_id, item.stage_id, extraValues);

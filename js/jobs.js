@@ -1159,6 +1159,11 @@ const Jobs = {
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const extraValues = {};
 
+    // If completing, stamp completion time for history filtering
+    if (name.includes('complete')) {
+      extraValues.date_end = timestamp;
+    }
+
     // Determine if we need GPS for this stage
     const needsGps = name.includes('route') || name.includes('arrived');
 
@@ -1197,7 +1202,7 @@ const Jobs = {
       await DB.put('jobs', job);
     } else {
       // Queue for sync — include GPS if we got it
-      await DB.queueStatusChange(job.id, stage.id, timestamp, gpsCoords);
+      await DB.queueStatusChange(job.id, stage.id, timestamp, gpsCoords, extraValues);
       // Update local cache optimistically
       job.stage_id = [stage.id, stage.name];
       await DB.put('jobs', job);

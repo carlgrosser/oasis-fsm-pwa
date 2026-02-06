@@ -230,13 +230,14 @@ const DB = {
     return this.getByIndex(storeName, 'synced', 0);
   },
 
-  async queueStatusChange(jobId, stageId, timestamp, gps) {
+  async queueStatusChange(jobId, stageId, timestamp, gps, extraValues) {
     return this.put('statusChanges', {
       temp_id: 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       job_id: jobId,
       stage_id: stageId,
       timestamp: timestamp,
       gps: gps,
+      extra_values: extraValues || null,
       synced: 0,
     });
   },

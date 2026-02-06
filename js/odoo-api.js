@@ -221,7 +221,9 @@ const OdooAPI = {
       ['person_ids', 'in', [personId]],
       ['additional_worker_ids', 'in', [personId]],
       ['stage_id.is_closed', '=', true],
+      '|',
       ['date_end', '>=', dateFrom],
+      ['write_date', '>=', dateFrom],
     ];
 
     return this.searchRead(
