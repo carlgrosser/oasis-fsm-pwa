@@ -201,8 +201,7 @@ const Jobs = {
         return start >= today && start < weekEnd;
       } else {
         // history
-        const stageName = this.getStageName(job.stage_id);
-        return this.getStatusClass(stageName) === 'complete';
+        return this._isCompletedJob(job);
       }
     });
   },
@@ -261,7 +260,7 @@ const Jobs = {
     const card = document.createElement('div');
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
-    const isHistoryComplete = this._currentView === 'history' && statusClass === 'complete';
+    const isHistoryComplete = this._currentView === 'history' && this._isCompletedJob(job) && !job._isOverdue;
 
     card.className = `job-card status-${statusClass}${isHistoryComplete ? ' compact' : ''}`;
     card.dataset.jobId = job.id;
@@ -1433,6 +1432,13 @@ const Jobs = {
       ? { month: 'short', day: 'numeric' }
       : { month: 'short', day: 'numeric', year: 'numeric' };
     return d.toLocaleDateString([], this._tzOptions(opts));
+  },
+
+  _isCompletedJob(job) {
+    const stage = this.getStage(job.stage_id);
+    if (stage && stage.is_closed === true) return true;
+    const stageName = this.getStageName(job.stage_id);
+    return this.getStatusClass(stageName) === 'complete';
   },
 
   _formatDateTime(dateStr) {
