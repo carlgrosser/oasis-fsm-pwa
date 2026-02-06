@@ -19,6 +19,9 @@ const Themes = {
         '--text-secondary': '#666666',
         '--text-muted': '#999999',
         '--border-color': '#dddddd',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f39c12',
         '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.1)',
         '--shadow-md': '0 2px 8px rgba(0, 0, 0, 0.12)',
         '--shadow-lg': '0 4px 16px rgba(0, 0, 0, 0.15)',
@@ -69,28 +72,6 @@ const Themes = {
       },
     },
 
-    spring: {
-      name: 'Spring',
-      icon: '🌿',
-      colors: {
-        '--primary-color': '#27ae60',
-        '--secondary-color': '#2ecc71',
-        '--accent-color': '#f1c40f',
-        '--background': '#f0f8f0',
-        '--card-background': '#ffffff',
-        '--text-primary': '#2c3e50',
-        '--text-secondary': '#5a7a5a',
-        '--text-muted': '#8aaa8a',
-        '--border-color': '#c8e0c8',
-        '--error-color': '#e74c3c',
-        '--success-color': '#27ae60',
-        '--warning-color': '#f39c12',
-        '--shadow-sm': '0 1px 3px rgba(39, 174, 96, 0.08)',
-        '--shadow-md': '0 2px 8px rgba(39, 174, 96, 0.12)',
-        '--shadow-lg': '0 4px 16px rgba(39, 174, 96, 0.15)',
-      },
-    },
-
     ocean: {
       name: 'Ocean',
       icon: '🌊',
@@ -132,6 +113,138 @@ const Themes = {
         '--shadow-sm': '0 1px 3px rgba(236, 72, 153, 0.08)',
         '--shadow-md': '0 2px 8px rgba(236, 72, 153, 0.12)',
         '--shadow-lg': '0 4px 16px rgba(236, 72, 153, 0.15)',
+      },
+    },
+
+    holiday: {
+      name: 'Holiday',
+      icon: '🎄',
+      colors: {
+        '--primary-color': '#c0392b',
+        '--secondary-color': '#e74c3c',
+        '--accent-color': '#27ae60',
+        '--background': '#1a1a1a',
+        '--card-background': '#2a2a2a',
+        '--text-primary': '#f0e8e0',
+        '--text-secondary': '#b0a898',
+        '--text-muted': '#706860',
+        '--border-color': '#3a3a3a',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f1c40f',
+        '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.3)',
+        '--shadow-md': '0 2px 8px rgba(0, 0, 0, 0.4)',
+        '--shadow-lg': '0 4px 16px rgba(0, 0, 0, 0.5)',
+      },
+    },
+
+    pool: {
+      name: 'Pool',
+      icon: '🏊',
+      colors: {
+        '--primary-color': '#0077b6',
+        '--secondary-color': '#00b4d8',
+        '--accent-color': '#48cae4',
+        '--background': '#caf0f8',
+        '--card-background': '#ffffff',
+        '--text-primary': '#023e8a',
+        '--text-secondary': '#0077b6',
+        '--text-muted': '#90cdf4',
+        '--border-color': '#90e0ef',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f39c12',
+        '--shadow-sm': '0 1px 3px rgba(0, 119, 182, 0.1)',
+        '--shadow-md': '0 2px 8px rgba(0, 119, 182, 0.15)',
+        '--shadow-lg': '0 4px 16px rgba(0, 119, 182, 0.2)',
+      },
+    },
+
+    spring: {
+      name: 'Spring',
+      icon: '🌿',
+      colors: {
+        '--primary-color': '#27ae60',
+        '--secondary-color': '#2ecc71',
+        '--accent-color': '#f1c40f',
+        '--background': '#f0f8f0',
+        '--card-background': '#ffffff',
+        '--text-primary': '#2c3e50',
+        '--text-secondary': '#5a7a5a',
+        '--text-muted': '#8aaa8a',
+        '--border-color': '#c8e0c8',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f39c12',
+        '--shadow-sm': '0 1px 3px rgba(39, 174, 96, 0.08)',
+        '--shadow-md': '0 2px 8px rgba(39, 174, 96, 0.12)',
+        '--shadow-lg': '0 4px 16px rgba(39, 174, 96, 0.15)',
+      },
+    },
+
+    summer: {
+      name: 'Summer',
+      icon: '☀️',
+      colors: {
+        '--primary-color': '#e67e22',
+        '--secondary-color': '#f39c12',
+        '--accent-color': '#e74c3c',
+        '--background': '#fff8f0',
+        '--card-background': '#ffffff',
+        '--text-primary': '#5a3e28',
+        '--text-secondary': '#8a6e50',
+        '--text-muted': '#bda088',
+        '--border-color': '#f0dcc8',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f39c12',
+        '--shadow-sm': '0 1px 3px rgba(230, 126, 34, 0.08)',
+        '--shadow-md': '0 2px 8px rgba(230, 126, 34, 0.12)',
+        '--shadow-lg': '0 4px 16px rgba(230, 126, 34, 0.15)',
+      },
+    },
+
+    fall: {
+      name: 'Fall',
+      icon: '🍂',
+      colors: {
+        '--primary-color': '#d35400',
+        '--secondary-color': '#e67e22',
+        '--accent-color': '#c0392b',
+        '--background': '#2c1810',
+        '--card-background': '#3a2418',
+        '--text-primary': '#f0e0d0',
+        '--text-secondary': '#c8a888',
+        '--text-muted': '#8a7060',
+        '--border-color': '#4a3428',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f1c40f',
+        '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.3)',
+        '--shadow-md': '0 2px 8px rgba(0, 0, 0, 0.4)',
+        '--shadow-lg': '0 4px 16px rgba(0, 0, 0, 0.5)',
+      },
+    },
+
+    winter: {
+      name: 'Winter',
+      icon: '❄️',
+      colors: {
+        '--primary-color': '#5b9bd5',
+        '--secondary-color': '#7ec8e3',
+        '--accent-color': '#a8d8ea',
+        '--background': '#e8f0f8',
+        '--card-background': '#ffffff',
+        '--text-primary': '#2c3e6b',
+        '--text-secondary': '#5a6e8a',
+        '--text-muted': '#9aaabb',
+        '--border-color': '#c8d8e8',
+        '--error-color': '#e74c3c',
+        '--success-color': '#27ae60',
+        '--warning-color': '#f39c12',
+        '--shadow-sm': '0 1px 3px rgba(91, 155, 213, 0.08)',
+        '--shadow-md': '0 2px 8px rgba(91, 155, 213, 0.12)',
+        '--shadow-lg': '0 4px 16px rgba(91, 155, 213, 0.15)',
       },
     },
   },
@@ -231,11 +344,13 @@ const Themes = {
     `;
     document.body.appendChild(overlay);
 
-    // Bind close
+    // Bind close — defer backdrop listener to avoid mobile ghost-click
     const close = () => overlay.remove();
     overlay.querySelector('#themeModalClose').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
+    requestAnimationFrame(() => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+      });
     });
 
     // Bind theme selection

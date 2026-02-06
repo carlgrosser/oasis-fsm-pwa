@@ -1280,6 +1280,15 @@ textarea.form-input {
 /* ========== THEME PICKER ========== */
 .modal-themes {
   max-width: 340px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-themes .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .theme-grid {
