@@ -383,6 +383,13 @@ const OdooAPI = {
   },
 
   /**
+   * Get the latest auto-clocked-out attendance that needs correction.
+   */
+  async getPendingAutoClockOut(employeeId) {
+    return this.callKw('hr.attendance', 'mobile_get_pending_auto_clock_out', [employeeId], {});
+  },
+
+  /**
    * Clock in — create attendance record with GPS.
    */
   async clockIn(employeeId, gpsCoords, gpsAccuracy) {
@@ -408,5 +415,12 @@ const OdooAPI = {
    */
   async endLunch(attendanceId) {
     return this.callKw('hr.attendance', 'mobile_end_lunch', [attendanceId], {});
+  },
+
+  /**
+   * Correct an auto clock-out time.
+   */
+  async correctAutoClockOut(attendanceId, endTimeIso) {
+    return this.callKw('hr.attendance', 'mobile_correct_auto_clock_out', [attendanceId, endTimeIso], {});
   },
 };

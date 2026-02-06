@@ -50,12 +50,14 @@ const TimeTracking = {
     }
 
     this._renderHeaderButton();
+    await this._maybePromptAutoClockOut();
   },
 
   /**
    * Clock in — capture GPS and create attendance.
    */
   async clockIn() {
+    await this._maybePromptAutoClockOut();
     const employeeId = Auth.getEmployeeId();
     if (!employeeId) {
       App.showToast('No employee profile linked. Contact admin.', 'error');
@@ -462,6 +464,115 @@ const TimeTracking = {
         this._startLunchTimer();
       }
     }
+  },
+
+  // ========== AUTO CLOCK-OUT CORRECTION ==========
+
+  async _maybePromptAutoClockOut() {
+    if (!navigator.onLine) return false;
+    if (!Auth.getEmployeeId()) return false;
+    if (this._status !== 'out') return false;
+
+    try {
+      const pending = await OdooAPI.getPendingAutoClockOut(Auth.getEmployeeId());
+      if (!pending || !pending.attendance_id) return false;
+      return await this._showAutoClockOutPrompt(pending);
+    } catch (err) {
+      console.warn('Failed to check auto clock-out status:', err);
+      return false;
+    }
+  },
+
+  _showAutoClockOutPrompt(pending) {
+    const checkIn = this._parseOdooDatetime(pending.check_in);
+    const autoOut = this._parseOdooDatetime(pending.check_out);
+    const dateLabel = checkIn ? checkIn.toLocaleDateString() : '';
+    const defaultTime = autoOut ? autoOut.toTimeString().slice(0, 5) : '17:00';
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Finish Time Needed</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>You forgot to clock off on ${dateLabel}. What time did your shift end?</p>
+            <div style="margin-top: var(--spacing-sm);">
+              <label for="autoClockOutTime" style="display:block; margin-bottom:6px;">End Time</label>
+              <input id="autoClockOutTime" type="time" class="form-input" value="${defaultTime}" />
+              <p style="margin-top:8px; font-size: 0.9em; color: var(--color-muted);">
+                We auto clocked you out at ${autoOut ? autoOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'end of day'}.
+              </p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="autoClockOutSkip">Skip</button>
+            <button class="btn btn-success" id="autoClockOutSave">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      const handleSave = async () => {
+        const input = document.getElementById('autoClockOutTime');
+        const timeVal = input ? input.value : '';
+        if (!timeVal || !checkIn) {
+          App.showToast('Please enter an end time.', 'error');
+          return;
+        }
+        const [hh, mm] = timeVal.split(':').map((n) => parseInt(n, 10));
+        const endLocal = new Date(
+          checkIn.getFullYear(),
+          checkIn.getMonth(),
+          checkIn.getDate(),
+          isNaN(hh) ? 0 : hh,
+          isNaN(mm) ? 0 : mm,
+          0
+        );
+        if (endLocal < checkIn) {
+          App.showToast('End time cannot be before check-in.', 'error');
+          return;
+        }
+        if (endLocal > new Date()) {
+          App.showToast('End time cannot be in the future.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('autoClockOutSave');
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Saving...';
+        }
+
+        const result = await OdooAPI.correctAutoClockOut(pending.attendance_id, endLocal.toISOString());
+        if (result && result.success) {
+          App.showToast('Shift end time updated', 'success');
+          close(true);
+        } else {
+          const errMsg = (result && result.error) || 'Failed to update shift end time';
+          App.showToast(errMsg, 'error');
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Save';
+          }
+        }
+      };
+
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close(false);
+      });
+      document.getElementById('autoClockOutSkip').addEventListener('click', () => close(false));
+      document.getElementById('autoClockOutSave').addEventListener('click', handleSave);
+    });
   },
 
   // ========== SYNC ==========
