@@ -97,6 +97,9 @@
         return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
       };
 
+      const isIpadOS = () =>
+        navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+
       const showInstall = () => {
         if (!installContainer || isStandalone()) return;
         installContainer.style.display = 'block';
@@ -108,9 +111,7 @@
         showInstall();
       });
 
-      if (isIOS()) {
-        showInstall();
-      }
+      showInstall();
 
       installBtn.addEventListener('click', async () => {
         if (!installHelp) return;
@@ -121,7 +122,11 @@
           deferredPrompt = null;
           return;
         }
-        installHelp.textContent = 'On iPhone: tap Share, then "Add to Home Screen".';
+        if (isIOS() || isIpadOS()) {
+          installHelp.textContent = 'On iPhone/iPad: tap Share, then "Add to Home Screen".';
+        } else {
+          installHelp.textContent = 'Use your browser menu and choose "Install app".';
+        }
         installHelp.style.display = 'block';
       });
 
