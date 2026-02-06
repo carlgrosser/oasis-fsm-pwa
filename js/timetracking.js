@@ -8,6 +8,7 @@ const TimeTracking = {
   _clockInTime: null,
   _lunchStartTime: null,
   _timerInterval: null,
+  _autoClockOutPromptActive: false,
 
   /**
    * Initialize time tracking state.
@@ -50,14 +51,12 @@ const TimeTracking = {
     }
 
     this._renderHeaderButton();
-    await this._maybePromptAutoClockOut();
   },
 
   /**
    * Clock in — capture GPS and create attendance.
    */
   async clockIn() {
-    await this._maybePromptAutoClockOut();
     const employeeId = Auth.getEmployeeId();
     if (!employeeId) {
       App.showToast('No employee profile linked. Contact admin.', 'error');
@@ -84,6 +83,7 @@ const TimeTracking = {
           await this._saveState();
           this._renderHeaderButton();
           App.showToast('Clocked on', 'success');
+          await this._maybePromptAutoClockOut();
           return true;
         } else {
           const errMsg = (result && result.error) || 'Clock on failed';
@@ -110,6 +110,7 @@ const TimeTracking = {
       await this._saveState();
       this._renderHeaderButton();
       App.showToast('Clocked on (will sync when online)', 'info');
+      await this._maybePromptAutoClockOut();
       return true;
     }
   },
@@ -140,6 +141,7 @@ const TimeTracking = {
           await this._saveState();
           this._renderHeaderButton();
           App.showToast('Clocked off', 'success');
+          await this._maybePromptAutoClockOut();
           return true;
         } else {
           const errMsg = (result && result.error) || 'Clock off failed';
@@ -159,6 +161,7 @@ const TimeTracking = {
       await this._saveState();
       this._renderHeaderButton();
       App.showToast('Clocked off', 'success');
+      await this._maybePromptAutoClockOut();
       return true;
     } else {
       // Queue for sync
@@ -180,6 +183,7 @@ const TimeTracking = {
       await this._saveState();
       this._renderHeaderButton();
       App.showToast('Clocked off (will sync when online)', 'info');
+      await this._maybePromptAutoClockOut();
       return true;
     }
     return false;
@@ -471,7 +475,7 @@ const TimeTracking = {
   async _maybePromptAutoClockOut() {
     if (!navigator.onLine) return false;
     if (!Auth.getEmployeeId()) return false;
-    if (this._status !== 'out') return false;
+    if (this._autoClockOutPromptActive) return false;
 
     try {
       const pending = await OdooAPI.getPendingAutoClockOut(Auth.getEmployeeId());
@@ -489,6 +493,7 @@ const TimeTracking = {
     const dateLabel = checkIn ? checkIn.toLocaleDateString() : '';
     const defaultTime = autoOut ? autoOut.toTimeString().slice(0, 5) : '17:00';
 
+    this._autoClockOutPromptActive = true;
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -517,6 +522,7 @@ const TimeTracking = {
       document.body.appendChild(overlay);
 
       const close = (result) => {
+        this._autoClockOutPromptActive = false;
         overlay.remove();
         resolve(result);
       };
