@@ -100,10 +100,24 @@ const Auth = {
 
       return { success: true, user: sessionData };
     } catch (err) {
-      let message = 'Connection failed. Check your internet and try again.';
-      if (err.message.includes('Authentication failed') || err.message.includes('Invalid')) {
+      const rawMsg = (err && err.message) ? err.message : '';
+      // TODO(PWA-AUTH-LEAK-001): Remove detailed server errors and revert to generic codes/messages.
+      const sanitizeError = (msg) => {
+        if (!msg) return '';
+        // Collapse whitespace and remove obvious stack-ish separators to reduce sensitive leakage.
+        const cleaned = msg
+          .replace(/[\r\n\t]+/g, ' ')
+          .replace(/\s{2,}/g, ' ')
+          .replace(/\bTraceback\b.*$/i, ''); // trim python traceback tail if present
+        // Cap length to avoid dumping internal details.
+        return cleaned.trim().slice(0, 160);
+      };
+
+      const errMsg = sanitizeError(rawMsg);
+      let message = errMsg ? `Server error: ${errMsg}` : 'Connection failed. Check your internet and try again.';
+      if (rawMsg.includes('Authentication failed') || rawMsg.includes('Invalid')) {
         message = 'Invalid username or password';
-      } else if (err.message.includes('fetch') || err.message.includes('network')) {
+      } else if (rawMsg.includes('fetch') || rawMsg.includes('network')) {
         message = 'Cannot connect to server. Check your internet connection.';
       }
       return { success: false, error: message };
