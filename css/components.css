@@ -1069,16 +1069,25 @@ textarea.form-input {
   .materials-stepper {
     width: 100%;
     justify-content: flex-end;
+    margin-left: auto;
+    max-width: 100%;
   }
   .materials-btn {
-    width: 36px;
-    height: 36px;
-    font-size: 18px;
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
   }
   .materials-qty {
-    width: 48px;
-    height: 36px;
+    width: 44px;
+    height: 34px;
     font-size: var(--font-size-small);
+  }
+  .materials-unit {
+    min-width: 0;
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
