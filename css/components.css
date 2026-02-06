@@ -994,16 +994,21 @@ textarea.form-input {
 }
 
 .materials-label {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: var(--font-size-base);
   font-weight: 500;
   color: var(--text-primary);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .materials-stepper {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
+  flex: 0 0 auto;
 }
 
 .materials-btn {
@@ -1050,6 +1055,22 @@ textarea.form-input {
   font-size: var(--font-size-small);
   color: var(--text-secondary);
   min-width: 36px;
+}
+
+@media (max-width: 420px) {
+  .materials-label {
+    font-size: var(--font-size-small);
+  }
+  .materials-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+  .materials-qty {
+    width: 48px;
+    height: 36px;
+    font-size: var(--font-size-small);
+  }
 }
 
 .materials-save {
