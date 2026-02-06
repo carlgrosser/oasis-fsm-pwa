@@ -1064,23 +1064,23 @@ textarea.form-input {
     gap: var(--spacing-xs);
   }
   .materials-label {
-    font-size: var(--font-size-small);
+    font-size: var(--font-size-base);
   }
   .materials-stepper {
     width: 100%;
-    justify-content: flex-end;
-    margin-left: auto;
+    justify-content: flex-start;
+    margin-left: 0;
     max-width: 100%;
   }
   .materials-btn {
-    width: 34px;
-    height: 34px;
-    font-size: 17px;
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
   }
   .materials-qty {
-    width: 44px;
-    height: 34px;
-    font-size: var(--font-size-small);
+    width: 52px;
+    height: 36px;
+    font-size: var(--font-size-base);
   }
   .materials-unit {
     min-width: 0;
@@ -1088,6 +1088,7 @@ textarea.form-input {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--font-size-small);
   }
 }
 
