@@ -978,6 +978,8 @@ textarea.form-input {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .materials-row {
@@ -988,6 +990,9 @@ textarea.form-input {
   padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--border-color);
   flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .materials-row:last-of-type {
@@ -1010,6 +1015,9 @@ textarea.form-input {
   align-items: center;
   gap: var(--spacing-xs);
   flex: 0 0 auto;
+  max-width: 100%;
+  flex-wrap: wrap;
+  box-sizing: border-box;
 }
 
 .materials-btn {
@@ -1027,6 +1035,7 @@ textarea.form-input {
   justify-content: center;
   -webkit-appearance: none;
   touch-action: manipulation;
+  box-sizing: border-box;
 }
 
 .materials-btn:active {
@@ -1044,6 +1053,7 @@ textarea.form-input {
   background: #fff;
   color: var(--text-primary);
   -moz-appearance: textfield;
+  box-sizing: border-box;
 }
 
 .materials-qty::-webkit-outer-spin-button,
@@ -1056,17 +1066,23 @@ textarea.form-input {
   font-size: var(--font-size-small);
   color: var(--text-secondary);
   min-width: 36px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .materials-save {
   margin-top: var(--spacing-sm);
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 420px) {
   .materials-row {
     align-items: flex-start;
     gap: var(--spacing-xs);
+    display: grid;
+    grid-template-columns: 1fr;
   }
   .materials-label {
     font-size: var(--font-size-base);
