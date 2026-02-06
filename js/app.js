@@ -36,6 +36,11 @@ const App = {
       await TimeTracking.init();
     }
 
+    // Init themes
+    if (typeof Themes !== 'undefined') {
+      Themes.init();
+    }
+
     // Bind UI events
     this._bindEvents();
 
@@ -80,6 +85,14 @@ const App = {
     ['clearCacheBtnList', 'clearCacheBtnDetail'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.addEventListener('click', () => this._clearCache());
+    });
+
+    // Theme buttons
+    ['themeBtnList', 'themeBtnDetail'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', () => {
+        if (typeof Themes !== 'undefined') Themes.showPicker();
+      });
     });
 
     // Clock button
