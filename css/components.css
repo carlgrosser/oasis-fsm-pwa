@@ -1058,6 +1058,11 @@ textarea.form-input {
   min-width: 36px;
 }
 
+.materials-save {
+  margin-top: var(--spacing-sm);
+  width: 100%;
+}
+
 @media (max-width: 420px) {
   .materials-row {
     align-items: flex-start;
@@ -1070,6 +1075,7 @@ textarea.form-input {
     width: 100%;
     justify-content: flex-start;
     margin-left: 0;
+    margin-top: 4px;
     max-width: 100%;
   }
   .materials-btn {
@@ -1090,10 +1096,6 @@ textarea.form-input {
     white-space: nowrap;
     font-size: var(--font-size-small);
   }
-}
-
-.materials-save {
-  margin-top: var(--spacing-sm);
 }
 
 /* ========== DETAIL TABS (Swipeable) ========== */
