@@ -63,42 +63,58 @@ const App = {
   _indexViews: ['today', 'week', 'history'],
 
   _bindEvents() {
+    const bindMenuAction = (id, handler) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      let lastTouch = 0;
+      const invoke = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        handler();
+      };
+      btn.addEventListener('touchstart', (e) => {
+        lastTouch = Date.now();
+        invoke(e);
+      }, { passive: false });
+      btn.addEventListener('click', (e) => {
+        if (Date.now() - lastTouch < 500) return;
+        invoke(e);
+      });
+    };
+
     // Bind both menu buttons (list and detail)
     this._bindMenuButton('menuBtnList', 'menuDropdownList');
     this._bindMenuButton('menuBtnDetail', 'menuDropdownDetail');
 
     // Sync buttons
     ['syncBtnList', 'syncBtnDetail'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.addEventListener('click', () => Sync.manualSync());
+      bindMenuAction(id, () => Sync.manualSync());
     });
 
     // Logout buttons
     ['logoutBtnList', 'logoutBtnDetail'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.addEventListener('click', () => {
+      bindMenuAction(id, () => {
         if (confirm('Log out?')) Auth.logout();
       });
     });
 
     // Clear cache buttons
     ['clearCacheBtnList', 'clearCacheBtnDetail'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.addEventListener('click', () => this._clearCache());
+      bindMenuAction(id, () => this._clearCache());
     });
 
     // Theme buttons
     ['themeBtnList', 'themeBtnDetail'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.addEventListener('click', () => {
+      bindMenuAction(id, () => {
         if (typeof Themes !== 'undefined') Themes.showPicker();
       });
     });
 
     // Fix last shift buttons
     ['fixShiftBtnList', 'fixShiftBtnDetail'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.addEventListener('click', () => {
+      bindMenuAction(id, () => {
         if (typeof TimeTracking !== 'undefined') TimeTracking.manualAdjustShift();
       });
     });
