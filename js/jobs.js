@@ -1435,8 +1435,16 @@ const Jobs = {
   },
 
   _isCompletedJob(job) {
+    // Primary: stage map (if loaded)
     const stage = this.getStage(job.stage_id);
     if (stage && stage.is_closed === true) return true;
+    // Fallback: stage name from record payload
+    const nameFromJob = job.stage_name || (Array.isArray(job.stage_id) ? job.stage_id[1] : '');
+    if (nameFromJob) {
+      return this.getStatusClass(nameFromJob) === 'complete';
+    }
+    // Last fallback: job has a completion timestamp
+    if (job.date_end) return true;
     const stageName = this.getStageName(job.stage_id);
     return this.getStatusClass(stageName) === 'complete';
   },
