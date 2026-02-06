@@ -487,6 +487,31 @@ const TimeTracking = {
     }
   },
 
+  async manualAdjustShift() {
+    if (!navigator.onLine) {
+      App.showToast('Go online to update shift time.', 'error');
+      return false;
+    }
+    const employeeId = Auth.getEmployeeId();
+    if (!employeeId) {
+      App.showToast('No employee profile linked. Contact admin.', 'error');
+      return false;
+    }
+    if (this._autoClockOutPromptActive) return false;
+
+    try {
+      const pending = await OdooAPI.getLastShiftForAdjustment(employeeId);
+      if (!pending || !pending.attendance_id) {
+        App.showToast('No shift found to update for today.', 'info');
+        return false;
+      }
+      return await this._showManualShiftAdjustPrompt(pending);
+    } catch (err) {
+      App.showToast('Unable to load shift for update.', 'error');
+      return false;
+    }
+  },
+
   _showAutoClockOutPrompt(pending) {
     const checkIn = this._parseOdooDatetime(pending.check_in);
     const autoOut = this._parseOdooDatetime(pending.check_out);
@@ -562,6 +587,7 @@ const TimeTracking = {
         if (result && result.success) {
           App.showToast('Shift end time updated', 'success');
           close(true);
+          setTimeout(() => this._maybePromptAutoClockOut(), 0);
         } else {
           const errMsg = (result && result.error) || 'Failed to update shift end time';
           App.showToast(errMsg, 'error');
@@ -578,6 +604,108 @@ const TimeTracking = {
       });
       document.getElementById('autoClockOutSkip').addEventListener('click', () => close(false));
       document.getElementById('autoClockOutSave').addEventListener('click', handleSave);
+    });
+  },
+
+  _showManualShiftAdjustPrompt(pending) {
+    const checkIn = this._parseOdooDatetime(pending.check_in);
+    const checkOut = this._parseOdooDatetime(pending.check_out);
+    const dateLabel = checkIn ? checkIn.toLocaleDateString() : '';
+    const defaultTime = checkOut
+      ? checkOut.toTimeString().slice(0, 5)
+      : new Date().toTimeString().slice(0, 5);
+
+    this._autoClockOutPromptActive = true;
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Update Shift End</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>Update your shift end time for ${dateLabel}.</p>
+            <div style="margin-top: var(--spacing-sm);">
+              <label for="manualShiftEndTime" style="display:block; margin-bottom:6px;">End Time</label>
+              <input id="manualShiftEndTime" type="time" class="form-input" value="${defaultTime}" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="manualShiftCancel">Cancel</button>
+            <button class="btn btn-success" id="manualShiftSave">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (result) => {
+        this._autoClockOutPromptActive = false;
+        overlay.remove();
+        resolve(result);
+      };
+
+      const handleSave = async () => {
+        const input = document.getElementById('manualShiftEndTime');
+        const timeVal = input ? input.value : '';
+        if (!timeVal || !checkIn) {
+          App.showToast('Please enter an end time.', 'error');
+          return;
+        }
+        const [hh, mm] = timeVal.split(':').map((n) => parseInt(n, 10));
+        const endLocal = new Date(
+          checkIn.getFullYear(),
+          checkIn.getMonth(),
+          checkIn.getDate(),
+          isNaN(hh) ? 0 : hh,
+          isNaN(mm) ? 0 : mm,
+          0
+        );
+        if (endLocal < checkIn) {
+          App.showToast('End time cannot be before check-in.', 'error');
+          return;
+        }
+        if (endLocal > new Date()) {
+          App.showToast('End time cannot be in the future.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('manualShiftSave');
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Saving...';
+        }
+
+        const result = await OdooAPI.adjustShiftEnd(pending.attendance_id, endLocal.toISOString());
+        if (result && result.success) {
+          App.showToast('Shift end time updated', 'success');
+          if (this._attendanceId && this._attendanceId === pending.attendance_id) {
+            this._stopLunchTimer();
+            this._status = 'out';
+            this._attendanceId = null;
+            this._clockInTime = null;
+            this._lunchStartTime = null;
+            await this._saveState();
+            this._renderHeaderButton();
+          }
+          close(true);
+        } else {
+          const errMsg = (result && result.error) || 'Failed to update shift end time';
+          App.showToast(errMsg, 'error');
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Save';
+          }
+        }
+      };
+
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close(false);
+      });
+      document.getElementById('manualShiftCancel').addEventListener('click', () => close(false));
+      document.getElementById('manualShiftSave').addEventListener('click', handleSave);
     });
   },
 

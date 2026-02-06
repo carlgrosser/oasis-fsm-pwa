@@ -390,6 +390,13 @@ const OdooAPI = {
   },
 
   /**
+   * Get today's latest attendance for manual adjustment.
+   */
+  async getLastShiftForAdjustment(employeeId) {
+    return this.callKw('hr.attendance', 'mobile_get_last_shift_for_adjustment', [employeeId], {});
+  },
+
+  /**
    * Clock in — create attendance record with GPS.
    */
   async clockIn(employeeId, gpsCoords, gpsAccuracy) {
@@ -422,5 +429,12 @@ const OdooAPI = {
    */
   async correctAutoClockOut(attendanceId, endTimeIso) {
     return this.callKw('hr.attendance', 'mobile_correct_auto_clock_out', [attendanceId, endTimeIso], {});
+  },
+
+  /**
+   * Manually set or adjust shift end time.
+   */
+  async adjustShiftEnd(attendanceId, endTimeIso) {
+    return this.callKw('hr.attendance', 'mobile_adjust_shift_end', [attendanceId, endTimeIso], {});
   },
 };

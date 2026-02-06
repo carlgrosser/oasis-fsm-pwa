@@ -95,6 +95,14 @@ const App = {
       });
     });
 
+    // Fix last shift buttons
+    ['fixShiftBtnList', 'fixShiftBtnDetail'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', () => {
+        if (typeof TimeTracking !== 'undefined') TimeTracking.manualAdjustShift();
+      });
+    });
+
     // Clock button
     const clockBtn = document.getElementById('clockBtn');
     if (clockBtn) {
