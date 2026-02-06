@@ -50,6 +50,11 @@
           Connecting to server...
         </p>
       </div>
+
+      <div id="installContainer" class="install-container" style="display:none;">
+        <button type="button" id="installBtn" class="install-link">Install this app</button>
+        <div id="installHelp" class="install-help" style="display:none;"></div>
+      </div>
     </div>
 
     <p style="margin-top:var(--spacing-lg); font-size:var(--font-size-xs); color:var(--text-muted);">
@@ -78,6 +83,47 @@
       const errorEl = document.getElementById('loginError');
       const statusEl = document.getElementById('loginStatus');
       const loginBtn = document.getElementById('loginBtn');
+      const installContainer = document.getElementById('installContainer');
+      const installBtn = document.getElementById('installBtn');
+      const installHelp = document.getElementById('installHelp');
+      let deferredPrompt = null;
+
+      const isStandalone = () =>
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+
+      const isIOS = () => {
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+        return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      };
+
+      const showInstall = () => {
+        if (!installContainer || isStandalone()) return;
+        installContainer.style.display = 'block';
+      };
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        showInstall();
+      });
+
+      if (isIOS()) {
+        showInstall();
+      }
+
+      installBtn.addEventListener('click', async () => {
+        if (!installHelp) return;
+        installHelp.style.display = 'none';
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          return;
+        }
+        installHelp.textContent = 'On iPhone: tap Share, then "Add to Home Screen".';
+        installHelp.style.display = 'block';
+      });
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

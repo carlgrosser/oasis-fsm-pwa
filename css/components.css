@@ -136,6 +136,29 @@ textarea.form-input {
   margin-bottom: 0;
 }
 
+/* ========== INSTALL LINK ========== */
+.install-container {
+  margin-top: var(--spacing-md);
+  text-align: center;
+}
+
+.install-link {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.install-help {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
 /* ========== JOB CARD ========== */
 .job-card {
   background: var(--card-background);
