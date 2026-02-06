@@ -261,8 +261,9 @@ const Jobs = {
     const card = document.createElement('div');
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
+    const isHistoryComplete = this._currentView === 'history' && statusClass === 'complete';
 
-    card.className = `job-card status-${statusClass}`;
+    card.className = `job-card status-${statusClass}${isHistoryComplete ? ' compact' : ''}`;
     card.dataset.jobId = job.id;
 
     // Location name from location_id [id, name]
@@ -275,7 +276,9 @@ const Jobs = {
     const address = addressParts.join(', ') || locationName;
 
     // Format time — context-aware per view
-    const timeStr = this._formatCardTime(job.scheduled_date_start);
+    const timeStr = isHistoryComplete
+      ? this._formatHistoryDate(job)
+      : this._formatCardTime(job.scheduled_date_start);
 
     // Multi-worker indicator
     const crewCount = job.person_ids ? job.person_ids.length : 1;
@@ -325,23 +328,38 @@ const Jobs = {
       notesHtml += `<div class="job-card-field"><span class="job-card-field-label">Notes:</span> ${this._escapeHtml(truncDesc)}</div>`;
     }
 
-    card.innerHTML = `
-      ${overdueHtml}
-      <div class="job-card-header">
-        <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
-        <span class="job-card-time">${timeStr}</span>
-      </div>
-      <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
-      ${cardContactHtml}
-      ${notesHtml ? `<div class="job-card-divider"></div>${notesHtml}<div class="job-card-divider"></div>` : ''}
-      <div class="job-card-footer">
-        <span class="job-card-id">${this._escapeHtml(job.name || '')}</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-          ${crewHtml}
-          <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
+    if (isHistoryComplete) {
+      const completedIcon = '<span class="status-icon complete" title="Completed">✓</span>';
+      card.innerHTML = `
+        <div class="job-card-header compact">
+          <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
+          <span class="job-card-meta">
+            <span class="job-card-time">${timeStr}</span>
+            <span class="job-card-id-inline">${this._escapeHtml(job.name || '')}</span>
+            ${completedIcon}
+          </span>
         </div>
-      </div>
-    `;
+        <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
+      `;
+    } else {
+      card.innerHTML = `
+        ${overdueHtml}
+        <div class="job-card-header">
+          <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
+          <span class="job-card-time">${timeStr}</span>
+        </div>
+        <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
+        ${cardContactHtml}
+        ${notesHtml ? `<div class="job-card-divider"></div>${notesHtml}<div class="job-card-divider"></div>` : ''}
+        <div class="job-card-footer">
+          <span class="job-card-id">${this._escapeHtml(job.name || '')}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${crewHtml}
+            <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
+          </div>
+        </div>
+      `;
+    }
 
     card.addEventListener('click', () => {
       App.showJobDetail(job.id);
@@ -1404,6 +1422,17 @@ const Jobs = {
       return d.toLocaleDateString([], this._tzOptions({ month: 'short', day: 'numeric' }));
     }
     return time;
+  },
+
+  _formatHistoryDate(job) {
+    const raw = job.date_end || job.scheduled_date_start;
+    const d = this._parseOdooDatetime(raw);
+    if (!d) return '';
+    const now = new Date();
+    const opts = d.getFullYear() === now.getFullYear()
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' };
+    return d.toLocaleDateString([], this._tzOptions(opts));
   },
 
   _formatDateTime(dateStr) {

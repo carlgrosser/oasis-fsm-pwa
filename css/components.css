@@ -148,6 +148,18 @@ textarea.form-input {
   touch-action: manipulation;
 }
 
+.job-card.compact {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.job-card.compact .job-card-header {
+  margin-bottom: 2px;
+}
+
+.job-card.compact .job-card-address {
+  margin-bottom: 4px;
+}
+
 .job-card:active {
   box-shadow: var(--shadow-md);
 }
@@ -165,11 +177,32 @@ textarea.form-input {
   margin-bottom: var(--spacing-xs);
 }
 
+.job-card-header.compact {
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 .job-card-customer {
   font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
+}
+
+.job-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.job-card-meta .job-card-time {
+  margin-left: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .job-card-time {
@@ -223,9 +256,37 @@ textarea.form-input {
   align-items: center;
 }
 
+.job-card-footer.compact {
+  justify-content: flex-start;
+  gap: var(--spacing-sm);
+}
+
 .job-card-id {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
+}
+
+.job-card-id-inline {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.status-icon.complete {
+  background: rgba(39, 174, 96, 0.15);
+  color: var(--status-complete);
+  border: 1px solid rgba(39, 174, 96, 0.35);
 }
 
 /* ========== STATUS BADGE ========== */
