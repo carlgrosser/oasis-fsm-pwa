@@ -61,6 +61,7 @@ const Sync = {
       await this._syncJournal();
       await this._syncMaterials();
       await this._syncTimeEntries();
+      await this._syncOfficeNotes();
       await this._updatePendingCount();
       App.showToast('Sync complete', 'success');
     } catch (err) {
@@ -148,6 +149,18 @@ const Sync = {
   },
 
   /**
+   * Sync queued office notes.
+   */
+  async _syncOfficeNotes() {
+    if (typeof TimeTracking !== 'undefined') {
+      const result = await TimeTracking.syncOfficeNotes();
+      if (result.synced > 0) {
+        console.log(`Synced ${result.synced} office notes, ${result.failed} failed`);
+      }
+    }
+  },
+
+  /**
    * Count pending sync items.
    */
   async _updatePendingCount() {
@@ -165,7 +178,12 @@ const Sync = {
         const materialsItems = await DB.getUnsyncedItems('materialsQueue');
         materialsCount = materialsItems.length;
       } catch { /* store may not exist yet */ }
-      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount;
+      let officeNotesCount = 0;
+      try {
+        const officeNotes = await DB.getUnsyncedItems('officeNotes');
+        officeNotesCount = officeNotes.length;
+      } catch { /* store may not exist yet */ }
+      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount;
     } catch {
       this._pendingCount = 0;
     }

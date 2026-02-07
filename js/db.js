@@ -73,6 +73,12 @@ const DB = {
           mqStore.createIndex('job_id', 'job_id', { unique: false });
           mqStore.createIndex('synced', 'synced', { unique: false });
         }
+
+        // Office notes queue (offline notes to office)
+        if (!db.objectStoreNames.contains('officeNotes')) {
+          const onStore = db.createObjectStore('officeNotes', { keyPath: 'temp_id' });
+          onStore.createIndex('synced', 'synced', { unique: false });
+        }
       };
 
       request.onsuccess = (event) => {

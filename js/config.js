@@ -37,7 +37,7 @@ const CONFIG = {
 
   // INDEXEDDB
   DB_NAME: 'fsm_pwa',
-  DB_VERSION: 3,
+  DB_VERSION: 4,
 
   // MULTI-COMPANY: list all company IDs this user should see orders from
   ALLOWED_COMPANY_IDS: [1, 2],  // 1=Oasis Pool Tile Cleaning, 2=Oasis Holiday Lighting

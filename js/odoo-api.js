@@ -437,4 +437,25 @@ const OdooAPI = {
   async adjustShiftEnd(attendanceId, endTimeIso) {
     return this.callKw('hr.attendance', 'mobile_adjust_shift_end', [attendanceId, endTimeIso], {});
   },
+
+  /**
+   * Adjust shift start (clock-on) time.
+   */
+  async adjustShiftStart(attendanceId, startTimeIso) {
+    return this.callKw('hr.attendance', 'mobile_adjust_shift_start', [attendanceId, startTimeIso], {});
+  },
+
+  /**
+   * Adjust lunch return (lunch end) time.
+   */
+  async adjustLunchEnd(attendanceId, lunchEndIso) {
+    return this.callKw('hr.attendance', 'mobile_adjust_lunch_end', [attendanceId, lunchEndIso], {});
+  },
+
+  /**
+   * Send a note to the office Discuss channel.
+   */
+  async sendOfficeNote(employeeId, body) {
+    return this.callKw('hr.attendance', 'mobile_send_office_note', [employeeId, body], {});
+  },
 };

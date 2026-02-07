@@ -112,10 +112,17 @@ const App = {
       });
     });
 
-    // Fix last shift buttons
+    // Adjust shift buttons
     ['fixShiftBtnList', 'fixShiftBtnDetail'].forEach(id => {
       bindMenuAction(id, () => {
         if (typeof TimeTracking !== 'undefined') TimeTracking.manualAdjustShift();
+      });
+    });
+
+    // Note to Office buttons
+    ['noteBtnList', 'noteBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => {
+        if (typeof TimeTracking !== 'undefined') TimeTracking.sendOfficeNote();
       });
     });
 

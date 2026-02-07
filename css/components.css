@@ -1402,3 +1402,64 @@ textarea.form-input {
   font-weight: 700;
   color: var(--primary-color);
 }
+
+/* ========== SHIFT ADJUSTMENT OPTIONS ========== */
+.shift-adjust-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.shift-adjust-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  width: 100%;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--card-background);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-family);
+  transition: border-color 0.2s, background 0.15s;
+  touch-action: manipulation;
+  min-height: 60px;
+}
+
+.shift-adjust-option:active {
+  background: var(--background);
+  border-color: var(--primary-color);
+}
+
+.shift-adjust-option.disabled,
+.shift-adjust-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.shift-adjust-option:disabled:active {
+  background: var(--card-background);
+  border-color: var(--border-color);
+}
+
+.shift-adjust-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.shift-adjust-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shift-adjust-text strong {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.shift-adjust-text span {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}

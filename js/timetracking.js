@@ -318,8 +318,10 @@ const TimeTracking = {
       };
 
       overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) close(false);
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
       });
       document.getElementById('clockGateNo').addEventListener('click', () => close(false));
       document.getElementById('clockGateYes').addEventListener('click', async () => {
@@ -357,8 +359,10 @@ const TimeTracking = {
     const close = () => overlay.remove();
 
     overlay.querySelector('.modal-close').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
+    requestAnimationFrame(() => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+      });
     });
 
     document.getElementById('clockLunchBtn').addEventListener('click', async () => {
@@ -505,7 +509,7 @@ const TimeTracking = {
         App.showToast('No shift found to update for today.', 'info');
         return false;
       }
-      return await this._showManualShiftAdjustPrompt(pending);
+      return await this._showShiftAdjustOptions(pending);
     } catch (err) {
       App.showToast('Unable to load shift for update.', 'error');
       return false;
@@ -599,21 +603,21 @@ const TimeTracking = {
       };
 
       overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) close(false);
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
       });
       document.getElementById('autoClockOutSkip').addEventListener('click', () => close(false));
       document.getElementById('autoClockOutSave').addEventListener('click', handleSave);
     });
   },
 
-  _showManualShiftAdjustPrompt(pending) {
+  _showShiftAdjustOptions(pending) {
     const checkIn = this._parseOdooDatetime(pending.check_in);
-    const checkOut = this._parseOdooDatetime(pending.check_out);
-    const dateLabel = checkIn ? checkIn.toLocaleDateString() : '';
-    const defaultTime = checkOut
-      ? checkOut.toTimeString().slice(0, 5)
-      : new Date().toTimeString().slice(0, 5);
+    const lunchStart = pending.lunch_start ? this._parseOdooDatetime(pending.lunch_start) : null;
+    const dateLabel = checkIn ? checkIn.toLocaleDateString() : 'today';
+    const hasLunch = !!lunchStart;
 
     this._autoClockOutPromptActive = true;
     return new Promise((resolve) => {
@@ -622,19 +626,39 @@ const TimeTracking = {
       overlay.innerHTML = `
         <div class="modal">
           <div class="modal-header">
-            <h3>Update Shift End</h3>
+            <h3>Adjust Shift</h3>
             <button class="modal-close">&times;</button>
           </div>
           <div class="modal-body">
-            <p>Update your shift end time for ${dateLabel}.</p>
-            <div style="margin-top: var(--spacing-sm);">
-              <label for="manualShiftEndTime" style="display:block; margin-bottom:6px;">End Time</label>
-              <input id="manualShiftEndTime" type="time" class="form-input" value="${defaultTime}" />
+            <p style="margin-bottom:var(--spacing-sm);color:var(--text-secondary);">
+              Shift on ${dateLabel}
+            </p>
+            <div class="shift-adjust-options">
+              <button class="shift-adjust-option" id="adjustClockOn">
+                <span class="shift-adjust-icon">&#128348;</span>
+                <div class="shift-adjust-text">
+                  <strong>Adjust Clock On</strong>
+                  <span>Change when your shift started</span>
+                </div>
+              </button>
+              <button class="shift-adjust-option${hasLunch ? '' : ' disabled'}" id="adjustLunchReturn" ${hasLunch ? '' : 'disabled'}>
+                <span class="shift-adjust-icon">&#127869;</span>
+                <div class="shift-adjust-text">
+                  <strong>Adjust Lunch Return</strong>
+                  <span>${hasLunch ? 'Change when you returned from lunch' : 'No lunch break taken'}</span>
+                </div>
+              </button>
+              <button class="shift-adjust-option" id="adjustClockOff">
+                <span class="shift-adjust-icon">&#128348;</span>
+                <div class="shift-adjust-text">
+                  <strong>Adjust Clock Off</strong>
+                  <span>Change when your shift ended</span>
+                </div>
+              </button>
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" id="manualShiftCancel">Cancel</button>
-            <button class="btn btn-success" id="manualShiftSave">Save</button>
+            <button class="btn btn-secondary" id="adjustShiftCancel">Cancel</button>
           </div>
         </div>
       `;
@@ -646,21 +670,264 @@ const TimeTracking = {
         resolve(result);
       };
 
-      const handleSave = async () => {
-        const input = document.getElementById('manualShiftEndTime');
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
+      });
+      document.getElementById('adjustShiftCancel').addEventListener('click', () => close(false));
+
+      document.getElementById('adjustClockOn').addEventListener('click', () => {
+        close(false);
+        this._showAdjustClockOnPrompt(pending);
+      });
+
+      if (hasLunch) {
+        document.getElementById('adjustLunchReturn').addEventListener('click', () => {
+          close(false);
+          this._showAdjustLunchReturnPrompt(pending);
+        });
+      }
+
+      document.getElementById('adjustClockOff').addEventListener('click', () => {
+        close(false);
+        this._showAdjustClockOffPrompt(pending);
+      });
+    });
+  },
+
+  _showAdjustClockOnPrompt(pending) {
+    const checkIn = this._parseOdooDatetime(pending.check_in);
+    const defaultTime = checkIn ? checkIn.toTimeString().slice(0, 5) : '07:00';
+
+    this._autoClockOutPromptActive = true;
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Adjust Clock On</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>What time did you actually start?</p>
+            <div style="margin-top:var(--spacing-sm);">
+              <label for="adjustClockOnTime" style="display:block;margin-bottom:6px;">Start Time</label>
+              <input id="adjustClockOnTime" type="time" class="form-input" value="${defaultTime}" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="adjustClockOnCancel">Cancel</button>
+            <button class="btn btn-success" id="adjustClockOnSave">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (result) => {
+        this._autoClockOutPromptActive = false;
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
+      });
+      document.getElementById('adjustClockOnCancel').addEventListener('click', () => close(false));
+      document.getElementById('adjustClockOnSave').addEventListener('click', async () => {
+        const input = document.getElementById('adjustClockOnTime');
+        const timeVal = input ? input.value : '';
+        if (!timeVal || !checkIn) {
+          App.showToast('Please enter a start time.', 'error');
+          return;
+        }
+        const [hh, mm] = timeVal.split(':').map(n => parseInt(n, 10));
+        const startLocal = new Date(
+          checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate(),
+          isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0
+        );
+        if (startLocal > new Date()) {
+          App.showToast('Start time cannot be in the future.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('adjustClockOnSave');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+        try {
+          const result = await OdooAPI.adjustShiftStart(pending.attendance_id, startLocal.toISOString());
+          if (result && result.success) {
+            App.showToast('Clock on time updated', 'success');
+            close(true);
+          } else {
+            const errMsg = (result && result.error) || 'Failed to update clock on time';
+            App.showToast(errMsg, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+          }
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        }
+      });
+    });
+  },
+
+  _showAdjustLunchReturnPrompt(pending) {
+    const lunchStart = this._parseOdooDatetime(pending.lunch_start);
+    const lunchEnd = pending.lunch_end ? this._parseOdooDatetime(pending.lunch_end) : null;
+    const defaultTime = lunchEnd
+      ? lunchEnd.toTimeString().slice(0, 5)
+      : new Date().toTimeString().slice(0, 5);
+
+    this._autoClockOutPromptActive = true;
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Adjust Lunch Return</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>What time did you return from lunch?</p>
+            <div style="margin-top:var(--spacing-sm);">
+              <label for="adjustLunchEndTime" style="display:block;margin-bottom:6px;">Return Time</label>
+              <input id="adjustLunchEndTime" type="time" class="form-input" value="${defaultTime}" />
+              ${lunchStart ? `<p style="margin-top:8px;font-size:0.9em;color:var(--text-muted);">Lunch started at ${lunchStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>` : ''}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="adjustLunchCancel">Cancel</button>
+            <button class="btn btn-success" id="adjustLunchSave">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (result) => {
+        this._autoClockOutPromptActive = false;
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
+      });
+      document.getElementById('adjustLunchCancel').addEventListener('click', () => close(false));
+      document.getElementById('adjustLunchSave').addEventListener('click', async () => {
+        const input = document.getElementById('adjustLunchEndTime');
+        const timeVal = input ? input.value : '';
+        if (!timeVal || !lunchStart) {
+          App.showToast('Please enter a return time.', 'error');
+          return;
+        }
+        const [hh, mm] = timeVal.split(':').map(n => parseInt(n, 10));
+        const endLocal = new Date(
+          lunchStart.getFullYear(), lunchStart.getMonth(), lunchStart.getDate(),
+          isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0
+        );
+        if (endLocal <= lunchStart) {
+          App.showToast('Return time must be after lunch start.', 'error');
+          return;
+        }
+        if (endLocal > new Date()) {
+          App.showToast('Return time cannot be in the future.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('adjustLunchSave');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+        try {
+          const result = await OdooAPI.adjustLunchEnd(pending.attendance_id, endLocal.toISOString());
+          if (result && result.success) {
+            App.showToast('Lunch return time updated', 'success');
+            if (this._attendanceId === pending.attendance_id && this._status === 'break') {
+              this._status = 'in';
+              this._stopLunchTimer();
+              this._lunchStartTime = null;
+              await this._saveState();
+              this._renderHeaderButton();
+            }
+            close(true);
+          } else {
+            const errMsg = (result && result.error) || 'Failed to update lunch return time';
+            App.showToast(errMsg, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+          }
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        }
+      });
+    });
+  },
+
+  _showAdjustClockOffPrompt(pending) {
+    const checkIn = this._parseOdooDatetime(pending.check_in);
+    const checkOut = this._parseOdooDatetime(pending.check_out);
+    const defaultTime = checkOut
+      ? checkOut.toTimeString().slice(0, 5)
+      : new Date().toTimeString().slice(0, 5);
+
+    this._autoClockOutPromptActive = true;
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Adjust Clock Off</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>What time did your shift end?</p>
+            <div style="margin-top:var(--spacing-sm);">
+              <label for="adjustClockOffTime" style="display:block;margin-bottom:6px;">End Time</label>
+              <input id="adjustClockOffTime" type="time" class="form-input" value="${defaultTime}" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="adjustClockOffCancel">Cancel</button>
+            <button class="btn btn-success" id="adjustClockOffSave">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (result) => {
+        this._autoClockOutPromptActive = false;
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
+      });
+      document.getElementById('adjustClockOffCancel').addEventListener('click', () => close(false));
+      document.getElementById('adjustClockOffSave').addEventListener('click', async () => {
+        const input = document.getElementById('adjustClockOffTime');
         const timeVal = input ? input.value : '';
         if (!timeVal || !checkIn) {
           App.showToast('Please enter an end time.', 'error');
           return;
         }
-        const [hh, mm] = timeVal.split(':').map((n) => parseInt(n, 10));
+        const [hh, mm] = timeVal.split(':').map(n => parseInt(n, 10));
         const endLocal = new Date(
-          checkIn.getFullYear(),
-          checkIn.getMonth(),
-          checkIn.getDate(),
-          isNaN(hh) ? 0 : hh,
-          isNaN(mm) ? 0 : mm,
-          0
+          checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate(),
+          isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0
         );
         if (endLocal < checkIn) {
           App.showToast('End time cannot be before check-in.', 'error');
@@ -671,42 +938,145 @@ const TimeTracking = {
           return;
         }
 
-        const btn = document.getElementById('manualShiftSave');
-        if (btn) {
-          btn.disabled = true;
-          btn.textContent = 'Saving...';
-        }
+        const btn = document.getElementById('adjustClockOffSave');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
-        const result = await OdooAPI.adjustShiftEnd(pending.attendance_id, endLocal.toISOString());
-        if (result && result.success) {
-          App.showToast('Shift end time updated', 'success');
-          if (this._attendanceId && this._attendanceId === pending.attendance_id) {
-            this._stopLunchTimer();
-            this._status = 'out';
-            this._attendanceId = null;
-            this._clockInTime = null;
-            this._lunchStartTime = null;
-            await this._saveState();
-            this._renderHeaderButton();
+        try {
+          const result = await OdooAPI.adjustShiftEnd(pending.attendance_id, endLocal.toISOString());
+          if (result && result.success) {
+            App.showToast('Shift end time updated', 'success');
+            if (this._attendanceId && this._attendanceId === pending.attendance_id) {
+              this._stopLunchTimer();
+              this._status = 'out';
+              this._attendanceId = null;
+              this._clockInTime = null;
+              this._lunchStartTime = null;
+              await this._saveState();
+              this._renderHeaderButton();
+            }
+            close(true);
+          } else {
+            const errMsg = (result && result.error) || 'Failed to update shift end time';
+            App.showToast(errMsg, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
           }
-          close(true);
-        } else {
-          const errMsg = (result && result.error) || 'Failed to update shift end time';
-          App.showToast(errMsg, 'error');
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = 'Save';
-          }
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
         }
+      });
+    });
+  },
+
+  // ========== OFFICE NOTES ==========
+
+  async sendOfficeNote() {
+    const employeeId = Auth.getEmployeeId();
+    if (!employeeId) {
+      App.showToast('No employee profile linked. Contact admin.', 'error');
+      return;
+    }
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Note to Office</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <textarea id="officeNoteText" class="form-input" rows="4"
+              placeholder="Equipment issue, forgot to clock on, need supplies, etc."></textarea>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="officeNoteCancel">Cancel</button>
+            <button class="btn btn-primary" id="officeNoteSend">Send</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (result) => {
+        overlay.remove();
+        resolve(result);
       };
 
       overlay.querySelector('.modal-close').addEventListener('click', () => close(false));
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) close(false);
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(false);
+        });
       });
-      document.getElementById('manualShiftCancel').addEventListener('click', () => close(false));
-      document.getElementById('manualShiftSave').addEventListener('click', handleSave);
+
+      setTimeout(() => {
+        const ta = document.getElementById('officeNoteText');
+        if (ta) ta.focus();
+      }, 100);
+
+      document.getElementById('officeNoteCancel').addEventListener('click', () => close(false));
+      document.getElementById('officeNoteSend').addEventListener('click', async () => {
+        const ta = document.getElementById('officeNoteText');
+        const body = (ta ? ta.value : '').trim();
+        if (!body) {
+          App.showToast('Please enter a note.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('officeNoteSend');
+        if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+
+        if (navigator.onLine) {
+          try {
+            const result = await OdooAPI.sendOfficeNote(employeeId, body);
+            if (result && result.success) {
+              App.showToast('Note sent to office', 'success');
+              close(true);
+            } else {
+              const errMsg = (result && result.error) || 'Failed to send note';
+              App.showToast(errMsg, 'error');
+              if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+            }
+          } catch (err) {
+            App.showToast('Failed: ' + err.message, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+          }
+        } else {
+          await DB.put('officeNotes', {
+            temp_id: 'on_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+            employee_id: employeeId,
+            body: body,
+            timestamp: new Date().toISOString(),
+            synced: 0,
+          });
+          App.showToast('Note saved — will send when online', 'info');
+          close(true);
+        }
+      });
     });
+  },
+
+  async syncOfficeNotes() {
+    let synced = 0;
+    let failed = 0;
+    try {
+      const pending = await DB.getUnsyncedItems('officeNotes');
+      for (const item of pending) {
+        try {
+          await OdooAPI.sendOfficeNote(item.employee_id, item.body);
+          item.synced = 1;
+          await DB.put('officeNotes', item);
+          synced++;
+        } catch (err) {
+          console.warn('Failed to sync office note:', err);
+          failed++;
+        }
+      }
+    } catch {
+      // store may not exist yet
+    }
+    return { synced, failed };
   },
 
   // ========== SYNC ==========
