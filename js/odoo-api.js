@@ -459,6 +459,45 @@ const OdooAPI = {
           {}
         );
       } catch (fallbackErr) {
+        // If office_create_time_off exists but the server rejects the request
+        // (for example overlapping dates), return that real validation error.
+        if (!this._isMissingMethodError(fallbackErr)) {
+          return {
+            success: false,
+            error: (fallbackErr && fallbackErr.message) || 'Failed to create time off request.'
+          };
+        }
+
+        // Final compatibility fallback for servers missing both custom methods.
+        // Try creating directly on hr.leave for the current employee.
+        const employeeId = (typeof Auth !== 'undefined' && Auth.getEmployeeId) ? Auth.getEmployeeId() : null;
+        if (employeeId) {
+          try {
+            const leaveId = await this.create('hr.leave', {
+              employee_id: employeeId,
+              holiday_status_id: leaveTypeId,
+              request_date_from: dateFrom ? dateFrom.slice(0, 10) : false,
+              request_date_to: dateTo ? dateTo.slice(0, 10) : false,
+              name: notes || false,
+            });
+
+            // If allowed, move to confirmed so it appears pending for approval.
+            try {
+              await this.callKw('hr.leave', 'action_confirm', [[leaveId]], {});
+            } catch {
+              // Some ACLs do not allow this; the leave still exists in draft.
+            }
+
+            return { success: true, leave_id: leaveId };
+          } catch (directErr) {
+            return {
+              success: false,
+              error: (directErr && directErr.message) ||
+                     'Failed to create time off request on this server.'
+            };
+          }
+        }
+
         return {
           success: false,
           error: 'Server is missing worker time-off APIs. Ask admin to update fieldservice_dispatch.'
