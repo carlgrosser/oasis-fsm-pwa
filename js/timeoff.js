@@ -212,9 +212,7 @@ const TimeOff = {
       if (result && result.success) {
         this._toast('Time off request submitted', 'success');
         notesEl.value = '';
-        this._filter = 'pending';
-        this._setFilterButton('pending');
-        await this._loadRequests(this._filter);
+        this.closeModal();
       } else {
         const errMsg = (result && result.error) ? result.error : 'Failed to submit request';
         this._toast(errMsg, 'error');
