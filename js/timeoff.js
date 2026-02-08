@@ -20,7 +20,10 @@ const TimeOff = {
     const modal = document.getElementById('timeOffModal');
     if (!modal) return;
     modal.style.display = 'flex';
+    const multiDayEl = document.getElementById('timeOffMultiDay');
+    if (multiDayEl) multiDayEl.checked = false;
     this._setDefaultDates();
+    this._toggleMultiDay(false);
 
     await Promise.all([
       this._loadLeaveTypes(),
@@ -40,6 +43,8 @@ const TimeOff = {
     const refreshBtn = document.getElementById('timeOffRefreshBtn');
     const submitBtn = document.getElementById('timeOffSubmit');
     const filterWrap = document.getElementById('timeOffFilters');
+    const multiDayEl = document.getElementById('timeOffMultiDay');
+    const fromEl = document.getElementById('timeOffDateFrom');
 
     closeBtn?.addEventListener('click', () => this.closeModal());
     cancelBtn?.addEventListener('click', () => this.closeModal());
@@ -58,6 +63,16 @@ const TimeOff = {
       btn.classList.add('active');
       this._filter = btn.dataset.filter || 'pending';
       this._loadRequests(this._filter);
+    });
+
+    multiDayEl?.addEventListener('change', () => {
+      this._toggleMultiDay(!!multiDayEl.checked);
+    });
+
+    fromEl?.addEventListener('change', () => {
+      if (multiDayEl && multiDayEl.checked) {
+        this._setEndDateFromStart(true);
+      }
     });
   },
 
@@ -150,6 +165,7 @@ const TimeOff = {
     const leaveTypeEl = document.getElementById('timeOffLeaveType');
     const fromEl = document.getElementById('timeOffDateFrom');
     const toEl = document.getElementById('timeOffDateTo');
+    const multiDayEl = document.getElementById('timeOffMultiDay');
     const notesEl = document.getElementById('timeOffNotes');
     const submitBtn = document.getElementById('timeOffSubmit');
 
@@ -161,18 +177,23 @@ const TimeOff = {
 
     const leaveTypeId = parseInt(leaveTypeEl.value, 10);
     const dateFrom = fromEl.value;
-    const dateTo = toEl.value;
+    const isMultiDay = multiDayEl && multiDayEl.checked;
+    const dateTo = isMultiDay ? toEl.value : dateFrom;
     const notes = notesEl.value.trim();
 
     if (!leaveTypeId) {
       this._toast('Select a leave type', 'error');
       return;
     }
-    if (!dateFrom || !dateTo) {
-      this._toast('Select both start and end dates', 'error');
+    if (!dateFrom) {
+      this._toast('Select a date', 'error');
       return;
     }
-    if (dateFrom > dateTo) {
+    if (isMultiDay && !dateTo) {
+      this._toast('Select an end date', 'error');
+      return;
+    }
+    if (isMultiDay && dateFrom > dateTo) {
       this._toast('Start date must be before end date', 'error');
       return;
     }
@@ -217,13 +238,47 @@ const TimeOff = {
     const toEl = document.getElementById('timeOffDateTo');
     if (!fromEl || !toEl) return;
 
-    if (fromEl.value && toEl.value) return;
+    if (!fromEl.value) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      fromEl.value = tomorrow.toISOString().slice(0, 10);
+    }
+    if (!toEl.value) {
+      toEl.value = this._addDays(fromEl.value, 1) || fromEl.value;
+    }
+  },
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayStr = tomorrow.toISOString().slice(0, 10);
-    fromEl.value = dayStr;
-    toEl.value = dayStr;
+  _toggleMultiDay(enabled) {
+    const wrap = document.getElementById('timeOffEndDateWrap');
+    const fromLabel = document.getElementById('timeOffDateFromLabel');
+
+    if (wrap) wrap.style.display = enabled ? '' : 'none';
+    if (fromLabel) fromLabel.textContent = enabled ? 'Start Date' : 'Date';
+
+    if (enabled) {
+      this._setEndDateFromStart(true);
+    }
+  },
+
+  _setEndDateFromStart(force) {
+    const fromEl = document.getElementById('timeOffDateFrom');
+    const toEl = document.getElementById('timeOffDateTo');
+    if (!fromEl || !toEl || !fromEl.value) return;
+
+    const suggested = this._addDays(fromEl.value, 1);
+    if (!suggested) return;
+
+    if (force || !toEl.value || toEl.value <= fromEl.value) {
+      toEl.value = suggested;
+    }
+  },
+
+  _addDays(dateStr, days) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
   },
 
   _stateLabel(state) {

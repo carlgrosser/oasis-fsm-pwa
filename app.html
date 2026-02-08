@@ -179,10 +179,14 @@
           </div>
           <div class="timeoff-worker-dates">
             <div class="form-group">
-              <label for="timeOffDateFrom">Start Date</label>
+              <label for="timeOffDateFrom" id="timeOffDateFromLabel">Date</label>
               <input type="date" class="form-input" id="timeOffDateFrom">
             </div>
-            <div class="form-group">
+            <div class="form-check timeoff-worker-multiday-check">
+              <input type="checkbox" id="timeOffMultiDay">
+              <label for="timeOffMultiDay">Multiple Days</label>
+            </div>
+            <div class="form-group" id="timeOffEndDateWrap" style="display:none;">
               <label for="timeOffDateTo">End Date</label>
               <input type="date" class="form-input" id="timeOffDateTo">
             </div>
