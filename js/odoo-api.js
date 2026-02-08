@@ -7,6 +7,17 @@ const OdooAPI = {
   _sessionId: null,
 
   /**
+   * Detect missing server-side custom method errors.
+   */
+  _isMissingMethodError(err) {
+    const msg = String(err && err.message ? err.message : '').toLowerCase();
+    return msg.includes('unknown method') ||
+           msg.includes('object has no attribute') ||
+           msg.includes('worker_get_') ||
+           msg.includes('worker_create_');
+  },
+
+  /**
    * Set the session ID for authenticated requests.
    */
   setSession(sessionId) {
@@ -349,26 +360,111 @@ const OdooAPI = {
    * @param {string|false} stateFilter - 'pending' | 'approved' | 'refused' | false
    */
   async getMyTimeOffRequests(stateFilter = false) {
-    return this.callKw('hr.leave', 'worker_get_my_time_off_requests', [stateFilter], {});
+    try {
+      return await this.callKw('hr.leave', 'worker_get_my_time_off_requests', [stateFilter], {});
+    } catch (err) {
+      if (!this._isMissingMethodError(err)) throw err;
+
+      // Backward-compatibility fallback for servers without worker_* methods:
+      // read own requests directly from hr.leave.
+      const employeeId = (typeof Auth !== 'undefined' && Auth.getEmployeeId) ? Auth.getEmployeeId() : null;
+      if (!employeeId) return [];
+
+      const domain = [['employee_id', '=', employeeId]];
+      if (stateFilter === 'pending') {
+        domain.push(['state', 'in', ['confirm', 'validate1']]);
+      } else if (stateFilter === 'approved') {
+        domain.push(['state', '=', 'validate']);
+      } else if (stateFilter === 'refused') {
+        domain.push(['state', '=', 'refuse']);
+      }
+
+      const rows = await this.searchRead(
+        'hr.leave',
+        domain,
+        ['id', 'employee_id', 'holiday_status_id', 'state', 'name',
+         'request_date_from', 'request_date_to', 'date_from', 'date_to', 'number_of_days'],
+        { order: 'date_from desc', limit: 200 }
+      );
+
+      return (rows || []).map(r => {
+        const employeeIdVal = Array.isArray(r.employee_id) ? r.employee_id[0] : r.employee_id;
+        const employeeName = Array.isArray(r.employee_id) ? r.employee_id[1] : '';
+        const leaveTypeId = Array.isArray(r.holiday_status_id) ? r.holiday_status_id[0] : r.holiday_status_id;
+        const leaveTypeName = Array.isArray(r.holiday_status_id) ? r.holiday_status_id[1] : '';
+        const dateFrom = r.date_from || (r.request_date_from ? (r.request_date_from + ' 00:00:00') : false);
+        const dateTo = r.date_to || (r.request_date_to ? (r.request_date_to + ' 23:59:59') : false);
+        return {
+          id: r.id,
+          employee_id: employeeIdVal,
+          employee_name: employeeName,
+          date_from: dateFrom,
+          date_to: dateTo,
+          leave_type: leaveTypeName || '',
+          leave_type_id: leaveTypeId || false,
+          state: r.state,
+          notes: r.name || '',
+          number_of_days: r.number_of_days || 0,
+        };
+      });
+    }
   },
 
   /**
    * Fetch available leave types for worker requests.
    */
   async getWorkerLeaveTypes() {
-    return this.callKw('hr.leave', 'worker_get_leave_types', [], {});
+    try {
+      return await this.callKw('hr.leave', 'worker_get_leave_types', [], {});
+    } catch (err) {
+      if (!this._isMissingMethodError(err)) throw err;
+
+      // Backward compatibility with older server code.
+      try {
+        return await this.callKw('hr.leave', 'office_get_leave_types', [], {});
+      } catch (err2) {
+        if (!this._isMissingMethodError(err2)) throw err2;
+      }
+
+      const rows = await this.searchRead('hr.leave.type', [], ['id', 'name'], { order: 'name asc' });
+      return (rows || []).map(r => ({ id: r.id, name: r.name || '' }));
+    }
   },
 
   /**
    * Create a time off request for the logged-in worker.
    */
   async createMyTimeOff(leaveTypeId, dateFrom, dateTo, notes) {
-    return this.callKw(
-      'hr.leave',
-      'worker_create_my_time_off',
-      [leaveTypeId, dateFrom, dateTo, notes || false],
-      {}
-    );
+    try {
+      return await this.callKw(
+        'hr.leave',
+        'worker_create_my_time_off',
+        [leaveTypeId, dateFrom, dateTo, notes || false],
+        {}
+      );
+    } catch (err) {
+      if (!this._isMissingMethodError(err)) throw err;
+
+      // Compatibility fallback: use office_create_time_off with current worker person_id.
+      const personId = (typeof Auth !== 'undefined' && Auth.getPersonId) ? Auth.getPersonId() : null;
+      if (!personId) {
+        return { success: false, error: 'Unable to resolve your worker profile.' };
+      }
+
+      try {
+        return await this.callKw(
+          'hr.leave',
+          'office_create_time_off',
+          [personId, leaveTypeId, dateFrom, dateTo, notes || false],
+          {}
+        );
+      } catch (fallbackErr) {
+        return {
+          success: false,
+          error: 'Server is missing worker time-off APIs. Ask admin to update fieldservice_dispatch.'
+        };
+      }
+    }
   },
 
   // ========== JOURNAL ==========
