@@ -92,6 +92,7 @@
           <div id="menuDropdownList" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu">
             <button id="themeBtnList" class="menu-item">🎨 Themes</button>
             <button id="noteBtnList" class="menu-item">📋 Note to Office</button>
+            <button id="timeOffBtnList" class="menu-item">🗓️ My Time Off</button>
             <button id="syncBtnList" class="menu-item">&#10227; Sync Now</button>
             <button id="fixShiftBtnList" class="menu-item">⏱️ Adjust Shift</button>
             <button id="clearCacheBtnList" class="menu-item">🗑️ Clear Cache</button>
@@ -121,6 +122,7 @@
           <div id="menuDropdownDetail" class="menu-dropdown menu-dropdown-up" style="display:none;" role="menu">
             <button id="themeBtnDetail" class="menu-item">🎨 Themes</button>
             <button id="noteBtnDetail" class="menu-item">📋 Note to Office</button>
+            <button id="timeOffBtnDetail" class="menu-item">🗓️ My Time Off</button>
             <button id="syncBtnDetail" class="menu-item">&#10227; Sync Now</button>
             <button id="fixShiftBtnDetail" class="menu-item">⏱️ Adjust Shift</button>
             <button id="clearCacheBtnDetail" class="menu-item">🗑️ Clear Cache</button>
@@ -133,6 +135,69 @@
       </div>
     </footer>
 
+  </div>
+
+  <!-- Time Off Modal -->
+  <div class="modal-overlay" id="timeOffModal" style="display:none;">
+    <div class="modal modal-timeoff-worker">
+      <div class="modal-header">
+        <h3>My Time Off</h3>
+        <button class="modal-close" id="timeOffClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="timeoff-worker-summary">
+          <div class="timeoff-worker-stat">
+            <div class="timeoff-worker-stat-value" id="timeOffPendingCount">--</div>
+            <div class="timeoff-worker-stat-label">Pending</div>
+          </div>
+          <div class="timeoff-worker-stat">
+            <div class="timeoff-worker-stat-value" id="timeOffUpcomingCount">--</div>
+            <div class="timeoff-worker-stat-label">Upcoming</div>
+          </div>
+        </div>
+
+        <div class="timeoff-worker-filters" id="timeOffFilters">
+          <button class="timeoff-worker-filter active" data-filter="pending">Pending</button>
+          <button class="timeoff-worker-filter" data-filter="approved">Approved</button>
+          <button class="timeoff-worker-filter" data-filter="all">All</button>
+          <button class="timeoff-worker-refresh" id="timeOffRefreshBtn" type="button">Refresh</button>
+        </div>
+
+        <div class="timeoff-worker-list" id="timeOffList">
+          <div class="timeoff-worker-loading">Loading requests...</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="timeoff-worker-form">
+          <h4>Request Time Off</h4>
+          <div class="form-group">
+            <label for="timeOffLeaveType">Leave Type</label>
+            <select class="form-input" id="timeOffLeaveType">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+          <div class="timeoff-worker-dates">
+            <div class="form-group">
+              <label for="timeOffDateFrom">Start Date</label>
+              <input type="date" class="form-input" id="timeOffDateFrom">
+            </div>
+            <div class="form-group">
+              <label for="timeOffDateTo">End Date</label>
+              <input type="date" class="form-input" id="timeOffDateTo">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="timeOffNotes">Reason (optional)</label>
+            <textarea class="form-input" id="timeOffNotes" rows="2" placeholder="Add a note for your manager"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="timeOffCancel">Close</button>
+        <button class="btn btn-primary" id="timeOffSubmit">Submit Request</button>
+      </div>
+    </div>
   </div>
 
   <!-- Toast container -->
@@ -149,6 +214,7 @@
   <script src="js/journal.js"></script>
   <script src="js/materials.js"></script>
   <script src="js/timetracking.js"></script>
+  <script src="js/timeoff.js"></script>
   <script src="js/themes.js"></script>
   <script src="js/sync.js"></script>
   <script src="js/app.js"></script>

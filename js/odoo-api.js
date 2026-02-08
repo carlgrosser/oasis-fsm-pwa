@@ -342,6 +342,35 @@ const OdooAPI = {
     return locations.length > 0 ? locations[0] : null;
   },
 
+  // ========== TIME OFF ==========
+
+  /**
+   * Fetch current worker's time off requests.
+   * @param {string|false} stateFilter - 'pending' | 'approved' | 'refused' | false
+   */
+  async getMyTimeOffRequests(stateFilter = false) {
+    return this.callKw('hr.leave', 'worker_get_my_time_off_requests', [stateFilter], {});
+  },
+
+  /**
+   * Fetch available leave types for worker requests.
+   */
+  async getWorkerLeaveTypes() {
+    return this.callKw('hr.leave', 'worker_get_leave_types', [], {});
+  },
+
+  /**
+   * Create a time off request for the logged-in worker.
+   */
+  async createMyTimeOff(leaveTypeId, dateFrom, dateTo, notes) {
+    return this.callKw(
+      'hr.leave',
+      'worker_create_my_time_off',
+      [leaveTypeId, dateFrom, dateTo, notes || false],
+      {}
+    );
+  },
+
   // ========== JOURNAL ==========
 
   /**

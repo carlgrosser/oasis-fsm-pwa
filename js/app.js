@@ -72,6 +72,7 @@ const App = {
           e.preventDefault();
           e.stopPropagation();
         }
+        document.querySelectorAll('.menu-dropdown').forEach(d => { d.style.display = 'none'; });
         handler();
       };
       btn.addEventListener('touchstart', (e) => {
@@ -123,6 +124,13 @@ const App = {
     ['noteBtnList', 'noteBtnDetail'].forEach(id => {
       bindMenuAction(id, () => {
         if (typeof TimeTracking !== 'undefined') TimeTracking.sendOfficeNote();
+      });
+    });
+
+    // Time Off buttons
+    ['timeOffBtnList', 'timeOffBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => {
+        if (typeof TimeOff !== 'undefined') TimeOff.openModal();
       });
     });
 
