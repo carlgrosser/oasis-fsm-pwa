@@ -457,6 +457,14 @@ const Jobs = {
       Materials.renderSection(job.id, materialsSection);
     }
 
+    // Render billing/sales tab (async)
+    if (typeof Billing !== 'undefined') {
+      const salesContent = document.getElementById('salesTabContent');
+      if (salesContent) {
+        Billing.renderSalesTab(job, salesContent);
+      }
+    }
+
     // Bind stage gate (checks photos, enables/disables next-stage button)
     this._bindStageGate(job, stageName);
 
@@ -620,9 +628,17 @@ const Jobs = {
   },
 
   /**
-   * Render the Sales panel (tab 3) — sales order link and future sales features.
+   * Render the Sales panel (tab 3) — billing, invoicing, payments.
+   * If Billing module is loaded, it renders async into a placeholder.
+   * Otherwise falls back to a static SO PDF link.
    */
   _renderSalesPanel(job) {
+    if (typeof Billing !== 'undefined') {
+      return `<div id="salesTabContent">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>`;
+    }
+    // Fallback: static SO link
     const saleOrderLink = this._buildSaleOrderLink(job);
     return `
       <div class="detail-section">

@@ -622,4 +622,71 @@ const OdooAPI = {
   async sendOfficeNote(employeeId, body) {
     return this.callKw('hr.attendance', 'mobile_send_office_note', [employeeId, body], {});
   },
+
+  // ========== BILLING ==========
+
+  /**
+   * Get the sales order linked to an FSM order.
+   */
+  async getSaleOrder(fsmOrderId) {
+    return this.callKw('fsm.order', 'worker_get_sale_order', [fsmOrderId], {});
+  },
+
+  /**
+   * Update a sales order line (qty, price, description).
+   */
+  async updateSaleLine(lineId, values) {
+    return this.callKw('fsm.order', 'worker_update_sale_line', [lineId, values], {});
+  },
+
+  /**
+   * Add a new line to a sales order.
+   */
+  async addSaleLine(saleOrderId, productId, quantity, priceUnit, description) {
+    return this.callKw('fsm.order', 'worker_add_sale_line',
+      [saleOrderId, productId, quantity, priceUnit, description], {});
+  },
+
+  /**
+   * Search products for adding to a sales order.
+   */
+  async searchProducts(query) {
+    return this.callKw('fsm.order', 'worker_search_products', [query], {});
+  },
+
+  /**
+   * Create an invoice from an FSM order's sales order.
+   */
+  async createInvoice(fsmOrderId) {
+    return this.callKw('fsm.order', 'worker_create_invoice', [fsmOrderId], {});
+  },
+
+  /**
+   * Get a Stripe payment link for an invoice.
+   */
+  async getPaymentLink(invoiceId) {
+    return this.callKw('fsm.order', 'worker_get_payment_link', [invoiceId], {});
+  },
+
+  /**
+   * Send a payment link via SMS.
+   */
+  async sendPaymentSms(invoiceId, phoneNumber) {
+    return this.callKw('fsm.order', 'worker_send_payment_sms', [invoiceId, phoneNumber], {});
+  },
+
+  /**
+   * Send an invoice/receipt PDF via SMS or email.
+   */
+  async sendDocument(invoiceId, docType, method, recipient) {
+    return this.callKw('fsm.order', 'worker_send_document',
+      [invoiceId, docType, method, recipient], {});
+  },
+
+  /**
+   * Check invoice payment status (for polling).
+   */
+  async checkInvoiceStatus(invoiceId) {
+    return this.callKw('fsm.order', 'worker_check_invoice_status', [invoiceId], {});
+  },
 };

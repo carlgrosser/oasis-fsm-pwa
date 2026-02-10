@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v43';
+const CACHE_NAME = 'fsm-pwa-v44';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -15,6 +15,7 @@ const STATIC_ASSETS = [
   'js/jobs.js',
   'js/journal.js',
   'js/materials.js',
+  'js/billing.js',
   'js/themes.js',
   'js/timetracking.js',
   'js/timeoff.js',

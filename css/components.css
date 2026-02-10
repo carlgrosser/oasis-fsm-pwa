@@ -1574,6 +1574,268 @@ textarea.form-input {
   color: var(--primary-color);
 }
 
+/* ========== BILLING / SALES ORDER ========== */
+.billing-so-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.billing-so-header h3 {
+  margin: 0;
+}
+
+.billing-so-status {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(52, 152, 219, 0.15);
+  color: var(--status-scheduled);
+}
+
+.billing-so-total {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+}
+
+.billing-so-total strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+
+/* SO Line items */
+.billing-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+.so-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-color);
+  gap: var(--spacing-sm);
+}
+
+.so-line:last-child {
+  border-bottom: none;
+}
+
+.so-line-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.so-line-name {
+  font-weight: 600;
+  font-size: var(--font-size-small);
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.so-line-detail {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.so-line-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.so-line-price {
+  font-weight: 600;
+  font-size: var(--font-size-small);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.so-line-edit {
+  padding: 4px 8px;
+  font-size: var(--font-size-xs);
+  min-height: 32px;
+}
+
+/* Edit line modal */
+.billing-edit-product {
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+.billing-edit-row {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.billing-edit-subtotal {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  text-align: right;
+  margin-top: var(--spacing-xs);
+}
+
+.billing-edit-subtotal strong {
+  color: var(--text-primary);
+}
+
+/* Add line - product search */
+.modal-add-line {
+  max-width: 400px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-add-line .modal-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.billing-product-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.billing-product-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--card-background);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-family);
+  transition: background 0.15s;
+  touch-action: manipulation;
+}
+
+.billing-product-item:active {
+  background: var(--background);
+}
+
+.billing-product-name {
+  font-size: var(--font-size-small);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.billing-product-price {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.billing-selected-product {
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  color: var(--primary-color);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  background: rgba(0, 102, 204, 0.05);
+  border-radius: var(--border-radius);
+}
+
+/* Invoice status */
+.invoice-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+}
+
+.invoice-status.unpaid {
+  background: rgba(243, 156, 18, 0.1);
+  border: 1px solid rgba(243, 156, 18, 0.3);
+}
+
+.invoice-status.paid {
+  background: rgba(39, 174, 96, 0.1);
+  border: 1px solid rgba(39, 174, 96, 0.3);
+}
+
+.invoice-status-info {
+  flex: 1;
+}
+
+.invoice-status-name {
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.invoice-status-amount {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.invoice-status-state {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Payment actions */
+.billing-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+/* Phone input for SMS */
+.billing-phone-row {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.billing-phone-row input {
+  flex: 1;
+}
+
+.billing-phone-row .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Polling indicator */
+.billing-polling {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  padding: var(--spacing-sm);
+  background: rgba(52, 152, 219, 0.08);
+  border-radius: var(--border-radius);
+}
+
+/* Hint text */
+.billing-hint {
+  font-size: var(--font-size-small);
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--spacing-md) 0;
+}
+
 /* ========== SHIFT ADJUSTMENT OPTIONS ========== */
 .shift-adjust-options {
   display: flex;
