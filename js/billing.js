@@ -64,6 +64,7 @@ const Billing = {
   _renderSOView(job, data, container) {
     const so = data.sale_order;
     const lines = data.lines || [];
+    const changeOrders = data.change_orders || [];
 
     const soStateName = {
       'draft': 'Quotation',
@@ -72,6 +73,9 @@ const Billing = {
       'done': 'Locked',
       'cancel': 'Cancelled',
     }[so.state] || so.state;
+
+    // Check if all delivered = ordered
+    const allMatch = lines.length > 0 && lines.every(l => l.qty_delivered === l.quantity);
 
     let html = `
       <div class="detail-section">
@@ -94,6 +98,16 @@ const Billing = {
 
     html += '</div>';
 
+    // Accept as Quoted button (only for confirmed SOs with mismatched qtys)
+    if (so.state === 'sale' && !allMatch) {
+      html += `
+        <button class="btn btn-outline btn-block btn-sm" id="acceptAsQuotedBtn"
+                style="margin-top:var(--spacing-sm);">
+          Accept as Quoted
+        </button>
+      `;
+    }
+
     // Add Line button (only for confirmed SOs)
     if (so.state === 'sale') {
       html += `
@@ -106,19 +120,76 @@ const Billing = {
 
     html += '</div>';
 
-    // Create Invoice button
+    // Change orders section
+    if (changeOrders.length > 0) {
+      html += '<div class="detail-section"><h3>Change Orders</h3><div class="billing-change-orders">';
+      for (const co of changeOrders) {
+        html += `
+          <div class="billing-change-order-item">
+            <div>
+              <strong>${this._esc(co.name)}</strong>
+              <div style="font-size:var(--font-size-xs);color:var(--text-muted);">${this._esc(co.x_change_reason)}</div>
+            </div>
+            <div style="font-weight:600;">$${this._money(co.amount_total)}</div>
+          </div>
+        `;
+      }
+      html += '</div></div>';
+    }
+
+    // Change order threshold alert
+    if (so.state === 'sale' && changeOrders.length === 0) {
+      const onSiteTotal = lines
+        .filter(l => l.x_added_on_site)
+        .reduce((sum, l) => sum + l.price_subtotal, 0);
+      if (onSiteTotal > (CONFIG.CHANGE_ORDER_THRESHOLD || 300)) {
+        html += `
+          <div class="detail-section">
+            <div class="alert alert-info">
+              On-site additions total <strong>$${this._money(onSiteTotal)}</strong> — exceeds
+              $${this._money(CONFIG.CHANGE_ORDER_THRESHOLD || 300)} threshold.
+              Consider creating a change order for customer approval.
+            </div>
+            <button class="btn btn-warning btn-block" id="createChangeOrderBtn">
+              Create Change Order
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    // Create Invoice / Ready to Invoice buttons
     if (so.invoice_status === 'to invoice') {
       html += `
         <div class="detail-section">
           <button class="btn btn-success btn-block btn-lg" id="createInvoiceBtn">
             Create Invoice
           </button>
+          ${!so.x_ready_to_invoice ? `
+            <button class="btn btn-outline btn-block btn-sm" id="readyToInvoiceBtn"
+                    style="margin-top:var(--spacing-sm);">
+              Mark Ready to Invoice
+            </button>
+          ` : `
+            <div class="billing-hint" style="color:var(--success-color);font-weight:600;">
+              Marked Ready for Invoicing
+            </div>
+          `}
         </div>
       `;
     } else if (so.invoice_status === 'no') {
       html += `
         <div class="detail-section">
           <p class="billing-hint">Nothing to invoice yet. Deliver services to enable invoicing.</p>
+          ${!so.x_ready_to_invoice ? `
+            <button class="btn btn-outline btn-block btn-sm" id="readyToInvoiceBtn">
+              Mark Ready to Invoice
+            </button>
+          ` : `
+            <div class="billing-hint" style="color:var(--success-color);font-weight:600;">
+              Marked Ready for Invoicing
+            </div>
+          `}
         </div>
       `;
     }
@@ -142,13 +213,36 @@ const Billing = {
       ? `<button class="btn btn-sm btn-secondary so-line-edit" data-line-id="${line.id}">Edit</button>`
       : '';
 
+    // On-site badge
+    const onsiteBadge = line.x_added_on_site
+      ? `<span class="so-line-onsite-badge">Added On-Site</span>`
+      : '';
+
+    // Description (show if different from product name)
+    const desc = line.description && line.description !== line.product_name
+      ? `<div class="so-line-desc">${this._esc(line.description)}</div>`
+      : '';
+
+    // Qty delivered indicator
+    const qtyMatch = line.qty_delivered === line.quantity;
+    const qtyClass = qtyMatch ? 'so-line-qty-match' : 'so-line-qty-mismatch';
+
     return `
       <div class="so-line" data-line-id="${line.id}">
         <div class="so-line-info">
-          <div class="so-line-name">${this._esc(line.product_name || line.description)}</div>
-          <div class="so-line-detail">
-            ${line.quantity} ${this._esc(line.product_uom)} × $${this._money(line.price_unit)}
-            ${line.discount ? ' (-' + line.discount + '%)' : ''}
+          <div class="so-line-name">
+            ${this._esc(line.product_name || line.description)}
+            ${onsiteBadge}
+          </div>
+          ${desc}
+          <div class="so-line-qty-row">
+            <span class="so-line-detail">
+              ${line.quantity} ${this._esc(line.product_uom)} × $${this._money(line.price_unit)}
+              ${line.discount ? ' (-' + line.discount + '%)' : ''}
+            </span>
+            <span class="${qtyClass}">
+              Delivered: ${line.qty_delivered}/${line.quantity}
+            </span>
           </div>
         </div>
         <div class="so-line-right">
@@ -178,6 +272,26 @@ const Billing = {
       });
     }
 
+    // Accept as Quoted button
+    const acceptBtn = container.querySelector('#acceptAsQuotedBtn');
+    if (acceptBtn) {
+      acceptBtn.addEventListener('click', async () => {
+        acceptBtn.disabled = true;
+        acceptBtn.textContent = 'Updating...';
+        try {
+          const result = await OdooAPI.acceptAsQuoted(data.sale_order.id);
+          if (result.success) {
+            App.showToast(`${result.lines_updated} line(s) updated`, 'success');
+            await this.renderSalesTab(job, container);
+          }
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          acceptBtn.disabled = false;
+          acceptBtn.textContent = 'Accept as Quoted';
+        }
+      });
+    }
+
     // Create invoice button
     const invoiceBtn = container.querySelector('#createInvoiceBtn');
     if (invoiceBtn) {
@@ -188,7 +302,6 @@ const Billing = {
           const result = await OdooAPI.createInvoice(job.id);
           if (result.success) {
             App.showToast('Invoice created: ' + (result.invoice_name || ''), 'success');
-            // Reload the billing tab
             await this.renderSalesTab(job, container);
           }
         } catch (err) {
@@ -196,6 +309,33 @@ const Billing = {
           invoiceBtn.disabled = false;
           invoiceBtn.textContent = 'Create Invoice';
         }
+      });
+    }
+
+    // Ready to Invoice button
+    const readyBtn = container.querySelector('#readyToInvoiceBtn');
+    if (readyBtn) {
+      readyBtn.addEventListener('click', async () => {
+        readyBtn.disabled = true;
+        readyBtn.textContent = 'Marking...';
+        try {
+          await OdooAPI.setReadyToInvoice(data.sale_order.id, true);
+          App.showToast('Marked ready for invoicing', 'success');
+          await this.renderSalesTab(job, container);
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          readyBtn.disabled = false;
+          readyBtn.textContent = 'Mark Ready to Invoice';
+        }
+      });
+    }
+
+    // Create Change Order button
+    const coBtn = container.querySelector('#createChangeOrderBtn');
+    if (coBtn) {
+      const onSiteLines = data.lines.filter(l => l.x_added_on_site);
+      coBtn.addEventListener('click', () => {
+        this._showChangeOrderModal(job, data, onSiteLines, container);
       });
     }
   },
@@ -219,7 +359,7 @@ const Billing = {
           </div>
           <div class="billing-edit-row">
             <div class="form-group" style="flex:1;">
-              <label for="editLineQty">Quantity</label>
+              <label for="editLineQty">Ordered Qty</label>
               <input type="number" class="form-input" id="editLineQty"
                      value="${line.quantity}" min="0" step="any">
             </div>
@@ -228,6 +368,11 @@ const Billing = {
               <input type="number" class="form-input" id="editLinePrice"
                      value="${line.price_unit}" min="0" step="0.01">
             </div>
+          </div>
+          <div class="form-group">
+            <label for="editLineDelivered">Delivered Quantity</label>
+            <input type="number" class="form-input" id="editLineDelivered"
+                   value="${line.qty_delivered}" min="0" step="any">
           </div>
           <div class="billing-edit-subtotal">
             Subtotal: <strong id="editLineSubtotal">$${this._money(line.price_subtotal)}</strong>
@@ -270,10 +415,12 @@ const Billing = {
       const newQty = parseFloat(qtyInput.value);
       const newPrice = parseFloat(priceInput.value);
       const newDesc = document.getElementById('editLineDesc').value;
+      const newDelivered = parseFloat(document.getElementById('editLineDelivered').value);
 
       if (newQty !== line.quantity) values.quantity = newQty;
       if (newPrice !== line.price_unit) values.price_unit = newPrice;
       if (newDesc !== line.description) values.description = newDesc;
+      if (newDelivered !== line.qty_delivered) values.qty_delivered = newDelivered;
 
       if (Object.keys(values).length === 0) {
         close();
@@ -281,10 +428,25 @@ const Billing = {
       }
 
       try {
-        const result = await OdooAPI.updateSaleLine(line.id, values);
+        await OdooAPI.updateSaleLine(line.id, values);
         App.showToast('Line updated', 'success');
         close();
-        // Refresh
+
+        // Check for variance — if delivered != ordered, show variance modal
+        const finalQty = 'quantity' in values ? values.quantity : line.quantity;
+        const finalDelivered = 'qty_delivered' in values ? values.qty_delivered : line.qty_delivered;
+        if (finalDelivered !== finalQty && 'qty_delivered' in values) {
+          // Reload data first
+          const freshData = await OdooAPI.getSaleOrder(job.id);
+          if (freshData.has_sale_order) {
+            const varianceLines = freshData.lines.filter(l => l.qty_delivered !== l.quantity);
+            if (varianceLines.length > 0) {
+              this._showVarianceReasonModal(job, freshData, varianceLines, parentContainer);
+              return;
+            }
+          }
+        }
+
         await this.renderSalesTab(job, parentContainer);
       } catch (err) {
         App.showToast('Failed: ' + err.message, 'error');
@@ -414,6 +576,88 @@ const Billing = {
     });
   },
 
+  // ========== VARIANCE REASON MODAL ==========
+
+  _showVarianceReasonModal(job, data, varianceLines, parentContainer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    let tableRows = varianceLines.map(l => `
+      <tr>
+        <td style="padding:6px;">${this._esc(l.product_name)}</td>
+        <td style="padding:6px;text-align:center;">${l.quantity}</td>
+        <td style="padding:6px;text-align:center;">${l.qty_delivered}</td>
+      </tr>
+    `).join('');
+
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:400px;">
+        <div class="modal-header">
+          <h3>Variance Note</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:var(--font-size-small);color:var(--text-secondary);margin-bottom:var(--spacing-sm);">
+            The following lines have different delivered vs ordered quantities:
+          </p>
+          <table style="width:100%;border-collapse:collapse;font-size:var(--font-size-small);margin-bottom:var(--spacing-md);">
+            <tr style="background:var(--border-color);">
+              <th style="padding:6px;text-align:left;">Product</th>
+              <th style="padding:6px;text-align:center;">Ordered</th>
+              <th style="padding:6px;text-align:center;">Delivered</th>
+            </tr>
+            ${tableRows}
+          </table>
+          <div class="form-group">
+            <label for="varianceReason">Reason for variance</label>
+            <textarea class="form-input" id="varianceReason" rows="3"
+                      placeholder="Explain why delivered quantities differ..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="varianceSkip">Skip</button>
+          <button class="btn btn-primary" id="varianceSubmit">Submit</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      overlay.remove();
+      this.renderSalesTab(job, parentContainer);
+    };
+
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.getElementById('varianceSkip').addEventListener('click', close);
+
+    document.getElementById('varianceSubmit').addEventListener('click', async () => {
+      const submitBtn = document.getElementById('varianceSubmit');
+      const reason = document.getElementById('varianceReason').value.trim();
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+
+      try {
+        const details = varianceLines.map(l => ({
+          product_name: l.product_name,
+          ordered: l.quantity,
+          delivered: l.qty_delivered,
+          reason: reason,
+        }));
+        await OdooAPI.postVarianceNote(data.sale_order.id, details);
+        App.showToast('Variance note posted', 'success');
+        overlay.remove();
+        await this.renderSalesTab(job, parentContainer);
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit';
+      }
+    });
+  },
+
   // ========== STATE 3: INVOICE (UNPAID) VIEW ==========
 
   _renderInvoiceView(job, data, invoice, container) {
@@ -439,66 +683,290 @@ const Billing = {
 
       <div class="detail-section">
         <h3>Collect Payment</h3>
-        <div class="billing-sms-input" id="smsPhoneSection">
-          <div class="form-group">
-            <label for="paymentPhone">Send payment link to:</label>
-            <div class="billing-phone-row">
-              <input type="tel" class="form-input" id="paymentPhone"
-                     value="${this._esc(phone)}" placeholder="(555) 123-4567">
-              <button class="btn btn-primary" id="sendPaymentSmsBtn">Send SMS</button>
-            </div>
-          </div>
+        <div class="billing-payment-methods" id="paymentMethods">
+          <button class="billing-payment-method-btn" data-method="check">
+            <div style="font-size:24px;">&#128221;</div>
+            <div>Check</div>
+          </button>
+          <button class="billing-payment-method-btn" data-method="venmo">
+            <div style="font-size:24px;">&#128178;</div>
+            <div>Venmo</div>
+          </button>
+          <button class="billing-payment-method-btn" data-method="card">
+            <div style="font-size:24px;">&#128179;</div>
+            <div>Card</div>
+          </button>
+          <button class="billing-payment-method-btn" data-method="sms">
+            <div style="font-size:24px;">&#128172;</div>
+            <div>Send Link</div>
+          </button>
         </div>
+        <div id="paymentMethodContent"></div>
+      </div>
 
-        <div class="billing-actions">
-          <a href="mailto:${this._esc(contact.email)}?subject=Invoice ${this._esc(invoice.name)}"
-             class="btn btn-outline btn-block btn-sm">
-            Email Invoice PDF
-          </a>
-          <a href="${CONFIG.ODOO_URL}/report/pdf/account.report_invoice/${invoice.id}"
-             target="_blank" rel="noopener" class="btn btn-outline btn-block btn-sm">
-            View Invoice PDF
-          </a>
-        </div>
+      <div class="billing-actions">
+        <a href="mailto:${this._esc(contact.email)}?subject=Invoice ${this._esc(invoice.name)}"
+           class="btn btn-outline btn-block btn-sm">
+          Email Invoice PDF
+        </a>
+        <a href="${CONFIG.ODOO_URL}/report/pdf/account.report_invoice/${invoice.id}"
+           target="_blank" rel="noopener" class="btn btn-outline btn-block btn-sm">
+          View Invoice PDF
+        </a>
       </div>
 
       <div id="paymentStatusArea"></div>
     `;
 
     container.innerHTML = html;
-    this._bindInvoiceEvents(job, data, invoice, container);
+    this._bindPaymentMethodEvents(job, data, invoice, phone, container);
   },
 
-  _bindInvoiceEvents(job, data, invoice, container) {
-    const sendBtn = document.getElementById('sendPaymentSmsBtn');
-    if (sendBtn) {
-      sendBtn.addEventListener('click', async () => {
-        const phone = document.getElementById('paymentPhone').value.trim();
-        if (!phone) {
-          App.showToast('Enter a phone number', 'error');
+  _bindPaymentMethodEvents(job, data, invoice, phone, container) {
+    const methodBtns = container.querySelectorAll('.billing-payment-method-btn');
+    const contentArea = document.getElementById('paymentMethodContent');
+
+    methodBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Highlight active
+        methodBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const method = btn.dataset.method;
+        switch (method) {
+          case 'check':
+            this._showCheckPaymentView(invoice, contentArea, job, container);
+            break;
+          case 'venmo':
+            this._showVenmoPaymentView(invoice, contentArea, job, container);
+            break;
+          case 'card':
+            this._showCardPaymentView(invoice, phone, contentArea, job, container);
+            break;
+          case 'sms':
+            this._showSmsPaymentView(invoice, phone, contentArea, job, container);
+            break;
+        }
+      });
+    });
+  },
+
+  // ---------- Check Payment ----------
+
+  _showCheckPaymentView(invoice, contentArea, job, parentContainer) {
+    contentArea.innerHTML = `
+      <div style="margin-top:var(--spacing-md);">
+        <div class="form-group">
+          <label for="checkNumber">Check Number</label>
+          <input type="text" class="form-input" id="checkNumber" placeholder="e.g. 1234">
+        </div>
+        <div class="form-group">
+          <label for="checkAmount">Amount ($${this._money(invoice.amount_residual)} due)</label>
+          <input type="number" class="form-input" id="checkAmount"
+                 value="${invoice.amount_residual}" min="0" step="0.01">
+        </div>
+        <button class="btn btn-success btn-block" id="recordCheckBtn">
+          Record Check Payment
+        </button>
+      </div>
+    `;
+
+    document.getElementById('recordCheckBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('recordCheckBtn');
+      const checkNum = document.getElementById('checkNumber').value.trim();
+      const amount = parseFloat(document.getElementById('checkAmount').value) || 0;
+
+      if (!checkNum) {
+        App.showToast('Enter a check number', 'error');
+        return;
+      }
+      if (amount <= 0) {
+        App.showToast('Enter a valid amount', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Recording...';
+
+      try {
+        const result = await OdooAPI.registerCheckPayment(invoice.id, checkNum, amount);
+        if (result.success) {
+          App.showToast('Check payment recorded', 'success');
+          await this.renderSalesTab(job, parentContainer);
+        }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Record Check Payment';
+      }
+    });
+  },
+
+  // ---------- Venmo Payment ----------
+
+  _showVenmoPaymentView(invoice, contentArea, job, parentContainer) {
+    const venmoUser = CONFIG.VENMO_USERNAME || '@OasisPoolTile';
+    contentArea.innerHTML = `
+      <div style="margin-top:var(--spacing-md);text-align:center;">
+        <div class="billing-venmo-username">${this._esc(venmoUser)}</div>
+        <div style="margin:var(--spacing-md) 0;">
+          <div class="billing-venmo-qr">
+            <div style="font-size:64px;">&#128178;</div>
+            <div style="font-size:var(--font-size-small);color:var(--text-secondary);margin-top:var(--spacing-xs);">
+              Customer pays via Venmo to ${this._esc(venmoUser)}
+            </div>
+          </div>
+        </div>
+        <div style="font-size:var(--font-size-base);font-weight:600;margin-bottom:var(--spacing-md);">
+          Amount Due: $${this._money(invoice.amount_residual)}
+        </div>
+        <button class="btn btn-success btn-block" id="confirmVenmoBtn">
+          Payment Received - Confirm
+        </button>
+      </div>
+    `;
+
+    document.getElementById('confirmVenmoBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('confirmVenmoBtn');
+      btn.disabled = true;
+      btn.textContent = 'Confirming...';
+
+      try {
+        const result = await OdooAPI.registerManualPayment(
+          invoice.id, 'Venmo', venmoUser, invoice.amount_residual
+        );
+        if (result.success) {
+          App.showToast('Venmo payment confirmed', 'success');
+          await this.renderSalesTab(job, parentContainer);
+        }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Payment Received - Confirm';
+      }
+    });
+  },
+
+  // ---------- Card Payment ----------
+
+  _showCardPaymentView(invoice, phone, contentArea, job, parentContainer) {
+    contentArea.innerHTML = `
+      <div style="margin-top:var(--spacing-md);">
+        <div class="billing-sms-input">
+          <div class="form-group">
+            <label for="cardPaymentPhone">Send payment link via SMS:</label>
+            <div class="billing-phone-row">
+              <input type="tel" class="form-input" id="cardPaymentPhone"
+                     value="${this._esc(phone)}" placeholder="(555) 123-4567">
+              <button class="btn btn-primary" id="sendCardLinkBtn">Send</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-outline btn-block btn-sm" id="copyPaymentLinkBtn"
+                style="margin-top:var(--spacing-sm);">
+          Copy Payment Link
+        </button>
+      </div>
+    `;
+
+    // Send SMS
+    document.getElementById('sendCardLinkBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('sendCardLinkBtn');
+      const phoneVal = document.getElementById('cardPaymentPhone').value.trim();
+      if (!phoneVal) {
+        App.showToast('Enter a phone number', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal);
+        if (result.success) {
+          App.showToast('Payment link sent', 'success');
+          this._startPaymentPolling(job, invoice.id, parentContainer);
+        } else {
+          App.showToast(result.error || 'Failed to send', 'error');
+        }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Send';
+    });
+
+    // Copy link
+    document.getElementById('copyPaymentLinkBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('copyPaymentLinkBtn');
+      btn.disabled = true;
+      btn.textContent = 'Getting link...';
+
+      try {
+        const linkData = await OdooAPI.getPaymentLink(invoice.id);
+        if (linkData.already_paid) {
+          App.showToast('Invoice already paid', 'info');
+          await this.renderSalesTab(job, parentContainer);
           return;
         }
-
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Sending...';
-
-        try {
-          const result = await OdooAPI.sendPaymentSms(invoice.id, phone);
-          if (result.success) {
-            App.showToast('Payment link sent', 'success');
-            // Start polling for payment
-            this._startPaymentPolling(job, invoice.id, container);
-          } else {
-            App.showToast(result.error || 'Failed to send', 'error');
-          }
-        } catch (err) {
-          App.showToast('Failed: ' + err.message, 'error');
+        if (linkData.url) {
+          await navigator.clipboard.writeText(linkData.url);
+          App.showToast('Payment link copied', 'success');
         }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+      }
 
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send SMS';
-      });
-    }
+      btn.disabled = false;
+      btn.textContent = 'Copy Payment Link';
+    });
+  },
+
+  // ---------- SMS Send Link ----------
+
+  _showSmsPaymentView(invoice, phone, contentArea, job, parentContainer) {
+    contentArea.innerHTML = `
+      <div style="margin-top:var(--spacing-md);">
+        <div class="billing-sms-input">
+          <div class="form-group">
+            <label for="smsPaymentPhone">Send payment link to:</label>
+            <div class="billing-phone-row">
+              <input type="tel" class="form-input" id="smsPaymentPhone"
+                     value="${this._esc(phone)}" placeholder="(555) 123-4567">
+              <button class="btn btn-primary" id="sendSmsPaymentBtn">Send SMS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('sendSmsPaymentBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('sendSmsPaymentBtn');
+      const phoneVal = document.getElementById('smsPaymentPhone').value.trim();
+      if (!phoneVal) {
+        App.showToast('Enter a phone number', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal);
+        if (result.success) {
+          App.showToast('Payment link sent', 'success');
+          this._startPaymentPolling(job, invoice.id, parentContainer);
+        } else {
+          App.showToast(result.error || 'Failed to send', 'error');
+        }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Send SMS';
+    });
   },
 
   // ========== STATE 4: PAID VIEW ==========
@@ -645,10 +1113,211 @@ const Billing = {
     }
   },
 
+  // ========== CHANGE ORDER MODAL ==========
+
+  _showChangeOrderModal(job, data, onSiteLines, parentContainer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    let linesHtml = onSiteLines.map(l => `
+      <div style="display:flex;justify-content:space-between;padding:var(--spacing-xs) 0;border-bottom:1px solid var(--border-color);">
+        <div>
+          <div style="font-weight:500;">${this._esc(l.product_name)}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-muted);">
+            ${l.quantity} × $${this._money(l.price_unit)}
+          </div>
+        </div>
+        <div style="font-weight:600;">$${this._money(l.price_subtotal)}</div>
+      </div>
+    `).join('');
+
+    const totalAmount = onSiteLines.reduce((s, l) => s + l.price_subtotal, 0);
+
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:440px;max-height:90vh;display:flex;flex-direction:column;">
+        <div class="modal-header">
+          <h3>Create Change Order</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" style="overflow-y:auto;-webkit-overflow-scrolling:touch;">
+          <div style="margin-bottom:var(--spacing-md);">
+            <div style="font-size:var(--font-size-small);font-weight:600;margin-bottom:var(--spacing-xs);">
+              On-Site Additions
+            </div>
+            ${linesHtml}
+            <div style="display:flex;justify-content:space-between;padding:var(--spacing-sm) 0;font-weight:700;">
+              <div>Total</div>
+              <div>$${this._money(totalAmount)}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="coReason">Reason for Change Order</label>
+            <textarea class="form-input" id="coReason" rows="3"
+                      placeholder="Describe why additional work was needed..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Customer Signature</label>
+            <div class="billing-signature-container">
+              <canvas id="signatureCanvas" class="billing-signature-canvas"></canvas>
+              <button class="billing-signature-clear" id="clearSignature">Clear</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="signedByName">Printed Name</label>
+            <input type="text" class="form-input" id="signedByName" placeholder="Customer's name">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="coCancel">Cancel</button>
+          <button class="btn btn-warning" id="coSubmit">Create Change Order</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.getElementById('coCancel').addEventListener('click', close);
+
+    // Initialize signature pad
+    const sigPad = this._renderSignaturePad('signatureCanvas');
+    document.getElementById('clearSignature').addEventListener('click', () => sigPad.clear());
+
+    // Submit
+    document.getElementById('coSubmit').addEventListener('click', async () => {
+      const btn = document.getElementById('coSubmit');
+      const reason = document.getElementById('coReason').value.trim();
+      const signedBy = document.getElementById('signedByName').value.trim();
+
+      if (!reason) {
+        App.showToast('Enter a reason for the change order', 'error');
+        return;
+      }
+      if (sigPad.isEmpty()) {
+        App.showToast('Customer signature required', 'error');
+        return;
+      }
+      if (!signedBy) {
+        App.showToast('Enter the customer\'s printed name', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
+      try {
+        const lines = onSiteLines.map(l => ({
+          product_id: l.product_id,
+          qty: l.quantity,
+          price: l.price_unit,
+          description: l.description,
+        }));
+
+        const sigBase64 = sigPad.toBase64();
+
+        const result = await OdooAPI.createChangeOrder(
+          job.id, lines, reason, sigBase64, signedBy
+        );
+
+        if (result.success) {
+          App.showToast(`Change order ${result.change_order_name} created`, 'success');
+          close();
+          await this.renderSalesTab(job, parentContainer);
+        }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Create Change Order';
+      }
+    });
+  },
+
+  // ========== SIGNATURE PAD ==========
+
+  _renderSignaturePad(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+
+    // Scale for crisp rendering
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    let drawing = false;
+    let hasDrawn = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const getPos = (e) => {
+      const r = canvas.getBoundingClientRect();
+      if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+      }
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    const start = (e) => {
+      e.preventDefault();
+      drawing = true;
+      const pos = getPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+    };
+
+    const move = (e) => {
+      if (!drawing) return;
+      e.preventDefault();
+      const pos = getPos(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      lastX = pos.x;
+      lastY = pos.y;
+      hasDrawn = true;
+    };
+
+    const end = () => {
+      drawing = false;
+    };
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+
+    return {
+      clear() {
+        ctx.clearRect(0, 0, rect.width, rect.height);
+        hasDrawn = false;
+      },
+      isEmpty() {
+        return !hasDrawn;
+      },
+      toBase64() {
+        // Return raw base64 without data URL prefix
+        return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+      },
+    };
+  },
+
   // ========== PLACEHOLDER VIEWS ==========
 
   _noSalesOrder(job) {
-    const soLink = job.sale_id ? '' : '';
     return `
       <div class="detail-section">
         <h3>Sales Order</h3>

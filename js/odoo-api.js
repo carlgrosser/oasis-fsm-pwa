@@ -689,4 +689,54 @@ const OdooAPI = {
   async checkInvoiceStatus(invoiceId) {
     return this.callKw('fsm.order', 'worker_check_invoice_status', [invoiceId], {});
   },
+
+  /**
+   * Update delivered quantity on a SO line.
+   */
+  async updateDeliveredQty(lineId, qtyDelivered) {
+    return this.callKw('fsm.order', 'worker_update_delivered_qty', [lineId, qtyDelivered], {});
+  },
+
+  /**
+   * Accept as quoted — set delivered = ordered for all lines.
+   */
+  async acceptAsQuoted(saleOrderId) {
+    return this.callKw('fsm.order', 'worker_accept_as_quoted', [saleOrderId], {});
+  },
+
+  /**
+   * Post variance note to SO chatter.
+   */
+  async postVarianceNote(saleOrderId, varianceDetails) {
+    return this.callKw('fsm.order', 'worker_post_variance_note', [saleOrderId, varianceDetails], {});
+  },
+
+  /**
+   * Set ready-to-invoice flag on SO.
+   */
+  async setReadyToInvoice(saleOrderId, ready) {
+    return this.callKw('fsm.order', 'worker_set_ready_to_invoice', [saleOrderId, ready], {});
+  },
+
+  /**
+   * Register a check payment on an invoice.
+   */
+  async registerCheckPayment(invoiceId, checkNumber, amount) {
+    return this.callKw('fsm.order', 'worker_register_check_payment', [invoiceId, checkNumber, amount], {});
+  },
+
+  /**
+   * Register a manual payment (Venmo, cash, etc.).
+   */
+  async registerManualPayment(invoiceId, method, reference, amount) {
+    return this.callKw('fsm.order', 'worker_register_manual_payment', [invoiceId, method, reference, amount], {});
+  },
+
+  /**
+   * Create a change order linked to an FSM order.
+   */
+  async createChangeOrder(fsmOrderId, lines, reason, signatureBase64, signedByName) {
+    return this.callKw('fsm.order', 'worker_create_change_order',
+      [fsmOrderId, lines, reason, signatureBase64, signedByName], {});
+  },
 };

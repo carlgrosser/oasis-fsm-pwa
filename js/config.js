@@ -65,6 +65,10 @@ const CONFIG = {
   // Set to true after installing the custom Odoo modules
   CUSTOM_MODULE_INSTALLED: true,
 
+  // BILLING
+  VENMO_USERNAME: '@OasisPoolTile',
+  CHANGE_ORDER_THRESHOLD: 300,
+
   // STAGE NAME MAPPING (update if your Odoo uses different stage names)
   STAGES: {
     SCHEDULED: 'New',
