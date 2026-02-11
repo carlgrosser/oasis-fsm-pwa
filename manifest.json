@@ -9,16 +9,16 @@
   "theme_color": "#0066cc",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%230066cc'/><circle cx='140' cy='52' r='16' fill='%23f5d76e'/><path d='M88 150c2-26 8-44 18-62 8-14 14-30 14-40 0-8-6-14-14-14s-14 6-14 14c0 12 6 26 12 38-14 22-22 44-24 64h8z' fill='%238c5a2b'/><path d='M92 72c-18-20-42-28-62-26 16 10 30 24 38 42 8-10 16-14 24-16zM98 64c10-22 30-36 52-40-12 12-22 26-28 44-10-2-18-2-24-4zM104 74c16-12 36-16 60-12-18 8-32 20-42 36-8-12-12-18-18-24zM80 84c-16-2-30 2-44 14 18 0 34 6 46 18 0-12-2-22-2-32z' fill='%2300a86b'/></svg>",
+      "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%230066cc'/><circle cx='140' cy='52' r='16' fill='%23f5d76e'/><path d='M88 150c2-26 8-44 18-62 8-14 14-30 14-40 0-8-6-14-14-14s-14 6-14 14c0 12 6 26 12 38-14 22-22 44-24 64h8z' fill='%238c5a2b'/><path d='M92 72c-18-20-42-28-62-26 16 10 30 24 38 42 8-10 16-14 24-16zM98 64c10-22 30-36 52-40-12 12-22 26-28 44-10-2-18-2-24-4zM104 74c16-12 36-16 60-12-18 8-32 20-42 36-8-12-12-18-18-24zM80 84c-16-2-30 2-44 14 18 0 34 6 46 18 0-12-2-22-2-32z' fill='%2300a86b'/></svg>",
+      "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

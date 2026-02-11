@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v44';
+const CACHE_NAME = 'fsm-pwa-v45';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -22,6 +22,12 @@ const STATIC_ASSETS = [
   'js/sync.js',
   'js/app.js',
   'manifest.json',
+  'favicon.ico',
+  'favicon-16x16.png',
+  'favicon-32x32.png',
+  'apple-touch-icon.png',
+  'icon-192.png',
+  'icon-512.png',
 ];
 
 // Install — cache static assets
