@@ -6,6 +6,7 @@
 
   /* Status Colors */
   --status-scheduled: #3498db;
+  --status-dispatched: #5dade2;
   --status-enroute: #f39c12;
   --status-arrived: #e67e22;
   --status-progress: #2ecc71;

@@ -851,57 +851,23 @@ const Billing = {
 
   _showCardPaymentView(invoice, phone, contentArea, job, parentContainer) {
     contentArea.innerHTML = `
-      <div style="margin-top:var(--spacing-md);">
-        <div class="billing-sms-input">
-          <div class="form-group">
-            <label for="cardPaymentPhone">Send payment link via SMS:</label>
-            <div class="billing-phone-row">
-              <input type="tel" class="form-input" id="cardPaymentPhone"
-                     value="${this._esc(phone)}" placeholder="(555) 123-4567">
-              <button class="btn btn-primary" id="sendCardLinkBtn">Send</button>
-            </div>
-          </div>
+      <div style="margin-top:var(--spacing-md);text-align:center;">
+        <div style="font-size:var(--font-size-base);font-weight:600;margin-bottom:var(--spacing-md);">
+          Amount Due: $${this._money(invoice.amount_residual)}
         </div>
-        <button class="btn btn-outline btn-block btn-sm" id="copyPaymentLinkBtn"
-                style="margin-top:var(--spacing-sm);">
-          Copy Payment Link
+        <p style="font-size:var(--font-size-small);color:var(--text-secondary);margin-bottom:var(--spacing-md);">
+          Opens Stripe's secure checkout page for the customer to enter their card.
+        </p>
+        <button class="btn btn-success btn-block btn-lg" id="collectCardBtn">
+          Collect Card Payment
         </button>
       </div>
     `;
 
-    // Send SMS
-    document.getElementById('sendCardLinkBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('sendCardLinkBtn');
-      const phoneVal = document.getElementById('cardPaymentPhone').value.trim();
-      if (!phoneVal) {
-        App.showToast('Enter a phone number', 'error');
-        return;
-      }
-
+    document.getElementById('collectCardBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('collectCardBtn');
       btn.disabled = true;
-      btn.textContent = 'Sending...';
-
-      try {
-        const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal);
-        if (result.success) {
-          App.showToast('Payment link sent', 'success');
-          this._startPaymentPolling(job, invoice.id, parentContainer);
-        } else {
-          App.showToast(result.error || 'Failed to send', 'error');
-        }
-      } catch (err) {
-        App.showToast('Failed: ' + err.message, 'error');
-      }
-
-      btn.disabled = false;
-      btn.textContent = 'Send';
-    });
-
-    // Copy link
-    document.getElementById('copyPaymentLinkBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('copyPaymentLinkBtn');
-      btn.disabled = true;
-      btn.textContent = 'Getting link...';
+      btn.textContent = 'Opening checkout...';
 
       try {
         const linkData = await OdooAPI.getPaymentLink(invoice.id);
@@ -911,15 +877,17 @@ const Billing = {
           return;
         }
         if (linkData.url) {
-          await navigator.clipboard.writeText(linkData.url);
-          App.showToast('Payment link copied', 'success');
+          window.open(linkData.url, '_blank');
+          // Start polling for payment completion
+          this._startPaymentPolling(job, invoice.id, parentContainer);
+          btn.disabled = false;
+          btn.textContent = 'Collect Card Payment';
         }
       } catch (err) {
         App.showToast('Failed: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Collect Card Payment';
       }
-
-      btn.disabled = false;
-      btn.textContent = 'Copy Payment Link';
     });
   },
 

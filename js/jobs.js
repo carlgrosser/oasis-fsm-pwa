@@ -58,6 +58,7 @@ const Jobs = {
    */
   getStatusClass(stageName) {
     const name = (stageName || '').toLowerCase();
+    if (name.includes('dispatch')) return 'dispatched';
     if (name.includes('route')) return 'enroute';
     if (name.includes('arrived')) return 'arrived';
     if (name.includes('progress')) return 'progress';
@@ -486,7 +487,7 @@ const Jobs = {
    */
   _isPreWorkStage(stageName) {
     const name = stageName.toLowerCase();
-    return name.includes('new') || name.includes('scheduled');
+    return name.includes('new') || name.includes('scheduled') || name.includes('dispatch');
   },
 
   /**
@@ -564,15 +565,20 @@ const Jobs = {
         </div>
         ${crewHtml}
       </div>
-      ${this._isPreWorkStage(stageName) ? `
+      ${this._isPreWorkStage(stageName) ? (() => {
+        const sn = stageName.toLowerCase();
+        const nextStage = sn.includes('dispatch') ? 'En Route' : 'Dispatched';
+        const btnClass = nextStage === 'En Route' ? 'btn-warning' : 'btn-info';
+        return `
       <div class="detail-section">
         <h3>Start Job</h3>
         <div class="status-actions" id="infoStatusActions">
-          <button class="btn btn-warning btn-block btn-lg" id="enRouteBtn" data-next-stage="En Route">
-            → En Route
+          <button class="btn ${btnClass} btn-block btn-lg" id="enRouteBtn" data-next-stage="${nextStage}">
+            → ${nextStage}
           </button>
         </div>
-      </div>` : ''}`;
+      </div>`;
+      })() : ''}`;
   },
 
   /**
@@ -1001,6 +1007,69 @@ const Jobs = {
     });
   },
 
+  /**
+   * Show a non-blocking modal asking whether to send an SMS to the customer.
+   * Does not delay the stage change — fires SMS in the background.
+   */
+  _showEnRouteSmsModal(job, phone) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:360px;">
+        <div class="modal-header">
+          <h3>Notify Customer?</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:var(--font-size-small);margin-bottom:var(--spacing-sm);">
+            Send an SMS to the customer that you're on the way?
+          </p>
+          <div style="font-size:var(--font-size-small);color:var(--text-secondary);margin-bottom:var(--spacing-sm);">
+            To: ${Jobs._escapeHtml(phone)}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="enRouteSmsNo">No</button>
+          <button class="btn btn-primary" id="enRouteSmsYes">Send SMS</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    document.getElementById('enRouteSmsNo').addEventListener('click', close);
+
+    document.getElementById('enRouteSmsYes').addEventListener('click', async () => {
+      const btn = document.getElementById('enRouteSmsYes');
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        // Try to get ETA from GPS if available
+        let etaMinutes = null;
+        if (typeof GPS !== 'undefined') {
+          const pos = await GPS.getQuickPosition();
+          if (pos && job.street) {
+            // Rough ETA — could be improved with routing API
+            etaMinutes = null; // GPS distance doesn't give driving time reliably
+          }
+        }
+
+        await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes);
+        App.showToast('SMS sent to customer', 'success');
+      } catch (err) {
+        console.warn('En route SMS failed:', err);
+        App.showToast('SMS failed: ' + err.message, 'error');
+      }
+
+      close();
+    });
+  },
+
   // ========== FOOTER BAR ==========
 
   _currentJob: null, // Track current job for footer actions
@@ -1176,6 +1245,14 @@ const Jobs = {
     if (name.includes('route') && typeof TimeTracking !== 'undefined') {
       const ok = await TimeTracking.ensureClockedIn();
       if (!ok) return; // user declined
+    }
+
+    // En Route SMS: offer to send SMS to customer
+    if (name.includes('route')) {
+      const phone = (job.mobile && job.mobile.trim()) || (job.phone && job.phone.trim());
+      if (phone) {
+        this._showEnRouteSmsModal(job, phone);
+      }
     }
 
     // Find the stage ID for this name

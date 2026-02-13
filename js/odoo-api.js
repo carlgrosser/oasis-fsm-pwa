@@ -623,6 +623,16 @@ const OdooAPI = {
     return this.callKw('hr.attendance', 'mobile_send_office_note', [employeeId, body], {});
   },
 
+  // ========== EN ROUTE SMS ==========
+
+  /**
+   * Send an SMS to the customer notifying that the technician is en route.
+   */
+  async sendEnRouteSms(orderId, phoneNumber, etaMinutes) {
+    return this.callKw('fsm.order', 'worker_send_enroute_sms',
+      [orderId, phoneNumber, etaMinutes || false], {});
+  },
+
   // ========== BILLING ==========
 
   /**

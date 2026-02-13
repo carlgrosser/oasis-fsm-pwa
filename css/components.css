@@ -187,6 +187,7 @@ textarea.form-input {
   box-shadow: var(--shadow-md);
 }
 
+.job-card.status-dispatched { border-left-color: var(--status-dispatched); }
 .job-card.status-enroute { border-left-color: var(--status-enroute); }
 .job-card.status-arrived { border-left-color: var(--status-arrived); }
 .job-card.status-progress { border-left-color: var(--status-progress); }
@@ -328,6 +329,11 @@ textarea.form-input {
 .status-badge.scheduled {
   background: rgba(52, 152, 219, 0.15);
   color: var(--status-scheduled);
+}
+
+.status-badge.dispatched {
+  background: rgba(93, 173, 226, 0.15);
+  color: var(--status-dispatched);
 }
 
 .status-badge.enroute {

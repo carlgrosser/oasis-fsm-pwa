@@ -72,6 +72,7 @@ const CONFIG = {
   // STAGE NAME MAPPING (update if your Odoo uses different stage names)
   STAGES: {
     SCHEDULED: 'New',
+    DISPATCHED: 'Dispatched',
     ENROUTE: 'En Route',
     ARRIVED: 'Arrived',
     IN_PROGRESS: 'In Progress',
@@ -80,5 +81,5 @@ const CONFIG = {
   },
 
   // STATUS WORKFLOW ORDER
-  WORKFLOW: ['New', 'En Route', 'Arrived', 'In Progress', 'Completed'],
+  WORKFLOW: ['New', 'Dispatched', 'En Route', 'Arrived', 'In Progress', 'Completed'],
 };
