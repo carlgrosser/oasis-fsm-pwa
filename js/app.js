@@ -113,6 +113,11 @@ const App = {
       });
     });
 
+    // Import settings buttons
+    ['importSettingsBtnList', 'importSettingsBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => this._importSettings());
+    });
+
     // Adjust shift buttons
     ['fixShiftBtnList', 'fixShiftBtnDetail'].forEach(id => {
       bindMenuAction(id, () => {
@@ -360,6 +365,46 @@ const App = {
     // Switch footer
     if (footerList) footerList.style.display = screen === 'list' ? 'flex' : 'none';
     if (footerDetail) footerDetail.style.display = screen === 'detail' ? 'flex' : 'none';
+  },
+
+  /**
+   * Import PWA settings from a JSON file exported by the office app.
+   */
+  _importSettings() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const imported = JSON.parse(reader.result);
+          // Store QR code separately if included
+          if (imported._venmo_qr_base64) {
+            localStorage.setItem('pwa_venmo_qr', imported._venmo_qr_base64);
+            delete imported._venmo_qr_base64;
+          }
+          localStorage.setItem('pwa_settings', JSON.stringify(imported));
+          // Apply to live CONFIG
+          const keys = [
+            'VENMO_USERNAME', 'CHANGE_ORDER_THRESHOLD',
+            'SMS_WEBHOOK_URL', 'ENABLE_SMS_NOTIFICATIONS', 'ODOO_URL',
+            'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',
+            'SHLINK_BASE_URL', 'SHLINK_API_KEY', 'SHLINK_SLUG_PATTERN',
+          ];
+          keys.forEach(function(k) {
+            if (imported[k] !== undefined) CONFIG[k] = imported[k];
+          });
+          this.showToast('Settings imported successfully', 'success');
+        } catch (err) {
+          this.showToast('Invalid settings file', 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+    input.click();
   },
 
   /**
