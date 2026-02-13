@@ -1358,11 +1358,15 @@ textarea.form-input {
 
 .detail-panel {
   min-width: 100%;
+  max-width: 100%;
   scroll-snap-align: start;
   flex-shrink: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: var(--spacing-md);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /* ========== STAGE GATE ========== */

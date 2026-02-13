@@ -1397,12 +1397,19 @@ const Jobs = {
       if (!ok) return; // user declined
     }
 
-    // Find the stage ID for this name
-    const stage = this._stages.find(s =>
+    // Find the stage ID for this name, preferring the job's company
+    const jobCompanyId = Array.isArray(job.company_id) ? job.company_id[0] : job.company_id;
+    const nameMatch = s =>
       s.name.toLowerCase() === stageName.toLowerCase() ||
       s.name.toLowerCase().includes(stageName.toLowerCase()) ||
-      stageName.toLowerCase().includes(s.name.toLowerCase())
-    );
+      stageName.toLowerCase().includes(s.name.toLowerCase());
+    const companyMatch = s =>
+      !s.company_id || s.company_id === false ||
+      (Array.isArray(s.company_id) ? s.company_id[0] : s.company_id) === jobCompanyId;
+
+    // Prefer stage matching both name and company; fall back to name-only
+    const stage = this._stages.find(s => nameMatch(s) && companyMatch(s))
+      || this._stages.find(s => nameMatch(s));
 
     if (!stage) {
       throw new Error('Stage not found: ' + stageName);

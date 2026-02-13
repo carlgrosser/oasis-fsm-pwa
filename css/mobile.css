@@ -494,6 +494,9 @@ body {
   box-shadow: var(--shadow-sm);
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-md);
+  overflow: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .detail-section h3 {

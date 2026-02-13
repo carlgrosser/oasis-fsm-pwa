@@ -160,7 +160,7 @@ const OdooAPI = {
     return this.searchRead(
       'fsm.stage',
       [],
-      ['id', 'name', 'sequence', 'is_closed'],
+      ['id', 'name', 'sequence', 'is_closed', 'company_id'],
       { order: 'sequence asc' }
     );
   },
