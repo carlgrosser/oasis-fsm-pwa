@@ -636,10 +636,12 @@ const OdooAPI = {
 
   /**
    * Send an SMS to the customer notifying that the technician is en route.
+   * If message is provided, the server uses it as-is instead of its own template.
    */
-  async sendEnRouteSms(orderId, phoneNumber, etaMinutes) {
+  async sendEnRouteSms(orderId, phoneNumber, etaMinutes, message) {
+    const kwargs = message ? { message: message } : {};
     return this.callKw('fsm.order', 'worker_send_enroute_sms',
-      [orderId, phoneNumber, etaMinutes || false], {});
+      [orderId, phoneNumber, etaMinutes || false], kwargs);
   },
 
   // ========== BILLING ==========
@@ -689,17 +691,21 @@ const OdooAPI = {
 
   /**
    * Send a payment link via SMS.
+   * If message is provided, the server uses it as-is instead of its own template.
    */
-  async sendPaymentSms(invoiceId, phoneNumber) {
-    return this.callKw('fsm.order', 'worker_send_payment_sms', [invoiceId, phoneNumber], {});
+  async sendPaymentSms(invoiceId, phoneNumber, message) {
+    const kwargs = message ? { message: message } : {};
+    return this.callKw('fsm.order', 'worker_send_payment_sms', [invoiceId, phoneNumber], kwargs);
   },
 
   /**
    * Send an invoice/receipt PDF via SMS or email.
+   * If message is provided, the server uses it as-is instead of its own template.
    */
-  async sendDocument(invoiceId, docType, method, recipient) {
+  async sendDocument(invoiceId, docType, method, recipient, message) {
+    const kwargs = message ? { message: message } : {};
     return this.callKw('fsm.order', 'worker_send_document',
-      [invoiceId, docType, method, recipient], {});
+      [invoiceId, docType, method, recipient], kwargs);
   },
 
   /**

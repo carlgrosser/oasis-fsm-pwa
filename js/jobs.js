@@ -1103,7 +1103,17 @@ const Jobs = {
 
         // Send SMS in background (don't block)
         if (sendSms && hasPhone) {
-          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes).then(() => {
+          const techName = Array.isArray(job.person_id) ? job.person_id[1] : '';
+          const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+          const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
+          const smsBody = renderSmsTemplate('SMS_TEMPLATE_ENROUTE', {
+            customer_name: customerName,
+            tech_name: techName,
+            tech_first_name: techName.split(' ')[0],
+            eta: etaMinutes || '30',
+            company_name: companyName,
+          });
+          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(() => {
             App.showToast('SMS sent to customer', 'success');
           }).catch(err => {
             console.warn('En route SMS failed:', err);
@@ -1198,7 +1208,17 @@ const Jobs = {
         await this.changeJobStatus(job, 'En Route');
 
         if (sendSms && hasPhone) {
-          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes).then(() => {
+          const techName = Array.isArray(job.person_id) ? job.person_id[1] : '';
+          const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+          const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
+          const smsBody = renderSmsTemplate('SMS_TEMPLATE_ENROUTE', {
+            customer_name: customerName,
+            tech_name: techName,
+            tech_first_name: techName.split(' ')[0],
+            eta: etaMinutes || '30',
+            company_name: companyName,
+          });
+          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(() => {
             App.showToast('SMS sent to customer', 'success');
           }).catch(err => {
             console.warn('En route SMS failed:', err);

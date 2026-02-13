@@ -921,7 +921,15 @@ const Billing = {
       btn.textContent = 'Sending...';
 
       try {
-        const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal);
+        const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+        const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
+        const smsBody = renderSmsTemplate('SMS_TEMPLATE_PAYMENT', {
+          customer_name: customerName,
+          amount: this._money(invoice.amount_total),
+          payment_link: '{payment_link}',
+          company_name: companyName,
+        });
+        const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal, smsBody);
         if (result.success) {
           App.showToast('Payment link sent', 'success');
           this._startPaymentPolling(job, invoice.id, parentContainer);
@@ -995,7 +1003,15 @@ const Billing = {
         smsBtn.disabled = true;
         smsBtn.textContent = 'Sending...';
         try {
-          await OdooAPI.sendDocument(invoice.id, 'receipt', 'sms', phone);
+          const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+          const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
+          const smsBody = renderSmsTemplate('SMS_TEMPLATE_RECEIPT', {
+            customer_name: customerName,
+            amount: this._money(invoice.amount_total),
+            receipt_link: '{receipt_link}',
+            company_name: companyName,
+          });
+          await OdooAPI.sendDocument(invoice.id, 'receipt', 'sms', phone, smsBody);
           App.showToast('Receipt sent via SMS', 'success');
         } catch (err) {
           App.showToast('Failed: ' + err.message, 'error');

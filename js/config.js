@@ -113,3 +113,15 @@ const CONFIG = {
     console.warn('Failed to load pwa_settings from localStorage:', e);
   }
 })();
+
+/**
+ * Render an SMS template by replacing {variable} placeholders with values.
+ * Returns the composed string, or null if the template is empty.
+ */
+function renderSmsTemplate(templateKey, vars) {
+  const template = CONFIG[templateKey];
+  if (!template) return null;
+  return template.replace(/\{(\w+)\}/g, function(match, key) {
+    return vars[key] !== undefined ? vars[key] : match;
+  });
+}
