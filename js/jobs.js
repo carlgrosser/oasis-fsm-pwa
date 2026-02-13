@@ -567,14 +567,24 @@ const Jobs = {
       </div>
       ${this._isPreWorkStage(stageName) ? (() => {
         const sn = stageName.toLowerCase();
-        const nextStage = sn.includes('dispatch') ? 'En Route' : 'Dispatched';
-        const btnClass = nextStage === 'En Route' ? 'btn-warning' : 'btn-info';
+        const isDispatched = sn.includes('dispatch');
+        if (isDispatched) {
+          return `
+      <div class="detail-section">
+        <h3>Head to Job</h3>
+        <div class="status-actions" id="infoStatusActions">
+          <button class="btn btn-warning btn-block btn-lg" id="enRouteBtn" data-next-stage="En Route">
+            → En Route
+          </button>
+        </div>
+      </div>`;
+        }
         return `
       <div class="detail-section">
         <h3>Start Job</h3>
         <div class="status-actions" id="infoStatusActions">
-          <button class="btn ${btnClass} btn-block btn-lg" id="enRouteBtn" data-next-stage="${nextStage}">
-            → ${nextStage}
+          <button class="btn btn-primary btn-block btn-lg" id="startJobBtn">
+            Start Job
           </button>
         </div>
       </div>`;
@@ -978,59 +988,55 @@ const Jobs = {
   },
 
   /**
-   * Bind the En Route button on the Info tab (for pre-work stage).
+   * Bind the Start Job button (New stage) and En Route button (Dispatched stage).
    */
   _bindEnRouteButton(job) {
+    // "Start Job" button — shown when job is New
+    const startJobBtn = document.getElementById('startJobBtn');
+    if (startJobBtn) {
+      startJobBtn.addEventListener('click', () => {
+        this._showStartJobModal(job);
+      });
+    }
+
+    // "En Route" button — shown when job is Dispatched
     const enRouteBtn = document.getElementById('enRouteBtn');
-    if (!enRouteBtn) return;
-
-    enRouteBtn.addEventListener('click', async () => {
-      const nextStageName = enRouteBtn.dataset.nextStage;
-      enRouteBtn.disabled = true;
-      enRouteBtn.textContent = 'Updating...';
-
-      try {
-        await this.changeJobStatus(job, nextStageName);
-        App.showToast('Status updated', 'success');
-
-        // Switch to Work tab after going En Route
-        this._pendingTabSwitch = 1;
-
-        // Re-render
-        const container = document.getElementById('jobDetail');
-        await this.renderJobDetail(job.id, container);
-      } catch (err) {
-        App.showToast('Failed to update: ' + err.message, 'error');
-        enRouteBtn.disabled = false;
-        enRouteBtn.textContent = '→ ' + nextStageName;
-      }
-    });
+    if (enRouteBtn) {
+      enRouteBtn.addEventListener('click', () => {
+        this._showEnRouteModal(job);
+      });
+    }
   },
 
   /**
-   * Show a non-blocking modal asking whether to send an SMS to the customer.
-   * Does not delay the stage change — fires SMS in the background.
+   * Show Start Job popup with SMS and "going straight to job?" checkboxes.
    */
-  _showEnRouteSmsModal(job, phone) {
+  _showStartJobModal(job) {
+    const phone = (job.mobile && job.mobile.trim()) || (job.phone && job.phone.trim());
+    const hasPhone = !!phone;
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal" style="max-width:360px;">
         <div class="modal-header">
-          <h3>Notify Customer?</h3>
+          <h3>Start Job</h3>
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <p style="font-size:var(--font-size-small);margin-bottom:var(--spacing-sm);">
-            Send an SMS to the customer that you're on the way?
-          </p>
-          <div style="font-size:var(--font-size-small);color:var(--text-secondary);margin-bottom:var(--spacing-sm);">
-            To: ${Jobs._escapeHtml(phone)}
-          </div>
+          <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;${hasPhone ? '' : 'opacity:0.4;pointer-events:none;'}">
+            <input type="checkbox" id="startJobSms" ${hasPhone ? 'checked' : 'disabled'}>
+            <span style="font-size:var(--font-size-small);">Send notification SMS to customer</span>
+          </label>
+          ${hasPhone ? `<div style="font-size:var(--font-size-xs);color:var(--text-muted);margin-left:28px;margin-top:-4px;margin-bottom:var(--spacing-sm);">To: ${this._escapeHtml(phone)}</div>` : ''}
+          <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;">
+            <input type="checkbox" id="startJobDirect" checked>
+            <span style="font-size:var(--font-size-small);">Going straight to job?</span>
+          </label>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" id="enRouteSmsNo">No</button>
-          <button class="btn btn-primary" id="enRouteSmsYes">Send SMS</button>
+          <button class="btn btn-secondary" id="startJobCancel">Cancel</button>
+          <button class="btn btn-primary" id="startJobConfirm">Go</button>
         </div>
       </div>
     `;
@@ -1040,33 +1046,112 @@ const Jobs = {
     const close = () => overlay.remove();
     overlay.querySelector('.modal-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.getElementById('startJobCancel').addEventListener('click', close);
 
-    document.getElementById('enRouteSmsNo').addEventListener('click', close);
-
-    document.getElementById('enRouteSmsYes').addEventListener('click', async () => {
-      const btn = document.getElementById('enRouteSmsYes');
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
+    document.getElementById('startJobConfirm').addEventListener('click', async () => {
+      const sendSms = document.getElementById('startJobSms').checked;
+      const goingDirect = document.getElementById('startJobDirect').checked;
+      const confirmBtn = document.getElementById('startJobConfirm');
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Updating...';
 
       try {
-        // Try to get ETA from GPS if available
-        let etaMinutes = null;
-        if (typeof GPS !== 'undefined') {
-          const pos = await GPS.getQuickPosition();
-          if (pos && job.street) {
-            // Rough ETA — could be improved with routing API
-            etaMinutes = null; // GPS distance doesn't give driving time reliably
-          }
+        const targetStage = goingDirect ? 'En Route' : 'Dispatched';
+        await this.changeJobStatus(job, targetStage);
+
+        // Send SMS in background (don't block)
+        if (sendSms && hasPhone) {
+          OdooAPI.sendEnRouteSms(job.id, phone, null).then(() => {
+            App.showToast('SMS sent to customer', 'success');
+          }).catch(err => {
+            console.warn('En route SMS failed:', err);
+            App.showToast('SMS failed to send', 'error');
+          });
         }
 
-        await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes);
-        App.showToast('SMS sent to customer', 'success');
-      } catch (err) {
-        console.warn('En route SMS failed:', err);
-        App.showToast('SMS failed: ' + err.message, 'error');
-      }
+        App.showToast('Status updated', 'success');
+        close();
 
-      close();
+        if (goingDirect) {
+          this._pendingTabSwitch = 1; // Work tab
+        }
+        // If not going direct (Dispatched), stay on Info tab — no tab switch
+
+        const container = document.getElementById('jobDetail');
+        await this.renderJobDetail(job.id, container);
+      } catch (err) {
+        App.showToast('Failed to update: ' + err.message, 'error');
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Go';
+      }
+    });
+  },
+
+  /**
+   * Show En Route popup (from Dispatched) with SMS checkbox.
+   */
+  _showEnRouteModal(job) {
+    const phone = (job.mobile && job.mobile.trim()) || (job.phone && job.phone.trim());
+    const hasPhone = !!phone;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:360px;">
+        <div class="modal-header">
+          <h3>En Route</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;${hasPhone ? '' : 'opacity:0.4;pointer-events:none;'}">
+            <input type="checkbox" id="enRouteSms" ${hasPhone ? 'checked' : 'disabled'}>
+            <span style="font-size:var(--font-size-small);">Send notification SMS to customer</span>
+          </label>
+          ${hasPhone ? `<div style="font-size:var(--font-size-xs);color:var(--text-muted);margin-left:28px;">To: ${this._escapeHtml(phone)}</div>` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="enRouteCancel">Cancel</button>
+          <button class="btn btn-warning" id="enRouteConfirm">En Route</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.getElementById('enRouteCancel').addEventListener('click', close);
+
+    document.getElementById('enRouteConfirm').addEventListener('click', async () => {
+      const sendSms = document.getElementById('enRouteSms').checked;
+      const confirmBtn = document.getElementById('enRouteConfirm');
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Updating...';
+
+      try {
+        await this.changeJobStatus(job, 'En Route');
+
+        if (sendSms && hasPhone) {
+          OdooAPI.sendEnRouteSms(job.id, phone, null).then(() => {
+            App.showToast('SMS sent to customer', 'success');
+          }).catch(err => {
+            console.warn('En route SMS failed:', err);
+            App.showToast('SMS failed to send', 'error');
+          });
+        }
+
+        App.showToast('Status updated', 'success');
+        close();
+
+        this._pendingTabSwitch = 1; // Work tab
+        const container = document.getElementById('jobDetail');
+        await this.renderJobDetail(job.id, container);
+      } catch (err) {
+        App.showToast('Failed to update: ' + err.message, 'error');
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'En Route';
+      }
     });
   },
 
@@ -1245,14 +1330,6 @@ const Jobs = {
     if (name.includes('route') && typeof TimeTracking !== 'undefined') {
       const ok = await TimeTracking.ensureClockedIn();
       if (!ok) return; // user declined
-    }
-
-    // En Route SMS: offer to send SMS to customer
-    if (name.includes('route')) {
-      const phone = (job.mobile && job.mobile.trim()) || (job.phone && job.phone.trim());
-      if (phone) {
-        this._showEnRouteSmsModal(job, phone);
-      }
     }
 
     // Find the stage ID for this name
