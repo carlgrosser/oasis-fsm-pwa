@@ -623,6 +623,15 @@ const OdooAPI = {
     return this.callKw('hr.attendance', 'mobile_send_office_note', [employeeId, body], {});
   },
 
+  // ========== ETA ==========
+
+  /**
+   * Get driving ETA from worker's GPS to job location.
+   */
+  async getEta(orderId, gpsCoords) {
+    return this.callKw('fsm.order', 'worker_get_eta', [orderId, gpsCoords], {});
+  },
+
   // ========== EN ROUTE SMS ==========
 
   /**

@@ -1009,6 +1009,25 @@ const Jobs = {
   },
 
   /**
+   * Auto-fill an ETA input by getting GPS and calling the backend.
+   * Non-blocking — fills the input when ready, doesn't hold up the modal.
+   */
+  _autoFillEta(jobId, inputId) {
+    if (typeof GPS === 'undefined') return;
+    GPS.getQuickPosition().then(pos => {
+      if (!pos) return;
+      const coords = GPS.formatCoords(pos);
+      return OdooAPI.getEta(jobId, coords);
+    }).then(result => {
+      if (!result || !result.eta_minutes) return;
+      const input = document.getElementById(inputId);
+      if (input) input.value = result.eta_minutes;
+    }).catch(err => {
+      console.warn('Auto ETA failed:', err);
+    });
+  },
+
+  /**
    * Show Start Job popup with SMS and "going straight to job?" checkboxes.
    */
   _showStartJobModal(job) {
@@ -1051,6 +1070,9 @@ const Jobs = {
     `;
 
     document.body.appendChild(overlay);
+
+    // Auto-calculate ETA from GPS
+    if (hasPhone) this._autoFillEta(job.id, 'startJobEta');
 
     const close = () => overlay.remove();
     overlay.querySelector('.modal-close').addEventListener('click', close);
@@ -1146,6 +1168,9 @@ const Jobs = {
     `;
 
     document.body.appendChild(overlay);
+
+    // Auto-calculate ETA from GPS
+    if (hasPhone) this._autoFillEta(job.id, 'enRouteEta');
 
     const close = () => overlay.remove();
     overlay.querySelector('.modal-close').addEventListener('click', close);
