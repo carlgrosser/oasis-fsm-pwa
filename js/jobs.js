@@ -1108,6 +1108,7 @@ const Jobs = {
           const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
           const smsBody = renderSmsTemplate('SMS_TEMPLATE_ENROUTE', {
             customer_name: customerName,
+            customer_first_name: customerName.split(' ')[0],
             tech_name: techName,
             tech_first_name: techName.split(' ')[0],
             eta: etaMinutes || '30',
@@ -1213,6 +1214,7 @@ const Jobs = {
           const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
           const smsBody = renderSmsTemplate('SMS_TEMPLATE_ENROUTE', {
             customer_name: customerName,
+            customer_first_name: customerName.split(' ')[0],
             tech_name: techName,
             tech_first_name: techName.split(' ')[0],
             eta: etaMinutes || '30',

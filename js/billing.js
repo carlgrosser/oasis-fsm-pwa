@@ -925,6 +925,7 @@ const Billing = {
         const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
         const smsBody = renderSmsTemplate('SMS_TEMPLATE_PAYMENT', {
           customer_name: customerName,
+          customer_first_name: customerName.split(' ')[0],
           amount: this._money(invoice.amount_total),
           payment_link: '{payment_link}',
           company_name: companyName,
@@ -1007,6 +1008,7 @@ const Billing = {
           const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
           const smsBody = renderSmsTemplate('SMS_TEMPLATE_RECEIPT', {
             customer_name: customerName,
+          customer_first_name: customerName.split(' ')[0],
             amount: this._money(invoice.amount_total),
             receipt_link: '{receipt_link}',
             company_name: companyName,

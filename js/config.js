@@ -66,9 +66,9 @@ const CONFIG = {
   CUSTOM_MODULE_INSTALLED: true,
 
   // SMS TEMPLATES
-  SMS_TEMPLATE_ENROUTE: 'Hi {customer_name}, {tech_first_name} from {company_name} is on the way! Estimated arrival: {eta} minutes.',
-  SMS_TEMPLATE_PAYMENT: 'Hi {customer_name}, here is your payment link for ${amount}: {payment_link}',
-  SMS_TEMPLATE_RECEIPT: 'Hi {customer_name}, your receipt from {company_name} for ${amount} is ready: {receipt_link}',
+  SMS_TEMPLATE_ENROUTE: 'Hi {customer_first_name}, {tech_first_name} from {company_name} is on the way! Estimated arrival: {eta} minutes.',
+  SMS_TEMPLATE_PAYMENT: 'Hi {customer_first_name}, here is your payment link for ${amount}: {payment_link}',
+  SMS_TEMPLATE_RECEIPT: 'Hi {customer_first_name}, your receipt from {company_name} for ${amount} is ready: {receipt_link}',
 
   // SHLINK URL SHORTENER
   SHLINK_BASE_URL: '',
