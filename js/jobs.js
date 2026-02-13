@@ -1028,7 +1028,16 @@ const Jobs = {
             <input type="checkbox" id="startJobSms" ${hasPhone ? 'checked' : 'disabled'}>
             <span style="font-size:var(--font-size-small);">Send notification SMS to customer</span>
           </label>
-          ${hasPhone ? `<div style="font-size:var(--font-size-xs);color:var(--text-muted);margin-left:28px;margin-top:-4px;margin-bottom:var(--spacing-sm);">To: ${this._escapeHtml(phone)}</div>` : ''}
+          ${hasPhone ? `
+          <div id="startJobEtaRow" style="margin-left:28px;margin-top:-4px;margin-bottom:var(--spacing-sm);">
+            <div style="font-size:var(--font-size-xs);color:var(--text-muted);">To: ${this._escapeHtml(phone)}</div>
+            <div style="display:flex;align-items:center;gap:var(--spacing-xs);margin-top:var(--spacing-xs);">
+              <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">ETA:</span>
+              <input type="number" id="startJobEta" class="form-input" value="30" min="5" max="180" step="5"
+                     style="width:60px;padding:4px 6px;font-size:var(--font-size-xs);text-align:center;">
+              <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">minutes</span>
+            </div>
+          </div>` : ''}
           <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;">
             <input type="checkbox" id="startJobDirect" checked>
             <span style="font-size:var(--font-size-small);">Going straight to job?</span>
@@ -1048,9 +1057,20 @@ const Jobs = {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.getElementById('startJobCancel').addEventListener('click', close);
 
+    // Toggle ETA row visibility when SMS checkbox changes
+    const startJobSms = document.getElementById('startJobSms');
+    const startJobEtaRow = document.getElementById('startJobEtaRow');
+    if (startJobSms && startJobEtaRow) {
+      startJobSms.addEventListener('change', () => {
+        startJobEtaRow.style.display = startJobSms.checked ? '' : 'none';
+      });
+    }
+
     document.getElementById('startJobConfirm').addEventListener('click', async () => {
       const sendSms = document.getElementById('startJobSms').checked;
       const goingDirect = document.getElementById('startJobDirect').checked;
+      const etaInput = document.getElementById('startJobEta');
+      const etaMinutes = (sendSms && etaInput) ? (parseInt(etaInput.value, 10) || null) : null;
       const confirmBtn = document.getElementById('startJobConfirm');
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Updating...';
@@ -1061,7 +1081,7 @@ const Jobs = {
 
         // Send SMS in background (don't block)
         if (sendSms && hasPhone) {
-          OdooAPI.sendEnRouteSms(job.id, phone, null).then(() => {
+          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes).then(() => {
             App.showToast('SMS sent to customer', 'success');
           }).catch(err => {
             console.warn('En route SMS failed:', err);
@@ -1107,7 +1127,16 @@ const Jobs = {
             <input type="checkbox" id="enRouteSms" ${hasPhone ? 'checked' : 'disabled'}>
             <span style="font-size:var(--font-size-small);">Send notification SMS to customer</span>
           </label>
-          ${hasPhone ? `<div style="font-size:var(--font-size-xs);color:var(--text-muted);margin-left:28px;">To: ${this._escapeHtml(phone)}</div>` : ''}
+          ${hasPhone ? `
+          <div id="enRouteEtaRow" style="margin-left:28px;">
+            <div style="font-size:var(--font-size-xs);color:var(--text-muted);">To: ${this._escapeHtml(phone)}</div>
+            <div style="display:flex;align-items:center;gap:var(--spacing-xs);margin-top:var(--spacing-xs);">
+              <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">ETA:</span>
+              <input type="number" id="enRouteEta" class="form-input" value="30" min="5" max="180" step="5"
+                     style="width:60px;padding:4px 6px;font-size:var(--font-size-xs);text-align:center;">
+              <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">minutes</span>
+            </div>
+          </div>` : ''}
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" id="enRouteCancel">Cancel</button>
@@ -1123,8 +1152,19 @@ const Jobs = {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.getElementById('enRouteCancel').addEventListener('click', close);
 
+    // Toggle ETA row visibility when SMS checkbox changes
+    const enRouteSmsCheck = document.getElementById('enRouteSms');
+    const enRouteEtaRow = document.getElementById('enRouteEtaRow');
+    if (enRouteSmsCheck && enRouteEtaRow) {
+      enRouteSmsCheck.addEventListener('change', () => {
+        enRouteEtaRow.style.display = enRouteSmsCheck.checked ? '' : 'none';
+      });
+    }
+
     document.getElementById('enRouteConfirm').addEventListener('click', async () => {
       const sendSms = document.getElementById('enRouteSms').checked;
+      const etaInput = document.getElementById('enRouteEta');
+      const etaMinutes = (sendSms && etaInput) ? (parseInt(etaInput.value, 10) || null) : null;
       const confirmBtn = document.getElementById('enRouteConfirm');
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Updating...';
@@ -1133,7 +1173,7 @@ const Jobs = {
         await this.changeJobStatus(job, 'En Route');
 
         if (sendSms && hasPhone) {
-          OdooAPI.sendEnRouteSms(job.id, phone, null).then(() => {
+          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes).then(() => {
             App.showToast('SMS sent to customer', 'success');
           }).catch(err => {
             console.warn('En route SMS failed:', err);
