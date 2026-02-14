@@ -816,9 +816,6 @@ const Billing = {
         <div style="margin:var(--spacing-md) 0;">
           <div class="billing-venmo-qr">
             ${qrHtml}
-            <div style="font-size:var(--font-size-small);color:var(--text-secondary);margin-top:var(--spacing-xs);">
-              Customer pays via Venmo to ${this._esc(venmoUser)}
-            </div>
           </div>
         </div>
         <div style="font-size:var(--font-size-base);font-weight:600;margin-bottom:var(--spacing-md);">
