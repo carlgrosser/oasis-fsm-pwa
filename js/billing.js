@@ -808,7 +808,7 @@ const Billing = {
     const venmoUser = CONFIG.VENMO_USERNAME || '@OasisPoolTile';
     const qrData = localStorage.getItem('pwa_venmo_qr');
     const qrHtml = qrData
-      ? `<img src="${qrData}" alt="Venmo QR" style="max-width:220px;max-height:220px;border-radius:8px;">`
+      ? `<img src="${qrData}" alt="Venmo QR" style="width:100%;border-radius:8px;">`
       : `<div style="font-size:64px;">&#128178;</div>`;
     contentArea.innerHTML = `
       <div style="margin-top:var(--spacing-md);text-align:center;">
