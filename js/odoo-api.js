@@ -778,4 +778,14 @@ const OdooAPI = {
     return this.callKw('fsm.order', 'worker_create_change_order',
       [fsmOrderId, lines, reason, signatureBase64, signedByName], {});
   },
+
+  // ========== PWA SETTINGS ==========
+
+  /**
+   * Fetch PWA settings from Odoo system parameters.
+   * Returns a dict of CONFIG keys to values (only keys that are set).
+   */
+  async getPwaSettings() {
+    return this.callKw('fsm.order', 'worker_get_pwa_settings', [], {});
+  },
 };

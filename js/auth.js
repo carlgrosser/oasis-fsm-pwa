@@ -98,6 +98,9 @@ const Auth = {
       // Also save to IndexedDB for offline reference
       await DB.setState('currentUser', sessionData);
 
+      // Fetch latest PWA settings from Odoo (non-fatal)
+      await this._fetchAndApplySettings();
+
       return { success: true, user: sessionData };
     } catch (err) {
       const rawMsg = (err && err.message) ? err.message : '';
@@ -152,6 +155,8 @@ const Auth = {
           this._clearSession();
           return false;
         }
+        // Refresh PWA settings from Odoo (non-fatal)
+        await this._fetchAndApplySettings();
         return true;
       } catch {
         // Network error — assume session might be OK (offline mode)
@@ -177,6 +182,28 @@ const Auth = {
     this._clearSession();
     await DB.setState('currentUser', null);
     window.location.href = 'index.html';
+  },
+
+  /**
+   * Fetch PWA settings from Odoo and apply to CONFIG + localStorage.
+   * Non-fatal: errors are logged but do not block login.
+   */
+  async _fetchAndApplySettings() {
+    try {
+      const settings = await OdooAPI.getPwaSettings();
+      if (settings && typeof settings === 'object') {
+        // Apply to live CONFIG object
+        for (const [key, value] of Object.entries(settings)) {
+          if (key in CONFIG) {
+            CONFIG[key] = value;
+          }
+        }
+        // Persist to localStorage so they survive page reloads
+        localStorage.setItem('pwa_settings', JSON.stringify(settings));
+      }
+    } catch (err) {
+      console.warn('Failed to fetch PWA settings from server:', err);
+    }
   },
 
   /**
