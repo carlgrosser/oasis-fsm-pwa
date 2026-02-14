@@ -808,11 +808,11 @@ const Billing = {
     const venmoUser = CONFIG.VENMO_USERNAME || '@OasisPoolTile';
     const qrData = localStorage.getItem('pwa_venmo_qr');
     const qrHtml = qrData
-      ? `<img src="${qrData}" alt="Venmo QR" style="width:100%;border-radius:8px;">`
-      : `<div style="font-size:64px;">&#128178;</div>`;
+      ? `<img src="${qrData}" alt="${this._esc(venmoUser)}" style="width:100%;border-radius:8px;">`
+      : `<div style="font-size:64px;">&#128178;</div>
+         <div class="billing-venmo-username">${this._esc(venmoUser)}</div>`;
     contentArea.innerHTML = `
       <div style="margin-top:var(--spacing-md);text-align:center;">
-        <div class="billing-venmo-username">${this._esc(venmoUser)}</div>
         <div style="margin:var(--spacing-md) 0;">
           <div class="billing-venmo-qr">
             ${qrHtml}
