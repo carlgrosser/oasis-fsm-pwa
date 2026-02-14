@@ -192,6 +192,11 @@ const Auth = {
     try {
       const settings = await OdooAPI.getPwaSettings();
       if (settings && typeof settings === 'object') {
+        // Handle Venmo QR image separately (not a CONFIG key)
+        if (settings._venmo_qr_base64) {
+          localStorage.setItem('pwa_venmo_qr', settings._venmo_qr_base64);
+          delete settings._venmo_qr_base64;
+        }
         // Apply to live CONFIG object
         for (const [key, value] of Object.entries(settings)) {
           if (key in CONFIG) {
