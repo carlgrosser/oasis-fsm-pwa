@@ -617,6 +617,20 @@ const OdooAPI = {
   },
 
   /**
+   * Get attendance history for an employee within a date range.
+   */
+  async getAttendanceHistory(employeeId, dateFrom, dateTo) {
+    return this.callKw('hr.attendance', 'mobile_get_attendance_history', [employeeId, dateFrom, dateTo], {});
+  },
+
+  /**
+   * Submit a timesheet change request on an attendance record.
+   */
+  async requestTimesheetChange(attendanceId, changes, reason) {
+    return this.callKw('hr.attendance', 'mobile_request_timesheet_change', [attendanceId, changes, reason], {});
+  },
+
+  /**
    * Send a note to the office Discuss channel.
    */
   async sendOfficeNote(employeeId, body) {

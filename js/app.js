@@ -139,6 +139,14 @@ const App = {
       });
     });
 
+    // Timesheet button
+    const timesheetBtn = document.getElementById('timesheetBtn');
+    if (timesheetBtn) {
+      timesheetBtn.addEventListener('click', () => {
+        if (typeof Timesheet !== 'undefined') Timesheet.openModal();
+      });
+    }
+
     // Clock button
     const clockBtn = document.getElementById('clockBtn');
     if (clockBtn) {

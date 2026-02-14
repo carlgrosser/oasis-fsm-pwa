@@ -303,6 +303,11 @@ body {
   box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
 }
 
+.footer-btn-timesheet {
+  background: linear-gradient(135deg, #8e44ad, #9b59b6);
+  box-shadow: 0 2px 8px rgba(142, 68, 173, 0.3);
+}
+
 .footer-btn-menu {
   background: linear-gradient(135deg, #4a5568, #718096);
   box-shadow: 0 2px 8px rgba(74, 85, 104, 0.3);
