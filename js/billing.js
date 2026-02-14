@@ -806,12 +806,16 @@ const Billing = {
 
   _showVenmoPaymentView(invoice, contentArea, job, parentContainer) {
     const venmoUser = CONFIG.VENMO_USERNAME || '@OasisPoolTile';
+    const qrData = localStorage.getItem('pwa_venmo_qr');
+    const qrHtml = qrData
+      ? `<img src="${qrData}" alt="Venmo QR" style="max-width:220px;max-height:220px;border-radius:8px;">`
+      : `<div style="font-size:64px;">&#128178;</div>`;
     contentArea.innerHTML = `
       <div style="margin-top:var(--spacing-md);text-align:center;">
         <div class="billing-venmo-username">${this._esc(venmoUser)}</div>
         <div style="margin:var(--spacing-md) 0;">
           <div class="billing-venmo-qr">
-            <div style="font-size:64px;">&#128178;</div>
+            ${qrHtml}
             <div style="font-size:var(--font-size-small);color:var(--text-secondary);margin-top:var(--spacing-xs);">
               Customer pays via Venmo to ${this._esc(venmoUser)}
             </div>
