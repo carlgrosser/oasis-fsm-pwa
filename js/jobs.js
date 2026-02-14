@@ -472,6 +472,9 @@ const Jobs = {
     // Bind En Route button on Info tab (pre-work stage only)
     this._bindEnRouteButton(job);
 
+    // Bind Send ETA SMS button on Work tab (En Route stage)
+    this._bindEnRouteSmsButton(job);
+
     // Update footer bar for this job
     this._updateFooter(job);
 
@@ -611,6 +614,18 @@ const Jobs = {
         </div>`;
     }
 
+    // Send ETA SMS section (only when En Route)
+    const isEnRoute = stageName.toLowerCase().includes('route');
+    const enRouteSmsHtml = isEnRoute ? `
+      <div class="detail-section" id="enRouteSmsSection">
+        <h3>Notify Customer</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span>ETA:</span>
+          <input type="number" id="enRouteSmsEta" class="form-input" min="5" max="180" step="5" placeholder="min" style="width:70px;">
+          <button class="btn btn-secondary" id="enRouteSmsBtn">Send ETA SMS</button>
+        </div>
+      </div>` : '';
+
     return `
       <div class="detail-section">
         <h3>Status</h3>
@@ -618,6 +633,7 @@ const Jobs = {
           ${workflowHtml}
         </div>
       </div>
+      ${enRouteSmsHtml}
       ${cats.length > 0 ? `
       <div class="detail-section">
         <h3>Photos</h3>
@@ -1052,14 +1068,18 @@ const Jobs = {
             <div style="font-size:var(--font-size-xs);color:var(--text-muted);">To: ${this._escapeHtml(phone)}</div>
             <div style="display:flex;align-items:center;gap:var(--spacing-xs);margin-top:var(--spacing-xs);">
               <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">ETA:</span>
-              <input type="number" id="startJobEta" class="form-input" value="30" min="5" max="180" step="5"
-                     style="width:60px;padding:4px 6px;font-size:var(--font-size-xs);text-align:center;">
+              <input type="number" id="startJobEta" class="form-input" value="" min="5" max="180" step="5"
+                     style="width:60px;padding:4px 6px;font-size:var(--font-size-xs);text-align:center;" placeholder="—">
               <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">minutes</span>
             </div>
           </div>` : ''}
           <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;">
             <input type="checkbox" id="startJobDirect" checked>
             <span style="font-size:var(--font-size-small);">Going straight to job?</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;">
+            <input type="checkbox" id="startJobNav" checked>
+            <span style="font-size:var(--font-size-small);">Launch Navigation?</span>
           </label>
         </div>
         <div class="modal-footer">
@@ -1116,10 +1136,19 @@ const Jobs = {
           });
           OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(() => {
             App.showToast('SMS sent to customer', 'success');
+            OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
           }).catch(err => {
             console.warn('En route SMS failed:', err);
             App.showToast('SMS failed to send', 'error');
           });
+        }
+
+        // Launch navigation if checked
+        const launchNav = document.getElementById('startJobNav');
+        if (launchNav && launchNav.checked) {
+          const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
+          const addr = encodeURIComponent(addressParts.join(', '));
+          window.open('https://www.google.com/maps/dir/?api=1&destination=' + addr, '_blank');
         }
 
         App.showToast('Status updated', 'success');
@@ -1165,11 +1194,15 @@ const Jobs = {
             <div style="font-size:var(--font-size-xs);color:var(--text-muted);">To: ${this._escapeHtml(phone)}</div>
             <div style="display:flex;align-items:center;gap:var(--spacing-xs);margin-top:var(--spacing-xs);">
               <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">ETA:</span>
-              <input type="number" id="enRouteEta" class="form-input" value="30" min="5" max="180" step="5"
-                     style="width:60px;padding:4px 6px;font-size:var(--font-size-xs);text-align:center;">
+              <input type="number" id="enRouteEta" class="form-input" value="" min="5" max="180" step="5"
+                     style="width:60px;padding:4px 6px;font-size:var(--font-size-xs);text-align:center;" placeholder="—">
               <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">minutes</span>
             </div>
           </div>` : ''}
+          <label style="display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-sm) 0;cursor:pointer;">
+            <input type="checkbox" id="enRouteNav" checked>
+            <span style="font-size:var(--font-size-small);">Launch Navigation?</span>
+          </label>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" id="enRouteCancel">Cancel</button>
@@ -1222,10 +1255,19 @@ const Jobs = {
           });
           OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(() => {
             App.showToast('SMS sent to customer', 'success');
+            OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
           }).catch(err => {
             console.warn('En route SMS failed:', err);
             App.showToast('SMS failed to send', 'error');
           });
+        }
+
+        // Launch navigation if checked
+        const launchNav = document.getElementById('enRouteNav');
+        if (launchNav && launchNav.checked) {
+          const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
+          const addr = encodeURIComponent(addressParts.join(', '));
+          window.open('https://www.google.com/maps/dir/?api=1&destination=' + addr, '_blank');
         }
 
         App.showToast('Status updated', 'success');
@@ -1239,6 +1281,51 @@ const Jobs = {
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'En Route';
       }
+    });
+  },
+
+  /**
+   * Bind the Send ETA SMS button on the Work tab (En Route stage).
+   */
+  _bindEnRouteSmsButton(job) {
+    const btn = document.getElementById('enRouteSmsBtn');
+    if (!btn) return;
+
+    btn.addEventListener('click', async () => {
+      const phone = (job.mobile && job.mobile.trim()) || (job.phone && job.phone.trim());
+      if (!phone) {
+        App.showToast('No phone number on file', 'error');
+        return;
+      }
+
+      const etaInput = document.getElementById('enRouteSmsEta');
+      const etaMinutes = etaInput ? (parseInt(etaInput.value, 10) || null) : null;
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const techName = Array.isArray(job.person_id) ? job.person_id[1] : '';
+        const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+        const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
+        const smsBody = renderSmsTemplate('SMS_TEMPLATE_ENROUTE', {
+          customer_name: customerName,
+          customer_first_name: customerName.split(' ')[0],
+          tech_name: techName,
+          tech_first_name: techName.split(' ')[0],
+          eta: etaMinutes || '30',
+          company_name: companyName,
+        });
+        await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody);
+        App.showToast('SMS sent to customer', 'success');
+        OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
+      } catch (err) {
+        console.warn('En route SMS failed:', err);
+        App.showToast('SMS failed to send', 'error');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Send ETA SMS';
     });
   },
 

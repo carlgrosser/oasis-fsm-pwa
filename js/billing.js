@@ -933,6 +933,7 @@ const Billing = {
         const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal, smsBody);
         if (result.success) {
           App.showToast('Payment link sent', 'success');
+          OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phoneVal + ': ' + smsBody);
           this._startPaymentPolling(job, invoice.id, parentContainer);
         } else {
           App.showToast(result.error || 'Failed to send', 'error');
@@ -1015,6 +1016,7 @@ const Billing = {
           });
           await OdooAPI.sendDocument(invoice.id, 'receipt', 'sms', phone, smsBody);
           App.showToast('Receipt sent via SMS', 'success');
+          OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
         } catch (err) {
           App.showToast('Failed: ' + err.message, 'error');
         }
