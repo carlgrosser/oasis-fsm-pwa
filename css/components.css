@@ -1369,6 +1369,66 @@ textarea.form-input {
   overflow-wrap: break-word;
 }
 
+/* ========== WORK TAB — SHOW ALL STEPS TOGGLE ========== */
+.view-all-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: 7px var(--spacing-md);
+  border: 1.5px dashed var(--border-color);
+  border-radius: 999px;
+  background: transparent;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-family);
+  touch-action: manipulation;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.view-all-toggle:active {
+  opacity: 0.7;
+}
+
+.view-all-toggle.active {
+  border-style: solid;
+  border-color: var(--primary-color);
+  background: rgba(0, 102, 204, 0.06);
+  color: var(--primary-color);
+}
+
+/* ========== INFO PANEL — SO + EXTRAS ROWS ========== */
+.info-sale-row {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.info-sale-row:active {
+  opacity: 0.7;
+}
+
+.info-sale-total {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.info-row-arrow {
+  font-size: 18px;
+  color: var(--text-muted);
+  margin-left: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.info-gdrive-link {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
 /* ========== STAGE GATE ========== */
 .stage-gate-info {
   margin: var(--spacing-md) 0;

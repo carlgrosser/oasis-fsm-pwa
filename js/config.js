@@ -60,6 +60,7 @@ const CONFIG = {
     'additional_worker_ids', 'worker_count', 'is_multi_worker_job',
     'gps_enroute', 'gps_enroute_timestamp',
     'photo_count_before', 'photo_count_after', 'photos_complete',
+    'project_id',
   ],
 
   // Set to true after installing the custom Odoo modules

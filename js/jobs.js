@@ -372,6 +372,7 @@ const Jobs = {
 
   _currentJobId: null,
   _pendingTabSwitch: null,
+  _showAllSteps: false,
 
   /**
    * Render a single job's detail view with swipeable tabs.
@@ -386,6 +387,10 @@ const Jobs = {
       return;
     }
 
+    // Reset "show all steps" mode when navigating to a different job
+    if (this._currentJobId !== job.id) {
+      this._showAllSteps = false;
+    }
     this._currentJobId = job.id;
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
@@ -483,6 +488,28 @@ const Jobs = {
       this._switchToTab(this._pendingTabSwitch);
       this._pendingTabSwitch = null;
     }
+
+    // Bind Sales Order row click → navigate to Sales tab
+    const infoSaleRow = document.getElementById('infoSaleRow');
+    if (infoSaleRow) {
+      infoSaleRow.addEventListener('click', () => {
+        this._switchToTab(2);
+      });
+    }
+
+    // Bind "Show All Steps" toggle
+    const viewAllBtn = document.getElementById('viewAllStepsBtn');
+    if (viewAllBtn) {
+      viewAllBtn.addEventListener('click', () => {
+        this._showAllSteps = !this._showAllSteps;
+        this._pendingTabSwitch = 1;
+        const c = document.getElementById('jobDetail');
+        this.renderJobDetail(job.id, c);
+      });
+    }
+
+    // Lazy-load Info panel extras: SO total + customer GDrive photos folder
+    this._loadInfoExtras(job);
   },
 
   /**
@@ -548,6 +575,28 @@ const Jobs = {
           <span class="value">${this._escapeHtml(descText)}</span>
         </div>` : '';
 
+    // Sales order row — tappable, navigates to Sales tab; total loaded lazily
+    const saleName = Array.isArray(job.sale_id) ? job.sale_id[1] : '';
+    const saleRowHtml = job.sale_id ? `
+        <div class="detail-row info-sale-row" id="infoSaleRow">
+          <span class="label">Sales Order</span>
+          <span class="value">
+            ${this._escapeHtml(saleName)}<span class="info-sale-total" id="infoSaleTotal"></span>
+          </span>
+          <span class="info-row-arrow">›</span>
+        </div>` : '';
+
+    // Customer photos from Google Drive — hidden until project folder is loaded lazily
+    const gdriveRowHtml = `
+        <div class="detail-row" id="infoGdriveRow" style="display:none;">
+          <span class="label">Customer Photos</span>
+          <span class="value">
+            <a href="" id="infoGdriveLink" target="_blank" rel="noopener" class="info-gdrive-link">
+              📷 View in Google Drive ›
+            </a>
+          </span>
+        </div>`;
+
     return `
       <div class="detail-section">
         <h3>${this._escapeHtml(locationName)}</h3>
@@ -567,6 +616,11 @@ const Jobs = {
           </span>
         </div>
         ${crewHtml}
+        <div id="infoExtrasSection"${job.sale_id ? '' : ' style="display:none;"'}>
+          <div class="divider"></div>
+          ${saleRowHtml}
+          ${gdriveRowHtml}
+        </div>
       </div>
       ${this._isPreWorkStage(stageName) ? (() => {
         const sn = stageName.toLowerCase();
@@ -596,19 +650,30 @@ const Jobs = {
 
   /**
    * Render the Work panel (tab 2) — status + stage-gated photos + materials.
+   * When _showAllSteps is true, all photo categories and materials are visible
+   * regardless of the current stage — useful for catch-up entry.
    */
   _renderWorkPanel(job, stageName) {
     const isPreWork = this._isPreWorkStage(stageName);
     const workflowHtml = isPreWork ? '' : this._buildWorkflowButtons(job, stageName);
-    const cats = this._getStagePhotoCategories(stageName);
-    const showMaterials = stageName.toLowerCase().includes('progress') ||
+    const stageCats = this._getStagePhotoCategories(stageName);
+    const allCats = (CONFIG.PHOTO_CATEGORIES || []).map(c => c.key);
+    const cats = this._showAllSteps ? allCats : stageCats;
+    const showMaterials = this._showAllSteps ||
+                          stageName.toLowerCase().includes('progress') ||
                           stageName.toLowerCase().includes('complete');
 
-    // Pre-work stage: show message that work hasn't started
-    if (isPreWork) {
+    const toggleHtml = `
+      <button class="view-all-toggle${this._showAllSteps ? ' active' : ''}" id="viewAllStepsBtn">
+        ${this._showAllSteps ? '&#10003; Showing All Steps' : '&#9711; Show All Steps'}
+      </button>`;
+
+    // Pre-work and not showing all: minimal message + toggle
+    if (isPreWork && !this._showAllSteps) {
       return `
         <div class="detail-section">
-          <p style="color:var(--text-secondary); text-align:center; padding:var(--spacing-lg);">
+          ${toggleHtml}
+          <p style="color:var(--text-secondary); text-align:center; padding:var(--spacing-lg) 0 var(--spacing-sm);">
             Tap "En Route" on the Info tab to start this job.
           </p>
         </div>`;
@@ -628,10 +693,12 @@ const Jobs = {
 
     return `
       <div class="detail-section">
-        <h3>Status</h3>
+        ${toggleHtml}
+        ${!isPreWork ? `
+        <h3 style="margin-top:var(--spacing-md);">Status</h3>
         <div class="status-actions" id="statusActions">
           ${workflowHtml}
-        </div>
+        </div>` : ''}
       </div>
       ${enRouteSmsHtml}
       ${cats.length > 0 ? `
@@ -1591,6 +1658,39 @@ const Jobs = {
           }
         }, 500);
       }
+    }
+  },
+
+  /**
+   * Lazy-load extras for the Info panel: SO total and customer GDrive photos folder.
+   * Fire-and-forget — updates DOM elements when data arrives.
+   */
+  _loadInfoExtras(job) {
+    // Load SO total and update the info row
+    if (job.sale_id && navigator.onLine) {
+      OdooAPI.getSaleOrder(job.id).then(data => {
+        const totalEl = document.getElementById('infoSaleTotal');
+        if (totalEl && data && data.has_sale_order) {
+          const amt = parseFloat(data.sale_order.amount_total) || 0;
+          const formatted = amt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          totalEl.textContent = ' — $' + formatted;
+        }
+      }).catch(() => {});
+    }
+
+    // Load project Google Drive photos folder
+    const projectId = Array.isArray(job.project_id) ? job.project_id[0] : job.project_id;
+    if (projectId && navigator.onLine) {
+      OdooAPI.getProjectGdriveFolders(projectId).then(proj => {
+        if (!proj || !proj.gdrive_photos_folder_id) return;
+        const folderId = proj.gdrive_photos_folder_id;
+        const row = document.getElementById('infoGdriveRow');
+        const link = document.getElementById('infoGdriveLink');
+        const section = document.getElementById('infoExtrasSection');
+        if (row) row.style.display = '';
+        if (link) link.href = 'https://drive.google.com/drive/folders/' + folderId;
+        if (section) section.style.display = '';
+      }).catch(() => {});
     }
   },
 

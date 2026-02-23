@@ -343,6 +343,17 @@ const OdooAPI = {
   },
 
   /**
+   * Get Google Drive folder IDs linked to a project.
+   * Used to surface the customer photos folder on the Info tab.
+   */
+  async getProjectGdriveFolders(projectId) {
+    const results = await this.read('project.project', [projectId], [
+      'id', 'gdrive_photos_folder_id',
+    ]);
+    return results.length > 0 ? results[0] : null;
+  },
+
+  /**
    * Get location details.
    */
   async getLocation(locationId) {
