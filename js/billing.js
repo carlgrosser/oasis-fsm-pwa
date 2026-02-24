@@ -705,10 +705,10 @@ const Billing = {
       </div>
 
       <div class="billing-actions">
-        <a href="mailto:${this._esc(contact.email)}?subject=Invoice ${this._esc(invoice.name)}"
-           class="btn btn-outline btn-block btn-sm">
+        <button class="btn btn-outline btn-block btn-sm" id="emailInvoiceBtn"
+                ${!contact.email ? 'disabled title="No email on file"' : ''}>
           Email Invoice PDF
-        </a>
+        </button>
         <a href="${CONFIG.ODOO_URL}/report/pdf/account.report_invoice/${invoice.id}"
            target="_blank" rel="noopener" class="btn btn-outline btn-block btn-sm">
           View Invoice PDF
@@ -720,6 +720,24 @@ const Billing = {
 
     container.innerHTML = html;
     this._bindPaymentMethodEvents(job, data, invoice, phone, container);
+
+    // Email Invoice via Odoo mail server
+    const emailInvoiceBtn = container.querySelector('#emailInvoiceBtn');
+    if (emailInvoiceBtn && contact.email) {
+      emailInvoiceBtn.addEventListener('click', async () => {
+        emailInvoiceBtn.disabled = true;
+        emailInvoiceBtn.textContent = 'Sending...';
+        try {
+          await OdooAPI.sendDocument(invoice.id, 'invoice', 'email', contact.email);
+          App.showToast('Invoice emailed to ' + contact.email, 'success');
+          emailInvoiceBtn.textContent = 'Email Invoice PDF';
+        } catch (err) {
+          App.showToast('Failed to send email', 'error');
+          emailInvoiceBtn.textContent = 'Email Invoice PDF';
+        }
+        emailInvoiceBtn.disabled = false;
+      });
+    }
   },
 
   _bindPaymentMethodEvents(job, data, invoice, phone, container) {

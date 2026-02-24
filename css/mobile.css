@@ -272,24 +272,19 @@ body {
   font-size: 20px;
 }
 
-.footer-btn-call {
-  background: linear-gradient(135deg, #27ae60, #2ecc71);
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.3);
+.footer-btn-contact {
+  background: linear-gradient(135deg, #00897b, #26a69a);
+  box-shadow: 0 2px 8px rgba(0, 137, 123, 0.35);
 }
 
-.footer-btn-call.disabled {
+.footer-btn-contact.disabled {
   background: linear-gradient(135deg, #95a5a6, #bdc3c7);
   box-shadow: none;
 }
 
-.footer-btn-sms {
-  background: linear-gradient(135deg, #3498db, #5dade2);
-  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
-}
-
-.footer-btn-sms.disabled {
-  background: linear-gradient(135deg, #95a5a6, #bdc3c7);
-  box-shadow: none;
+.footer-btn-camera {
+  background: linear-gradient(135deg, #e67e22, #f39c12);
+  box-shadow: 0 2px 8px rgba(230, 126, 34, 0.35);
 }
 
 .footer-btn-placeholder {
@@ -378,6 +373,10 @@ body {
 
 .contact-picker-icon.home {
   background: linear-gradient(135deg, #9b59b6, #a569bd);
+}
+
+.contact-picker-icon.sms {
+  background: linear-gradient(135deg, #3498db, #5dade2);
 }
 
 .contact-picker-label {

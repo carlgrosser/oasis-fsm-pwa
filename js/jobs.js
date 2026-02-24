@@ -1447,7 +1447,7 @@ const Jobs = {
     if (hasMobile) {
       html += `
         <a href="tel:${this._escapeHtml(job.mobile)}" class="contact-picker-item">
-          <span class="contact-picker-icon">📱</span>
+          <span class="contact-picker-icon mobile">📱</span>
           <span class="contact-picker-label">Call Mobile</span>
           <span class="contact-picker-number">${this._escapeHtml(job.mobile)}</span>
         </a>`;
@@ -1456,7 +1456,7 @@ const Jobs = {
     if (hasPhone) {
       html += `
         <a href="tel:${this._escapeHtml(job.phone)}" class="contact-picker-item">
-          <span class="contact-picker-icon">🏠</span>
+          <span class="contact-picker-icon home">🏠</span>
           <span class="contact-picker-label">Call Phone</span>
           <span class="contact-picker-number">${this._escapeHtml(job.phone)}</span>
         </a>`;
@@ -1465,7 +1465,7 @@ const Jobs = {
     if (hasMobile) {
       html += `
         <a href="sms:${this._escapeHtml(job.mobile)}" class="contact-picker-item">
-          <span class="contact-picker-icon">💬</span>
+          <span class="contact-picker-icon sms">💬</span>
           <span class="contact-picker-label">Send SMS</span>
           <span class="contact-picker-number">${this._escapeHtml(job.mobile)}</span>
         </a>`;
