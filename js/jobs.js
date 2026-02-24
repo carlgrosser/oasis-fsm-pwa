@@ -751,7 +751,7 @@ const Jobs = {
    */
   _getStagePhotoCategories(stageName) {
     const name = stageName.toLowerCase();
-    if (name.includes('arrived')) return ['equipment_off', 'before'];
+    if (name.includes('arrived')) return ['equipment', 'before'];
     if (name.includes('progress')) return ['after', 'problem_areas', 'other'];
     return [];
   },
@@ -845,7 +845,7 @@ const Jobs = {
     let gatedCategories = [];
 
     if (name.includes('arrived')) {
-      gatedCategories = ['equipment_off', 'before'];
+      gatedCategories = ['equipment', 'before'];
     } else if (name.includes('progress')) {
       gatedCategories = ['after'];
     } else {
@@ -1407,16 +1407,11 @@ const Jobs = {
     this._currentJob = job;
     const hasPhone = job.phone && job.phone.trim();
     const hasMobile = job.mobile && job.mobile.trim();
-    const hasAnyPhone = hasPhone || hasMobile;
+    const hasAnyContact = hasPhone || hasMobile;
 
-    const callBtn = document.getElementById('footerCallBtn');
-    const smsBtn = document.getElementById('footerSmsBtn');
-
-    if (callBtn) {
-      callBtn.classList.toggle('disabled', !hasAnyPhone);
-    }
-    if (smsBtn) {
-      smsBtn.classList.toggle('disabled', !hasMobile);
+    const contactBtn = document.getElementById('footerContactBtn');
+    if (contactBtn) {
+      contactBtn.classList.toggle('disabled', !hasAnyContact);
     }
   },
 
@@ -1425,15 +1420,15 @@ const Jobs = {
    */
   _resetFooter() {
     this._currentJob = null;
-    const callBtn = document.getElementById('footerCallBtn');
-    const smsBtn = document.getElementById('footerSmsBtn');
-    if (callBtn) callBtn.classList.add('disabled');
-    if (smsBtn) smsBtn.classList.add('disabled');
+    const contactBtn = document.getElementById('footerContactBtn');
+    if (contactBtn) contactBtn.classList.add('disabled');
     this._hideContactPicker();
+    this._hideCategoryPicker();
   },
 
   /**
-   * Show contact picker popup above phone button.
+   * Show contact picker popup above contact button.
+   * Options: Call Mobile, Call Phone, Send SMS.
    */
   _showContactPicker() {
     if (!this._currentJob) return;
@@ -1448,13 +1443,12 @@ const Jobs = {
     if (!picker) return;
 
     let html = '';
-    const count = (hasPhone ? 1 : 0) + (hasMobile ? 1 : 0);
 
     if (hasMobile) {
       html += `
         <a href="tel:${this._escapeHtml(job.mobile)}" class="contact-picker-item">
-          <span class="contact-picker-icon mobile">📱</span>
-          <span class="contact-picker-label">Mobile</span>
+          <span class="contact-picker-icon">📱</span>
+          <span class="contact-picker-label">Call Mobile</span>
           <span class="contact-picker-number">${this._escapeHtml(job.mobile)}</span>
         </a>`;
     }
@@ -1462,19 +1456,27 @@ const Jobs = {
     if (hasPhone) {
       html += `
         <a href="tel:${this._escapeHtml(job.phone)}" class="contact-picker-item">
-          <span class="contact-picker-icon home">🏠</span>
-          <span class="contact-picker-label">Phone</span>
+          <span class="contact-picker-icon">🏠</span>
+          <span class="contact-picker-label">Call Phone</span>
           <span class="contact-picker-number">${this._escapeHtml(job.phone)}</span>
         </a>`;
     }
 
+    if (hasMobile) {
+      html += `
+        <a href="sms:${this._escapeHtml(job.mobile)}" class="contact-picker-item">
+          <span class="contact-picker-icon">💬</span>
+          <span class="contact-picker-label">Send SMS</span>
+          <span class="contact-picker-number">${this._escapeHtml(job.mobile)}</span>
+        </a>`;
+    }
+
     picker.innerHTML = html;
-    picker.classList.toggle('two-numbers', count === 2);
     picker.style.display = 'flex';
 
     // Close when clicking outside
     const closeHandler = (e) => {
-      if (!picker.contains(e.target) && e.target.id !== 'footerCallBtn') {
+      if (!picker.contains(e.target) && e.target.id !== 'footerContactBtn') {
         this._hideContactPicker();
         document.removeEventListener('click', closeHandler);
       }
@@ -1491,14 +1493,71 @@ const Jobs = {
   },
 
   /**
-   * Handle SMS button - direct SMS to mobile.
+   * Show category picker popup above camera button.
+   * Lets the tech capture a photo in any category at any time.
    */
-  _handleSmsButton() {
+  _showCategoryPicker() {
     if (!this._currentJob) return;
-    const mobile = this._currentJob.mobile;
-    if (mobile && mobile.trim()) {
-      window.location.href = 'sms:' + this._escapeHtml(mobile.trim());
-    }
+
+    const picker = document.getElementById('categoryPicker');
+    if (!picker) return;
+
+    const categories = CONFIG.PHOTO_CATEGORIES || [];
+    const jobId = this._currentJob.id;
+
+    const html = categories.map(cat => `
+      <button class="contact-picker-item" data-category="${cat.key}">
+        <span class="contact-picker-icon">📷</span>
+        <span class="contact-picker-label">${this._escapeHtml(cat.label)}</span>
+      </button>
+    `).join('');
+
+    picker.innerHTML = html;
+    picker.style.display = 'flex';
+
+    // Bind category buttons
+    picker.querySelectorAll('[data-category]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        this._hideCategoryPicker();
+        const category = btn.dataset.category;
+        try {
+          const photo = await Photos.capturePhoto(jobId, category);
+          if (photo) {
+            App.showToast('Photo saved', 'success');
+            // Refresh work photo section if visible
+            const workSection = document.getElementById('workPhotoSection');
+            if (workSection) {
+              const stageName = this.getStageName(this._currentJob.stage_id);
+              const cats = this._getStagePhotoCategories(stageName);
+              if (cats.length > 0) {
+                Photos.renderFilteredPhotoSection(jobId, workSection, cats, () => {
+                  this._updateStageGate(this._currentJob, stageName);
+                });
+              }
+            }
+          }
+        } catch (err) {
+          App.showToast('Failed to capture photo', 'error');
+        }
+      });
+    });
+
+    // Close when clicking outside
+    const closeHandler = (e) => {
+      if (!picker.contains(e.target) && e.target.id !== 'footerCameraBtn') {
+        this._hideCategoryPicker();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 10);
+  },
+
+  /**
+   * Hide category picker popup.
+   */
+  _hideCategoryPicker() {
+    const picker = document.getElementById('categoryPicker');
+    if (picker) picker.style.display = 'none';
   },
 
   /**

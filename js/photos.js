@@ -219,7 +219,7 @@ const Photos = {
 
   /**
    * Render a filtered photo section — only specified category keys.
-   * Shows Drive thumbnails (synced) + local pending photos merged per category.
+   * Shows all local photos (synced + pending) using local thumbnails.
    *
    * @param {number} jobId
    * @param {HTMLElement} container
@@ -227,11 +227,7 @@ const Photos = {
    * @param {Function} [onPhotoAdded] - callback after a photo is captured
    */
   async renderFilteredPhotoSection(jobId, container, categoryKeys, onPhotoAdded) {
-    const [allLocal, drivePhotos] = await Promise.all([
-      this.getPhotosForJob(jobId),
-      this._loadDrivePhotos(jobId),
-    ]);
-    const localPending = allLocal.filter(p => p.synced === 0);
+    const allLocal = await this.getPhotosForJob(jobId);
     const categories = (CONFIG.PHOTO_CATEGORIES || []).filter(c => categoryKeys.includes(c.key));
 
     let html = '';
@@ -244,9 +240,8 @@ const Photos = {
         </div>`;
       }
 
-      const catDrive = drivePhotos.filter(p => p.category === cat.key);
-      const catPending = localPending.filter(p => p.category === cat.key);
-      const totalCount = catDrive.length + catPending.length;
+      const catPhotos = allLocal.filter(p => p.category === cat.key);
+      const totalCount = catPhotos.length;
       const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
       const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
 
@@ -257,8 +252,7 @@ const Photos = {
             <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
-            ${this._renderDriveThumbnails(catDrive)}
-            ${this._renderThumbnails(catPending)}
+            ${this._renderThumbnails(catPhotos)}
             <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
               <span class="photo-add-icon">+</span>
               <span class="photo-add-label">Add</span>
@@ -273,42 +267,35 @@ const Photos = {
 
   /**
    * Render a read-only gallery of all photos for a job, grouped by category.
+   * Uses local IndexedDB thumbnails for all photos to avoid Drive auth issues.
    */
   async renderAllPhotosGallery(jobId, container) {
-    const [allLocal, drivePhotos] = await Promise.all([
-      this.getPhotosForJob(jobId),
-      this._loadDrivePhotos(jobId),
-    ]);
-    const localPending = allLocal.filter(p => p.synced === 0);
+    const allLocal = await this.getPhotosForJob(jobId);
     const categories = CONFIG.PHOTO_CATEGORIES || [];
 
-    const hasAny = drivePhotos.length > 0 || localPending.length > 0;
-    if (!hasAny) {
+    if (allLocal.length === 0) {
       container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
       return;
     }
 
     let html = '';
     for (const cat of categories) {
-      const catDrive = drivePhotos.filter(p => p.category === cat.key);
-      const catPending = localPending.filter(p => p.category === cat.key);
-      if (catDrive.length === 0 && catPending.length === 0) continue;
+      const catPhotos = allLocal.filter(p => p.category === cat.key);
+      if (catPhotos.length === 0) continue;
 
       html += `
         <div class="photo-category photo-category-readonly">
           <div class="photo-category-header">
             <span class="photo-category-title">${cat.label}</span>
-            <span class="photo-count complete">${catDrive.length + catPending.length}</span>
+            <span class="photo-count complete">${catPhotos.length}</span>
           </div>
           <div class="photo-grid">
-            ${this._renderDriveThumbnails(catDrive)}
-            ${this._renderThumbnails(catPending)}
+            ${this._renderThumbnails(catPhotos)}
           </div>
         </div>`;
     }
 
     container.innerHTML = html || '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
-    this._bindDriveThumbEvents(container);
     container.querySelectorAll('.photo-thumb-local').forEach(thumb => {
       thumb.addEventListener('click', () => this._showFullPhoto(thumb.dataset.tempId));
     });
@@ -316,13 +303,10 @@ const Photos = {
 
   /**
    * Render the photo section for a job's detail view.
+   * Uses local IndexedDB thumbnails for all photos to avoid Drive auth issues.
    */
   async renderPhotoSection(jobId, container) {
-    const [allLocal, drivePhotos] = await Promise.all([
-      this.getPhotosForJob(jobId),
-      this._loadDrivePhotos(jobId),
-    ]);
-    const localPending = allLocal.filter(p => p.synced === 0);
+    const allLocal = await this.getPhotosForJob(jobId);
     const categories = CONFIG.PHOTO_CATEGORIES || [
       { key: 'before', label: 'Before Photos', required: 2 },
       { key: 'after', label: 'After Photos', required: 2 },
@@ -338,9 +322,8 @@ const Photos = {
         </div>`;
       }
 
-      const catDrive = drivePhotos.filter(p => p.category === cat.key);
-      const catPending = localPending.filter(p => p.category === cat.key);
-      const totalCount = catDrive.length + catPending.length;
+      const catPhotos = allLocal.filter(p => p.category === cat.key);
+      const totalCount = catPhotos.length;
       const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
       const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
 
@@ -351,8 +334,7 @@ const Photos = {
             <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
-            ${this._renderDriveThumbnails(catDrive)}
-            ${this._renderThumbnails(catPending)}
+            ${this._renderThumbnails(catPhotos)}
             <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
               <span class="photo-add-icon">+</span>
               <span class="photo-add-label">Add</span>
@@ -366,15 +348,20 @@ const Photos = {
   },
 
   /**
-   * Render thumbnail grid HTML for local pending photos.
+   * Render thumbnail grid HTML for local photos (both synced and pending).
+   * Uses local base64 thumbnails to avoid Drive auth issues.
    */
   _renderThumbnails(photos) {
-    return photos.map(p => `
-      <div class="photo-thumb photo-thumb-local" data-temp-id="${p.temp_id}">
-        <img src="${p.thumbnail}" alt="${p.category}" loading="lazy">
-        <span class="photo-pending-icon" title="Pending upload">&#8635;</span>
-      </div>
-    `).join('');
+    return photos.map(p => {
+      const icon = p.synced
+        ? '<span class="photo-synced-icon" title="Synced to Drive">&#10003;</span>'
+        : '<span class="photo-pending-icon" title="Pending upload">&#8635;</span>';
+      return `
+        <div class="photo-thumb photo-thumb-local" data-temp-id="${p.temp_id}">
+          <img src="${p.thumbnail}" alt="${p.category}" loading="lazy">
+          ${icon}
+        </div>`;
+    }).join('');
   },
 
   /**

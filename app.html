@@ -106,16 +106,16 @@
           </div>
         </div>
       </div>
-      <!-- Detail view footer (call, sms, placeholder, journal, menu) -->
+      <!-- Detail view footer (contact, camera, placeholder, journal, menu) -->
       <div class="footer-inner footer-detail" id="footerDetail" style="display:none;">
-        <button class="footer-btn footer-btn-call" id="footerCallBtn" title="Call">
+        <button class="footer-btn footer-btn-contact disabled" id="footerContactBtn" title="Call / SMS">
           <span class="footer-btn-icon">📞</span>
         </button>
-        <button class="footer-btn footer-btn-sms" id="footerSmsBtn" title="SMS">
-          <span class="footer-btn-icon">💬</span>
+        <button class="footer-btn footer-btn-camera" id="footerCameraBtn" title="Take Photo">
+          <span class="footer-btn-icon">📷</span>
         </button>
         <button class="footer-btn footer-btn-placeholder" disabled>
-          <span class="footer-btn-icon">⭐</span>
+          <span class="footer-btn-icon">·</span>
         </button>
         <button class="footer-btn footer-btn-journal" id="footerJournalBtn" title="Journal">
           <span class="footer-btn-icon">📝</span>
@@ -138,6 +138,8 @@
         </div>
         <!-- Contact picker popup -->
         <div id="contactPicker" class="contact-picker" style="display:none;"></div>
+        <!-- Category picker popup for camera button -->
+        <div id="categoryPicker" class="contact-picker" style="display:none;"></div>
       </div>
     </footer>
 

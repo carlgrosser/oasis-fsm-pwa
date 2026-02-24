@@ -156,20 +156,20 @@ const App = {
     }
 
     // Footer detail buttons
-    const footerCallBtn = document.getElementById('footerCallBtn');
-    if (footerCallBtn) {
-      footerCallBtn.addEventListener('click', () => {
-        if (!footerCallBtn.classList.contains('disabled')) {
+    const footerContactBtn = document.getElementById('footerContactBtn');
+    if (footerContactBtn) {
+      footerContactBtn.addEventListener('click', () => {
+        if (!footerContactBtn.classList.contains('disabled')) {
           Jobs._showContactPicker();
         }
       });
     }
 
-    const footerSmsBtn = document.getElementById('footerSmsBtn');
-    if (footerSmsBtn) {
-      footerSmsBtn.addEventListener('click', () => {
-        if (!footerSmsBtn.classList.contains('disabled')) {
-          Jobs._handleSmsButton();
+    const footerCameraBtn = document.getElementById('footerCameraBtn');
+    if (footerCameraBtn) {
+      footerCameraBtn.addEventListener('click', () => {
+        if (Jobs._currentJob) {
+          Jobs._showCategoryPicker();
         }
       });
     }
