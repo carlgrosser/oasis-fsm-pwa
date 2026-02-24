@@ -390,6 +390,109 @@ body {
   color: var(--text-primary);
 }
 
+/* SMS template picker — vertical variant of contact-picker */
+.contact-picker-sms {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  min-width: 220px;
+}
+
+.sms-picker-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sms-picker-back {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.sms-picker-title {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sms-picker-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--font-size-small);
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.sms-picker-option:last-child {
+  border-bottom: none;
+}
+
+.sms-picker-option:active {
+  background: var(--background);
+}
+
+.sms-picker-option-icon {
+  font-size: 18px;
+  width: 28px;
+  text-align: center;
+}
+
+.sms-picker-option.muted {
+  color: var(--text-secondary);
+}
+
+.sms-eta-form {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--background);
+}
+
+.sms-eta-form input[type="number"] {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-xs);
+  text-align: center;
+  background: var(--card-background);
+  color: var(--text-primary);
+}
+
+.sms-eta-form label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.sms-eta-send {
+  padding: 4px 12px;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
 /* ========== VIEWS ========== */
 .view {
   display: none;

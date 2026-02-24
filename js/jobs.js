@@ -1423,6 +1423,7 @@ const Jobs = {
     const contactBtn = document.getElementById('footerContactBtn');
     if (contactBtn) contactBtn.classList.add('disabled');
     this._hideContactPicker();
+    this._hideSmsPicker();
     this._hideCategoryPicker();
   },
 
@@ -1464,15 +1465,25 @@ const Jobs = {
 
     if (hasMobile) {
       html += `
-        <a href="sms:${this._escapeHtml(job.mobile)}" class="contact-picker-item">
+        <button class="contact-picker-item" id="contactPickerSmsBtn">
           <span class="contact-picker-icon sms">💬</span>
           <span class="contact-picker-label">Send SMS</span>
           <span class="contact-picker-number">${this._escapeHtml(job.mobile)}</span>
-        </a>`;
+        </button>`;
     }
 
     picker.innerHTML = html;
     picker.style.display = 'flex';
+
+    // SMS button → show SMS template picker
+    const smsBtn = picker.querySelector('#contactPickerSmsBtn');
+    if (smsBtn) {
+      smsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._hideContactPicker();
+        this._showSmsPicker(job.mobile.trim());
+      });
+    }
 
     // Close when clicking outside
     const closeHandler = (e) => {
@@ -1489,6 +1500,162 @@ const Jobs = {
    */
   _hideContactPicker() {
     const picker = document.getElementById('contactPicker');
+    if (picker) picker.style.display = 'none';
+  },
+
+  /**
+   * Show SMS template picker — second popup after tapping Send SMS.
+   * Options: ETA notification, Payment link, Custom (device SMS app).
+   */
+  _showSmsPicker(phone) {
+    const picker = document.getElementById('smsPicker');
+    if (!picker || !this._currentJob) return;
+
+    const job = this._currentJob;
+    const firstName = (() => {
+      const loc = Array.isArray(job.location_id) ? job.location_id[1] : '';
+      return (loc || 'Customer').split(' ')[0];
+    })();
+
+    picker.innerHTML = `
+      <div class="sms-picker-header">
+        <button class="sms-picker-back" id="smsPickerBack">&#8592;</button>
+        <span class="sms-picker-title">SMS to ${this._escapeHtml(firstName)}</span>
+      </div>
+      <button class="sms-picker-option" id="smsOptEta">
+        <span class="sms-picker-option-icon">📍</span>
+        <span>ETA Notification</span>
+      </button>
+      <div class="sms-eta-form" id="smsEtaForm" style="display:none;">
+        <label for="smsEtaMinutes">ETA:</label>
+        <input type="number" id="smsEtaMinutes" min="5" max="180" step="5" placeholder="30">
+        <span style="font-size:var(--font-size-xs);color:var(--text-secondary);">min</span>
+        <button class="sms-eta-send" id="smsEtaSend">Send</button>
+      </div>
+      <button class="sms-picker-option" id="smsOptPayment">
+        <span class="sms-picker-option-icon">💳</span>
+        <span>Payment Link</span>
+      </button>
+      <button class="sms-picker-option muted" id="smsOptOther">
+        <span class="sms-picker-option-icon">💬</span>
+        <span>Custom (open SMS app)</span>
+      </button>
+    `;
+
+    picker.style.display = 'flex';
+
+    // Back → re-open contact picker
+    picker.querySelector('#smsPickerBack').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._hideSmsPicker();
+      this._showContactPicker();
+    });
+
+    // ETA: toggle inline form
+    picker.querySelector('#smsOptEta').addEventListener('click', () => {
+      const form = picker.querySelector('#smsEtaForm');
+      if (form) form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+    });
+
+    // ETA: send
+    picker.querySelector('#smsEtaSend').addEventListener('click', async () => {
+      const etaInput = picker.querySelector('#smsEtaMinutes');
+      const eta = parseInt(etaInput && etaInput.value, 10) || 30;
+      const sendBtn = picker.querySelector('#smsEtaSend');
+      sendBtn.disabled = true;
+      sendBtn.textContent = '…';
+
+      const techName = Array.isArray(job.person_id) ? job.person_id[1] : '';
+      const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+      const companyName = Array.isArray(job.company_id) ? job.company_id[1] : '';
+      const smsBody = renderSmsTemplate('SMS_TEMPLATE_ENROUTE', {
+        customer_name: customerName,
+        customer_first_name: customerName.split(' ')[0],
+        tech_name: techName,
+        tech_first_name: techName.split(' ')[0],
+        eta: eta,
+        company_name: companyName,
+      });
+
+      try {
+        await OdooAPI.sendEnRouteSms(job.id, phone, eta, smsBody);
+        OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
+        App.showToast('ETA SMS sent', 'success');
+        this._hideSmsPicker();
+      } catch (err) {
+        App.showToast('SMS failed to send', 'error');
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+      }
+    });
+
+    // Payment Link
+    picker.querySelector('#smsOptPayment').addEventListener('click', async () => {
+      const btn = picker.querySelector('#smsOptPayment');
+      btn.disabled = true;
+      btn.querySelector('span:last-child').textContent = 'Loading…';
+
+      try {
+        const data = await OdooAPI.getSaleOrder(job.id);
+        const invoices = (data && data.invoices) || [];
+        const invoice = invoices.find(i =>
+          i.state === 'posted' && i.payment_state !== 'paid' && i.payment_state !== 'in_payment'
+        );
+        if (!invoice) {
+          App.showToast('No unpaid invoice found', 'error');
+          btn.disabled = false;
+          btn.querySelector('span:last-child').textContent = 'Payment Link';
+          return;
+        }
+
+        const linkData = await OdooAPI.getPaymentLink(invoice.id);
+        if (!linkData || !linkData.payment_url) {
+          App.showToast('Could not generate payment link', 'error');
+          btn.disabled = false;
+          btn.querySelector('span:last-child').textContent = 'Payment Link';
+          return;
+        }
+
+        const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
+        const smsBody = renderSmsTemplate('SMS_TEMPLATE_PAYMENT', {
+          customer_name: customerName,
+          customer_first_name: customerName.split(' ')[0],
+          amount: (invoice.amount_residual || 0).toFixed(2),
+          payment_link: linkData.payment_url,
+        });
+
+        await OdooAPI.sendPaymentSms(invoice.id, phone, smsBody);
+        OdooAPI.postJournalEntry(job.id, 'Payment SMS sent to ' + phone);
+        App.showToast('Payment link sent', 'success');
+        this._hideSmsPicker();
+      } catch (err) {
+        App.showToast('Failed to send payment link', 'error');
+        btn.disabled = false;
+        btn.querySelector('span:last-child').textContent = 'Payment Link';
+      }
+    });
+
+    // Other — open device SMS app
+    picker.querySelector('#smsOptOther').addEventListener('click', () => {
+      this._hideSmsPicker();
+      window.location.href = 'sms:' + encodeURIComponent(phone);
+    });
+
+    // Close when clicking outside
+    const closeHandler = (e) => {
+      if (!picker.contains(e.target) && e.target.id !== 'footerContactBtn') {
+        this._hideSmsPicker();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 10);
+  },
+
+  /**
+   * Hide SMS template picker popup.
+   */
+  _hideSmsPicker() {
+    const picker = document.getElementById('smsPicker');
     if (picker) picker.style.display = 'none';
   },
 
