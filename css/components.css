@@ -1277,6 +1277,29 @@ textarea.form-input {
   box-sizing: border-box;
 }
 
+.materials-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.materials-group-header {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: var(--spacing-xs);
+}
+
+.materials-unit-header {
+  font-weight: 400;
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+}
+
+.materials-variant-row {
+  padding-left: 16px;
+}
+
 @media (max-width: 420px) {
   .materials-row {
     align-items: flex-start;

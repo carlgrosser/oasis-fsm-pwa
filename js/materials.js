@@ -4,7 +4,7 @@
  * renders quantity steppers, and saves usage back to Odoo.
  */
 const Materials = {
-  _config: [],      // material config for current job [{product_id, product_name, uom_label, current_qty}]
+  _config: [],      // material config for current job [{product_tmpl_id, product_name, uom_label, variants: [{product_id, variant_name, current_qty}]}]
   _currentJobId: null,
 
   /**
@@ -61,18 +61,39 @@ const Materials = {
     let html = '<div class="materials-form">';
 
     for (const mat of this._config) {
-      const qty = mat.current_qty || 0;
-      html += `
-        <div class="materials-row" data-product-id="${mat.product_id}">
-          <span class="materials-label">${this._escapeHtml(mat.product_name)}</span>
-          <div class="materials-stepper">
-            <button class="materials-btn materials-minus" type="button">-</button>
-            <input type="number" class="materials-qty" value="${qty}" min="0" step="1" inputmode="numeric">
-            <button class="materials-btn materials-plus" type="button">+</button>
-            <span class="materials-unit">${this._escapeHtml(mat.uom_label)}</span>
+      const isSingle = mat.variants.length === 1 && !mat.variants[0].variant_name;
+      if (isSingle) {
+        const v = mat.variants[0];
+        const qty = v.current_qty || 0;
+        html += `
+          <div class="materials-row" data-product-id="${v.product_id}">
+            <span class="materials-label">${this._escapeHtml(mat.product_name)}</span>
+            <div class="materials-stepper">
+              <button class="materials-btn materials-minus" type="button">-</button>
+              <input type="number" class="materials-qty" value="${qty}" min="0" step="1" inputmode="numeric">
+              <button class="materials-btn materials-plus" type="button">+</button>
+              <span class="materials-unit">${this._escapeHtml(mat.uom_label)}</span>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        html += `<div class="materials-group">`;
+        html += `<div class="materials-group-header">${this._escapeHtml(mat.product_name)} <span class="materials-unit-header">${this._escapeHtml(mat.uom_label)}</span></div>`;
+        for (const v of mat.variants) {
+          const qty = v.current_qty || 0;
+          html += `
+            <div class="materials-row materials-variant-row" data-product-id="${v.product_id}">
+              <span class="materials-label">${this._escapeHtml(v.variant_name)}</span>
+              <div class="materials-stepper">
+                <button class="materials-btn materials-minus" type="button">-</button>
+                <input type="number" class="materials-qty" value="${qty}" min="0" step="1" inputmode="numeric">
+                <button class="materials-btn materials-plus" type="button">+</button>
+              </div>
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
     }
 
     html += `
@@ -141,8 +162,10 @@ const Materials = {
 
       // Update cached config with new quantities
       for (const line of lines) {
-        const cfg = this._config.find(c => c.product_id === line.product_id);
-        if (cfg) cfg.current_qty = line.quantity;
+        for (const mat of this._config) {
+          const v = mat.variants.find(v => v.product_id === line.product_id);
+          if (v) { v.current_qty = line.quantity; break; }
+        }
       }
       await DB.setState('materials_config_' + jobId, this._config);
     } catch (err) {
