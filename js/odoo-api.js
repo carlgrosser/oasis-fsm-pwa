@@ -799,4 +799,69 @@ const OdooAPI = {
   async getPwaSettings() {
     return this.callKw('fsm.order', 'worker_get_pwa_settings', [], {});
   },
+
+  // ========== GOOGLE DRIVE ==========
+
+  /**
+   * Read the Drive folder IDs for an FSM order.
+   * Returns { photosFolderId, documentsFolderId, diagramsFolderId, otherFolderId, rootFolderId, effectiveFolderId }
+   */
+  async getOrderFolderIds(orderId) {
+    const orders = await this.read('fsm.order', [orderId], ['id', 'project_id', 'gdrive_effective_folder_id']);
+    if (!orders.length) return null;
+    const order = orders[0];
+    const projectId = Array.isArray(order.project_id) ? order.project_id[0] : order.project_id;
+    if (!projectId) {
+      return { effectiveFolderId: order.gdrive_effective_folder_id || null };
+    }
+    const projects = await this.read('project.project', [projectId], [
+      'gdrive_folder_id', 'gdrive_photos_folder_id',
+      'gdrive_documents_folder_id', 'gdrive_diagrams_folder_id', 'gdrive_other_folder_id',
+    ]);
+    if (!projects.length) return { effectiveFolderId: order.gdrive_effective_folder_id || null };
+    const p = projects[0];
+    return {
+      effectiveFolderId:   order.gdrive_effective_folder_id || null,
+      photosFolderId:      p.gdrive_photos_folder_id || null,
+      documentsFolderId:   p.gdrive_documents_folder_id || null,
+      diagramsFolderId:    p.gdrive_diagrams_folder_id || null,
+      otherFolderId:       p.gdrive_other_folder_id || null,
+      rootFolderId:        p.gdrive_folder_id || null,
+    };
+  },
+
+  /**
+   * Fetch all gdrive.photo.link records for an FSM order.
+   */
+  async getDrivePhotoLinks(orderId) {
+    return this.searchRead(
+      'gdrive.photo.link',
+      [['order_id', '=', orderId]],
+      ['id', 'order_id', 'category', 'filename', 'gdrive_file_id', 'gdrive_url', 'uploaded_at', 'deletion_requested'],
+      { order: 'uploaded_at asc', limit: 200 }
+    );
+  },
+
+  /**
+   * Upload a photo to Google Drive via the Odoo proxy.
+   * Accepts a Blob (binary image data).
+   */
+  async uploadPhotoDrive(orderId, category, blob, filename) {
+    const formData = new FormData();
+    formData.append('order_id', orderId);
+    formData.append('category', category);
+    formData.append('file', blob, filename || 'photo.jpg');
+
+    const url = (CONFIG.ODOO_URL || '') + '/gdrive/upload_photo';
+    const resp = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      credentials: CONFIG.ODOO_URL ? 'include' : 'same-origin',
+    });
+
+    if (!resp.ok) throw new Error(`Drive upload failed: HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'Drive upload failed');
+    return data;
+  },
 };

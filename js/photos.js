@@ -1,8 +1,11 @@
 /**
  * Photos module — camera capture, gallery, IndexedDB storage, upload.
  *
- * Upload destination is pluggable: currently sends to ir.attachment (base Odoo).
- * Can be swapped to Google Drive once the integration module is available.
+ * Upload destination: Google Drive via Odoo proxy (/gdrive/upload_photo).
+ * Fallback: ir.attachment on upload failure after one retry.
+ *
+ * Display: merges locally-pending (IndexedDB, synced=0) photos with
+ * already-synced Drive thumbnails fetched from gdrive.photo.link records.
  */
 const Photos = {
   _fileInput: null,
@@ -30,7 +33,7 @@ const Photos = {
    * Launch the camera / file picker for a specific job and category.
    *
    * @param {number} jobId
-   * @param {string} category - 'before' or 'after'
+   * @param {string} category
    * @returns {Promise<object|null>} - The saved photo record, or null if cancelled.
    */
   capturePhoto(jobId, category) {
@@ -38,7 +41,6 @@ const Photos = {
 
     return new Promise((resolve, reject) => {
       this._pendingCapture = { jobId, category, resolve, reject };
-      // Reset the input so the same file can be picked again
       this._fileInput.value = '';
       this._fileInput.click();
     });
@@ -58,13 +60,8 @@ const Photos = {
     }
 
     try {
-      // Read file as base64
       const base64Full = await this._readFileAsBase64(file);
-
-      // Create a reasonably-sized version for upload (max 1920px wide)
       const resized = await this._resizeImage(base64Full, 1920);
-
-      // Create thumbnail (max 300px wide)
       const thumbnail = await this._resizeImage(base64Full, 300);
 
       const photo = await this.savePhoto(
@@ -84,13 +81,6 @@ const Photos = {
 
   /**
    * Save a photo to IndexedDB.
-   *
-   * @param {number} jobId
-   * @param {string} base64Data - Full-size base64 (data URL)
-   * @param {string} thumbnail  - Thumbnail base64 (data URL)
-   * @param {string} category   - 'before' or 'after'
-   * @param {string} filename
-   * @returns {Promise<object>} - The stored photo record.
    */
   async savePhoto(jobId, base64Data, thumbnail, category, filename) {
     const photo = {
@@ -123,27 +113,65 @@ const Photos = {
   },
 
   /**
-   * Upload a single photo to Odoo (ir.attachment).
-   * This method is the pluggable point — swap for Google Drive later.
+   * Fetch Drive photo link records for a job (online only).
+   * Returns [] on any error so callers don't need to handle it.
+   */
+  async _loadDrivePhotos(jobId) {
+    try {
+      return await OdooAPI.getDrivePhotoLinks(jobId);
+    } catch (e) {
+      return [];
+    }
+  },
+
+  /**
+   * Convert a base64 data URL to a Blob.
+   */
+  _base64ToBlob(dataUrl, mimeType) {
+    const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mimeType || 'image/jpeg' });
+  },
+
+  /**
+   * Upload a single photo to Google Drive via the Odoo proxy.
+   * On failure retries once, then falls back to ir.attachment.
    */
   async uploadPhoto(photo) {
-    // Strip the data URL prefix to get raw base64 for Odoo
-    const rawBase64 = photo.data.includes(',')
-      ? photo.data.split(',')[1]
-      : photo.data;
+    const blob = this._base64ToBlob(photo.data, 'image/jpeg');
 
-    const attachmentId = await OdooAPI.uploadPhoto(
-      photo.job_id,
-      rawBase64,
-      photo.filename,
-      photo.category
-    );
+    // Attempt Drive upload (with one retry)
+    let driveResult = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        driveResult = await OdooAPI.uploadPhotoDrive(photo.job_id, photo.category, blob, 'photo.jpg');
+        break;
+      } catch (err) {
+        if (attempt === 2) {
+          console.warn('Drive upload failed after retry, falling back to attachment:', err);
+        }
+      }
+    }
 
-    // Mark as synced
+    if (driveResult) {
+      photo.synced = 1;
+      photo.gdrive_file_id = driveResult.gdrive_file_id || null;
+      photo.gdrive_url = driveResult.gdrive_url || null;
+      await DB.put('photos', photo);
+      return driveResult.gdrive_file_id;
+    }
+
+    // Fallback: store as ir.attachment with a flag for later migration
+    const rawBase64 = photo.data.includes(',') ? photo.data.split(',')[1] : photo.data;
+    const attachmentId = await OdooAPI.uploadPhoto(photo.job_id, rawBase64, photo.filename, photo.category);
     photo.synced = 1;
     photo.attachment_id = attachmentId;
+    photo.drive_fallback = true;
     await DB.put('photos', photo);
-
     return attachmentId;
   },
 
@@ -173,8 +201,8 @@ const Photos = {
   // ------------------------------------------------------------------
 
   /**
-   * Get photo counts by category for a job.
-   * @returns {Promise<Object>} e.g. { equipment_off: 1, before: 2, after: 0 }
+   * Get photo counts by category for a job (local pending only).
+   * Used for stage gate checks — Drive photos are already synced.
    */
   async getPhotoCountsByCategory(jobId) {
     const photos = await this.getPhotosForJob(jobId);
@@ -191,15 +219,19 @@ const Photos = {
 
   /**
    * Render a filtered photo section — only specified category keys.
-   * Used by the Work tab to show stage-relevant categories.
+   * Shows Drive thumbnails (synced) + local pending photos merged per category.
    *
    * @param {number} jobId
    * @param {HTMLElement} container
-   * @param {string[]} categoryKeys - e.g. ['equipment_off', 'before']
+   * @param {string[]} categoryKeys - e.g. ['equipment', 'before']
    * @param {Function} [onPhotoAdded] - callback after a photo is captured
    */
   async renderFilteredPhotoSection(jobId, container, categoryKeys, onPhotoAdded) {
-    const photos = await this.getPhotosForJob(jobId);
+    const [allLocal, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+    const localPending = allLocal.filter(p => p.synced === 0);
     const categories = (CONFIG.PHOTO_CATEGORIES || []).filter(c => categoryKeys.includes(c.key));
 
     let html = '';
@@ -212,11 +244,11 @@ const Photos = {
         </div>`;
       }
 
-      const catPhotos = photos.filter(p => p.category === cat.key);
-      const countLabel = cat.required
-        ? `${catPhotos.length}/${cat.required}`
-        : `${catPhotos.length}`;
-      const isComplete = cat.required ? catPhotos.length >= cat.required : catPhotos.length > 0;
+      const catDrive = drivePhotos.filter(p => p.category === cat.key);
+      const catPending = localPending.filter(p => p.category === cat.key);
+      const totalCount = catDrive.length + catPending.length;
+      const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
+      const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
 
       html += `
         <div class="photo-category">
@@ -225,7 +257,8 @@ const Photos = {
             <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
-            ${this._renderThumbnails(catPhotos)}
+            ${this._renderDriveThumbnails(catDrive)}
+            ${this._renderThumbnails(catPending)}
             <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
               <span class="photo-add-icon">+</span>
               <span class="photo-add-label">Add</span>
@@ -235,8 +268,135 @@ const Photos = {
     }
 
     container.innerHTML = html;
+    this._bindThumbnailEvents(container, jobId, categoryKeys, onPhotoAdded, 'filtered');
+  },
 
-    // Bind add-photo buttons
+  /**
+   * Render a read-only gallery of all photos for a job, grouped by category.
+   */
+  async renderAllPhotosGallery(jobId, container) {
+    const [allLocal, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+    const localPending = allLocal.filter(p => p.synced === 0);
+    const categories = CONFIG.PHOTO_CATEGORIES || [];
+
+    const hasAny = drivePhotos.length > 0 || localPending.length > 0;
+    if (!hasAny) {
+      container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
+      return;
+    }
+
+    let html = '';
+    for (const cat of categories) {
+      const catDrive = drivePhotos.filter(p => p.category === cat.key);
+      const catPending = localPending.filter(p => p.category === cat.key);
+      if (catDrive.length === 0 && catPending.length === 0) continue;
+
+      html += `
+        <div class="photo-category photo-category-readonly">
+          <div class="photo-category-header">
+            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-count complete">${catDrive.length + catPending.length}</span>
+          </div>
+          <div class="photo-grid">
+            ${this._renderDriveThumbnails(catDrive)}
+            ${this._renderThumbnails(catPending)}
+          </div>
+        </div>`;
+    }
+
+    container.innerHTML = html || '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
+    this._bindDriveThumbEvents(container);
+    container.querySelectorAll('.photo-thumb-local').forEach(thumb => {
+      thumb.addEventListener('click', () => this._showFullPhoto(thumb.dataset.tempId));
+    });
+  },
+
+  /**
+   * Render the photo section for a job's detail view.
+   */
+  async renderPhotoSection(jobId, container) {
+    const [allLocal, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+    const localPending = allLocal.filter(p => p.synced === 0);
+    const categories = CONFIG.PHOTO_CATEGORIES || [
+      { key: 'before', label: 'Before Photos', required: 2 },
+      { key: 'after', label: 'After Photos', required: 2 },
+    ];
+
+    let html = '';
+    let addedDivider = false;
+    for (const cat of categories) {
+      if (!addedDivider && !cat.required) {
+        addedDivider = true;
+        html += `<div class="photo-section-divider">
+          <span class="photo-section-divider-label">Optional</span>
+        </div>`;
+      }
+
+      const catDrive = drivePhotos.filter(p => p.category === cat.key);
+      const catPending = localPending.filter(p => p.category === cat.key);
+      const totalCount = catDrive.length + catPending.length;
+      const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
+      const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
+
+      html += `
+        <div class="photo-category">
+          <div class="photo-category-header">
+            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
+          </div>
+          <div class="photo-grid" id="photos_${cat.key}_grid">
+            ${this._renderDriveThumbnails(catDrive)}
+            ${this._renderThumbnails(catPending)}
+            <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
+              <span class="photo-add-icon">+</span>
+              <span class="photo-add-label">Add</span>
+            </button>
+          </div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+    this._bindThumbnailEvents(container, jobId, null, null, 'full');
+  },
+
+  /**
+   * Render thumbnail grid HTML for local pending photos.
+   */
+  _renderThumbnails(photos) {
+    return photos.map(p => `
+      <div class="photo-thumb photo-thumb-local" data-temp-id="${p.temp_id}">
+        <img src="${p.thumbnail}" alt="${p.category}" loading="lazy">
+        <span class="photo-pending-icon" title="Pending upload">&#8635;</span>
+      </div>
+    `).join('');
+  },
+
+  /**
+   * Render Drive thumbnail grid HTML for synced photos.
+   */
+  _renderDriveThumbnails(drivePhotos) {
+    return drivePhotos.map(p => {
+      const thumbUrl = `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w400`;
+      return `
+        <div class="photo-thumb photo-thumb-drive" data-drive-url="${p.gdrive_url}" data-file-id="${p.gdrive_file_id}" title="${p.filename}">
+          <img src="${thumbUrl}" alt="${p.category}" loading="lazy">
+          <span class="photo-synced-icon" title="Synced to Drive">&#10003;</span>
+        </div>
+      `;
+    }).join('');
+  },
+
+  /**
+   * Bind all thumbnail and add-button events on a container.
+   */
+  _bindThumbnailEvents(container, jobId, categoryKeys, onPhotoAdded, mode) {
+    // Add-photo buttons
     container.querySelectorAll('.photo-add-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const cat = btn.dataset.category;
@@ -244,7 +404,11 @@ const Photos = {
         try {
           const photo = await this.capturePhoto(jid, cat);
           if (photo) {
-            await this.renderFilteredPhotoSection(jid, container, categoryKeys, onPhotoAdded);
+            if (mode === 'filtered') {
+              await this.renderFilteredPhotoSection(jid, container, categoryKeys, onPhotoAdded);
+            } else {
+              await this.renderPhotoSection(jid, container);
+            }
             App.showToast('Photo added', 'success');
             if (onPhotoAdded) onPhotoAdded();
           }
@@ -254,145 +418,29 @@ const Photos = {
       });
     });
 
-    // Bind thumbnail clicks (view full size)
-    container.querySelectorAll('.photo-thumb').forEach(thumb => {
-      thumb.addEventListener('click', () => {
-        this._showFullPhoto(thumb.dataset.tempId);
-      });
+    // Drive thumbnails — open in new tab
+    this._bindDriveThumbEvents(container);
+
+    // Local pending thumbnails — show overlay
+    container.querySelectorAll('.photo-thumb-local').forEach(thumb => {
+      thumb.addEventListener('click', () => this._showFullPhoto(thumb.dataset.tempId));
     });
   },
 
   /**
-   * Render a read-only gallery of all photos for a job, grouped by category.
-   * Used in the journal modal to display all captured photos.
-   *
-   * @param {number} jobId
-   * @param {HTMLElement} container
+   * Bind Drive thumbnail click events — opens Drive URL in new tab.
    */
-  async renderAllPhotosGallery(jobId, container) {
-    const photos = await this.getPhotosForJob(jobId);
-    const categories = CONFIG.PHOTO_CATEGORIES || [];
-
-    if (photos.length === 0) {
-      container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
-      return;
-    }
-
-    let html = '';
-    for (const cat of categories) {
-      const catPhotos = photos.filter(p => p.category === cat.key);
-      if (catPhotos.length === 0) continue;
-
-      html += `
-        <div class="photo-category photo-category-readonly">
-          <div class="photo-category-header">
-            <span class="photo-category-title">${cat.label}</span>
-            <span class="photo-count complete">${catPhotos.length}</span>
-          </div>
-          <div class="photo-grid">
-            ${this._renderThumbnails(catPhotos)}
-          </div>
-        </div>`;
-    }
-
-    container.innerHTML = html || '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
-
-    // Bind thumbnail clicks (view full size)
-    container.querySelectorAll('.photo-thumb').forEach(thumb => {
+  _bindDriveThumbEvents(container) {
+    container.querySelectorAll('.photo-thumb-drive').forEach(thumb => {
       thumb.addEventListener('click', () => {
-        this._showFullPhoto(thumb.dataset.tempId);
+        const url = thumb.dataset.driveUrl;
+        if (url) window.open(url, '_blank');
       });
     });
   },
 
   /**
-   * Render the photo section for a job's detail view.
-   *
-   * @param {number} jobId
-   * @param {HTMLElement} container
-   */
-  async renderPhotoSection(jobId, container) {
-    const photos = await this.getPhotosForJob(jobId);
-    const categories = CONFIG.PHOTO_CATEGORIES || [
-      { key: 'before', label: 'Before Photos', required: 2 },
-      { key: 'after', label: 'After Photos', required: 2 },
-    ];
-
-    let html = '';
-    let addedDivider = false;
-    for (const cat of categories) {
-      // Insert a divider when transitioning from required to optional
-      if (!addedDivider && !cat.required) {
-        addedDivider = true;
-        html += `<div class="photo-section-divider">
-          <span class="photo-section-divider-label">Optional</span>
-        </div>`;
-      }
-
-      const catPhotos = photos.filter(p => p.category === cat.key);
-      const countLabel = cat.required
-        ? `${catPhotos.length}/${cat.required}`
-        : `${catPhotos.length}`;
-      const isComplete = cat.required ? catPhotos.length >= cat.required : catPhotos.length > 0;
-
-      html += `
-        <div class="photo-category">
-          <div class="photo-category-header">
-            <span class="photo-category-title">${cat.label}</span>
-            <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
-          </div>
-          <div class="photo-grid" id="photos_${cat.key}_grid">
-            ${this._renderThumbnails(catPhotos)}
-            <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
-              <span class="photo-add-icon">+</span>
-              <span class="photo-add-label">Add</span>
-            </button>
-          </div>
-        </div>`;
-    }
-
-    container.innerHTML = html;
-
-    // Bind add-photo buttons
-    container.querySelectorAll('.photo-add-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const cat = btn.dataset.category;
-        const jid = parseInt(btn.dataset.jobId, 10);
-        try {
-          const photo = await this.capturePhoto(jid, cat);
-          if (photo) {
-            // Re-render the section
-            await this.renderPhotoSection(jid, container);
-            App.showToast('Photo added', 'success');
-          }
-        } catch (err) {
-          App.showToast('Failed to capture photo', 'error');
-        }
-      });
-    });
-
-    // Bind thumbnail clicks (view full size)
-    container.querySelectorAll('.photo-thumb').forEach(thumb => {
-      thumb.addEventListener('click', () => {
-        this._showFullPhoto(thumb.dataset.tempId);
-      });
-    });
-  },
-
-  /**
-   * Render thumbnail grid HTML for a list of photos.
-   */
-  _renderThumbnails(photos) {
-    return photos.map(p => `
-      <div class="photo-thumb" data-temp-id="${p.temp_id}">
-        <img src="${p.thumbnail}" alt="${p.category}" loading="lazy">
-        ${p.synced ? '<span class="photo-synced-icon">&#10003;</span>' : '<span class="photo-pending-icon">&#8635;</span>'}
-      </div>
-    `).join('');
-  },
-
-  /**
-   * Show a full-size photo in an overlay.
+   * Show a full-size local photo in an overlay with delete option.
    */
   async _showFullPhoto(tempId) {
     const photo = await DB.get('photos', tempId);
@@ -415,23 +463,16 @@ const Photos = {
 
     document.body.appendChild(overlay);
 
-    // Close overlay
     const close = () => overlay.remove();
     overlay.querySelector('.photo-overlay-close').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-    // Delete photo
     overlay.querySelector('#photoDeleteBtn').addEventListener('click', async () => {
       if (confirm('Delete this photo?')) {
         await this.deletePhoto(tempId);
         close();
-        // Re-render the photo section if it exists in the DOM
         const section = document.getElementById('photoSection');
-        if (section) {
-          await this.renderPhotoSection(photo.job_id, section);
-        }
+        if (section) await this.renderPhotoSection(photo.job_id, section);
         App.showToast('Photo deleted', 'success');
       }
     });
@@ -441,9 +482,6 @@ const Photos = {
   // Image processing helpers
   // ------------------------------------------------------------------
 
-  /**
-   * Read a File as a base64 data URL.
-   */
   _readFileAsBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -453,30 +491,21 @@ const Photos = {
     });
   },
 
-  /**
-   * Resize an image (data URL) to a maximum width, preserving aspect ratio.
-   * Returns a JPEG data URL.
-   */
   _resizeImage(dataUrl, maxWidth) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
         let w = img.width;
         let h = img.height;
-
-        // Only downscale, never upscale
         if (w > maxWidth) {
           h = Math.round(h * (maxWidth / w));
           w = maxWidth;
         }
-
         const canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
-
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, w, h);
-
         resolve(canvas.toDataURL('image/jpeg', 0.85));
       };
       img.onerror = () => reject(new Error('Failed to load image'));
