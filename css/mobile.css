@@ -308,8 +308,219 @@ body {
   box-shadow: 0 2px 8px rgba(74, 85, 104, 0.3);
 }
 
+.footer-btn-help {
+  background: linear-gradient(135deg, #5c6bc0, #7986cb);
+  box-shadow: 0 2px 8px rgba(92, 107, 192, 0.35);
+  position: relative;
+}
+
+/* Badge on footer buttons (e.g. helpdesk ticket count) */
+.footer-btn-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: #e74c3c;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
 .footer-menu-wrapper {
   position: relative;
+}
+
+/* ========== HELP MENU MODAL ========== */
+.modal-help .modal-body.help-menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+}
+
+.help-menu-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  width: 100%;
+  padding: var(--spacing-md);
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.help-menu-card:active {
+  background: var(--background);
+  border-color: var(--primary-color);
+}
+
+.help-menu-card-icon {
+  font-size: 28px;
+  width: 44px;
+  text-align: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.help-menu-ticket-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: #e74c3c;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.help-menu-card-label {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.help-menu-card-desc {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* ========== QR SCANNER MODAL ========== */
+.modal-qr {
+  max-width: 360px;
+}
+
+.qr-scanner-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.qr-status {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.qr-viewfinder-wrapper {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  background: #000;
+}
+
+.qr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qr-viewfinder-frame {
+  position: absolute;
+  inset: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.qr-viewfinder-frame::before,
+.qr-viewfinder-frame::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: var(--primary-color);
+  border-style: solid;
+}
+
+.qr-viewfinder-frame::before {
+  top: -2px;
+  left: -2px;
+  border-width: 3px 0 0 3px;
+  border-radius: 4px 0 0 0;
+}
+
+.qr-viewfinder-frame::after {
+  bottom: -2px;
+  right: -2px;
+  border-width: 0 3px 3px 0;
+  border-radius: 0 0 4px 0;
+}
+
+.qr-hint {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+/* ========== HELPDESK TICKETS MODAL ========== */
+.modal-helpdesk {
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-helpdesk .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.helpdesk-ticket-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.helpdesk-ticket-row {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.helpdesk-ticket-row:last-child {
+  border-bottom: none;
+}
+
+.helpdesk-ticket-title {
+  font-size: var(--font-size-small);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.helpdesk-ticket-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.helpdesk-stage {
+  background: rgba(52, 152, 219, 0.12);
+  color: var(--primary-color);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.helpdesk-date {
+  color: var(--text-muted);
 }
 
 /* Menu dropdown opens upward from footer */

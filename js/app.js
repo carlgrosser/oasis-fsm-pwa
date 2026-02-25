@@ -41,6 +41,11 @@ const App = {
       Themes.init();
     }
 
+    // Start helpdesk badge polling
+    if (typeof Helpdesk !== 'undefined') {
+      Helpdesk.startBadgePolling();
+    }
+
     // Bind UI events
     this._bindEvents();
 
@@ -138,6 +143,14 @@ const App = {
         if (typeof TimeOff !== 'undefined') TimeOff.openModal();
       });
     });
+
+    // Help button (list footer)
+    const footerHelpBtn = document.getElementById('footerHelpBtn');
+    if (footerHelpBtn) {
+      footerHelpBtn.addEventListener('click', () => {
+        if (typeof Helpdesk !== 'undefined') Helpdesk.showHelpMenu();
+      });
+    }
 
     // Timesheet button
     const timesheetBtn = document.getElementById('timesheetBtn');

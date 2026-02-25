@@ -800,6 +800,45 @@ const OdooAPI = {
     return this.callKw('fsm.order', 'worker_get_pwa_settings', [], {});
   },
 
+  // ========== HELPDESK ==========
+
+  /**
+   * Fetch active helpdesk tickets assigned to the current user.
+   * Uses OCA helpdesk_mgmt model (helpdesk.ticket / helpdesk.ticket.stage).
+   */
+  async getMyHelpdeskTickets(limit = 50) {
+    const uid = Auth.getUser() && Auth.getUser().uid;
+    if (!uid) return [];
+    return this.searchRead(
+      'helpdesk.ticket',
+      [['user_id', '=', uid], ['stage_id.closed', '=', false]],
+      ['name', 'stage_id', 'priority', 'create_date', 'partner_id'],
+      { order: 'create_date desc', limit }
+    );
+  },
+
+  /**
+   * Count active helpdesk tickets assigned to the current user (for badge).
+   */
+  async countMyHelpdeskTickets() {
+    const uid = Auth.getUser() && Auth.getUser().uid;
+    if (!uid) return 0;
+    return this.callKw('helpdesk.ticket', 'search_count',
+      [[['user_id', '=', uid], ['stage_id.closed', '=', false]]],
+      {}
+    );
+  },
+
+  /**
+   * Create a new helpdesk ticket assigned to the current user.
+   */
+  async createHelpdeskTicket(name, description) {
+    const uid = Auth.getUser() && Auth.getUser().uid;
+    const vals = { name, user_id: uid };
+    if (description) vals.description = description;
+    return this.callKw('helpdesk.ticket', 'create', [vals], {});
+  },
+
   // ========== GOOGLE DRIVE ==========
 
   /**
