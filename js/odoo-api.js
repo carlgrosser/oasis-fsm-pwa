@@ -300,6 +300,51 @@ const OdooAPI = {
     return null;
   },
 
+  /**
+   * Fetch all FSM workers with their linked user/employee IDs.
+   * Returns [{ personId, name, uid, employeeId }] sorted by name.
+   */
+  async getFsmWorkers() {
+    const persons = await this.searchRead(
+      'fsm.person', [], ['id', 'name', 'partner_id'], { order: 'name asc', limit: 100 }
+    );
+    if (!persons.length) return [];
+
+    const partnerIds = persons
+      .map(p => Array.isArray(p.partner_id) ? p.partner_id[0] : p.partner_id)
+      .filter(Boolean);
+
+    const users = await this.searchRead(
+      'res.users',
+      [['partner_id', 'in', partnerIds], ['active', '=', true]],
+      ['id', 'partner_id'],
+      { limit: 100 }
+    );
+    const partnerToUid = {};
+    users.forEach(u => {
+      const pid = Array.isArray(u.partner_id) ? u.partner_id[0] : u.partner_id;
+      if (pid) partnerToUid[pid] = u.id;
+    });
+
+    const uids = users.map(u => u.id);
+    const userToEmployee = {};
+    if (uids.length) {
+      const employees = await this.searchRead(
+        'hr.employee', [['user_id', 'in', uids]], ['id', 'user_id'], { limit: 100 }
+      );
+      employees.forEach(e => {
+        const uid = Array.isArray(e.user_id) ? e.user_id[0] : e.user_id;
+        if (uid) userToEmployee[uid] = e.id;
+      });
+    }
+
+    return persons.map(p => {
+      const partnerId = Array.isArray(p.partner_id) ? p.partner_id[0] : p.partner_id;
+      const uid = partnerId ? partnerToUid[partnerId] : null;
+      return { personId: p.id, name: p.name, uid, employeeId: uid ? (userToEmployee[uid] || null) : null };
+    }).filter(w => w.uid);
+  },
+
   // ========== MATERIALS ==========
 
   /**

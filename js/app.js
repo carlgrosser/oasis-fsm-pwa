@@ -123,6 +123,16 @@ const App = {
       bindMenuAction(id, () => this._importSettings());
     });
 
+    // View As Worker buttons
+    ['viewAsBtnList', 'viewAsBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => this._showViewAsPicker());
+    });
+
+    // Persona exit banner button
+    const personaExitBtn = document.getElementById('personaExitBtn');
+    if (personaExitBtn) {
+      personaExitBtn.addEventListener('click', () => this._clearPersona());
+    }
 
     // Adjust shift buttons
     ['fixShiftBtnList', 'fixShiftBtnDetail'].forEach(id => {
@@ -460,6 +470,105 @@ const App = {
     } catch (err) {
       this.showToast('Failed to clear cache: ' + err.message, 'error');
     }
+  },
+
+  // ========== VIEW AS WORKER ==========
+
+  async _showViewAsPicker() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:320px;">
+        <div class="modal-header">
+          <h3>View As Worker</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:0;">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    const body = overlay.querySelector('.modal-body');
+    try {
+      const workers = await OdooAPI.getFsmWorkers();
+      const realUid = Auth.getRealUser() && Auth.getRealUser().uid;
+      const others  = workers.filter(w => w.uid !== realUid);
+
+      if (others.length === 0) {
+        body.innerHTML = `<p style="padding:var(--spacing-md);color:var(--text-muted);">No other workers found.</p>`;
+        return;
+      }
+
+      body.innerHTML = others.map(w => `
+        <div class="view-as-row" data-uid="${w.uid}" data-person-id="${w.personId}"
+             data-employee-id="${w.employeeId || ''}" data-name="${this._escAttr(w.name)}">
+          ${this._escHtml(w.name)}
+        </div>`).join('');
+
+      body.querySelectorAll('.view-as-row').forEach(row => {
+        row.addEventListener('click', () => {
+          close();
+          this._setPersona({
+            uid:        parseInt(row.dataset.uid),
+            name:       row.dataset.name,
+            personId:   parseInt(row.dataset.personId),
+            employeeId: row.dataset.employeeId ? parseInt(row.dataset.employeeId) : null,
+          });
+        });
+      });
+    } catch (err) {
+      body.innerHTML = `<p style="padding:var(--spacing-md);color:var(--error-color);">Failed to load workers.</p>`;
+    }
+  },
+
+  async _setPersona(worker) {
+    Auth.setPersona(worker);
+    this._updatePersonaBanner();
+    if (typeof Helpdesk !== 'undefined') {
+      Helpdesk._allTickets = [];
+      Helpdesk._filterTeam = null;
+      Helpdesk._filterStage = null;
+    }
+    await this.refreshAllViews();
+    this.showToast(`Viewing as ${worker.name}`, 'info');
+  },
+
+  _clearPersona() {
+    Auth.clearPersona();
+    this._updatePersonaBanner();
+    if (typeof Helpdesk !== 'undefined') {
+      Helpdesk._allTickets = [];
+      Helpdesk._filterTeam = null;
+      Helpdesk._filterStage = null;
+    }
+    this.refreshAllViews();
+    this.showToast('Viewing as yourself', 'success');
+  },
+
+  _updatePersonaBanner() {
+    const banner = document.getElementById('personaBanner');
+    const text   = document.getElementById('personaBannerText');
+    if (!banner || !text) return;
+    const persona = Auth.getPersona();
+    if (persona) {
+      text.textContent = `👁️ Viewing as ${persona.name}`;
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  },
+
+  _escHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  },
+
+  _escAttr(str) {
+    return String(str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   },
 
   /**

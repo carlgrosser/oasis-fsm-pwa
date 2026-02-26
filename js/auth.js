@@ -8,6 +8,7 @@ const Auth = {
   _personId: null,
   _employeeId: null,
   _timezone: null,
+  _persona: null,   // { uid, name, personId, employeeId } when impersonating, else null
 
   /**
    * Get stored session from localStorage.
@@ -212,24 +213,45 @@ const Auth = {
   },
 
   /**
-   * Get current user info.
+   * Get current user info (returns persona when impersonating).
    */
   getUser() {
+    if (this._persona) return { uid: this._persona.uid, name: this._persona.name };
     return this._user;
   },
 
   /**
-   * Get the fsm.person ID for the logged-in user.
+   * Get the real logged-in user (ignores persona). Used for admin checks.
    */
-  getPersonId() {
-    return this._personId;
+  getRealUser() {
+    return this._user;
   },
 
   /**
-   * Get the hr.employee ID for attendance tracking.
+   * Get the fsm.person ID (returns persona's when impersonating).
+   */
+  getPersonId() {
+    return this._persona ? this._persona.personId : this._personId;
+  },
+
+  /**
+   * Get the hr.employee ID (returns persona's when impersonating).
    */
   getEmployeeId() {
-    return this._employeeId;
+    return this._persona ? this._persona.employeeId : this._employeeId;
+  },
+
+  /** Set impersonation persona. Pass null to clear. */
+  setPersona(persona) {
+    this._persona = persona;
+  },
+
+  clearPersona() {
+    this._persona = null;
+  },
+
+  getPersona() {
+    return this._persona;
   },
 
   /**
