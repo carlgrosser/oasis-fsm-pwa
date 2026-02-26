@@ -19,6 +19,10 @@ const CONFIG = {
   ENABLE_SMS_NOTIFICATIONS: false,
   SMS_WEBHOOK_URL: '',
 
+  // GIT PULL WEBHOOK — see field-worker-pwa/webhook.py for server setup
+  GIT_PULL_WEBHOOK_URL: 'https://www.oasispooltilecleaning.com/git-pull',
+  GIT_PULL_TOKEN: 'CHANGE_ME_SECRET',
+
   // TIME TRACKING
   ENABLE_BREAKS: true,
   AUTO_CLOCK_IN_ON_START: true,

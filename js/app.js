@@ -123,6 +123,11 @@ const App = {
       bindMenuAction(id, () => this._importSettings());
     });
 
+    // Git pull buttons
+    ['gitPullBtnList', 'gitPullBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => this._gitPull());
+    });
+
     // Adjust shift buttons
     ['fixShiftBtnList', 'fixShiftBtnDetail'].forEach(id => {
       bindMenuAction(id, () => {
@@ -426,6 +431,66 @@ const App = {
       reader.readAsText(file);
     });
     input.click();
+  },
+
+  /**
+   * Trigger a git pull on the server via the deploy webhook (webhook.py).
+   */
+  async _gitPull() {
+    const url   = CONFIG.GIT_PULL_WEBHOOK_URL;
+    const token = CONFIG.GIT_PULL_TOKEN;
+    if (!url || !token || token === 'CHANGE_ME_SECRET') {
+      this.showToast('Git pull not configured — set GIT_PULL_WEBHOOK_URL and GIT_PULL_TOKEN in config.js', 'error');
+      return;
+    }
+    this.showToast('Pulling from GitHub…', 'info');
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'X-Token': token },
+      });
+      if (resp.status === 403) {
+        this.showToast('Pull failed: invalid token', 'error');
+        return;
+      }
+      const data = await resp.json();
+      if (!data.success) {
+        this.showToast('Pull failed — see console', 'error');
+        console.error('[git-pull]', data.output);
+        return;
+      }
+      if ((data.output || '').includes('Already up to date')) {
+        this.showToast('Already up to date', 'success');
+      } else {
+        this._showGitPullResult(data.output);
+      }
+    } catch (err) {
+      this.showToast('Could not reach deploy webhook', 'error');
+      console.error('[git-pull]', err);
+    }
+  },
+
+  _showGitPullResult(output) {
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:340px;">
+        <div class="modal-header">
+          <h3>Pull Complete</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <pre style="font-size:12px;white-space:pre-wrap;background:var(--surface-color);padding:8px;border-radius:4px;max-height:180px;overflow-y:auto;">${esc(output)}</pre>
+          <button class="btn btn-primary btn-block" style="margin-top:12px;" id="gitReloadBtn">Reload App</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('#gitReloadBtn').addEventListener('click', () => window.location.reload(true));
   },
 
   /**
