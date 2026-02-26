@@ -241,7 +241,11 @@ const Helpdesk = {
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     try {
       const raw = await OdooAPI.getMyHelpdeskTickets();
-      this._allTickets = raw;
+      const HIDDEN_STAGES = new Set(['done', 'cancelled', 'rejected']);
+      this._allTickets = raw.filter(t => {
+        const stage = (Array.isArray(t.stage_id) ? t.stage_id[1] : '').toLowerCase().trim();
+        return !HIDDEN_STAGES.has(stage);
+      });
 
       // Build sorted team and stage lists for filter selects
       const teamNames = [...new Set(
