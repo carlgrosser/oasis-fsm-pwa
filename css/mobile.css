@@ -489,9 +489,29 @@ body {
   flex-direction: column;
 }
 
+.helpdesk-team-header {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--surface-color);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 .helpdesk-ticket-row {
   padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.helpdesk-ticket-row:active {
+  background: var(--surface-hover, rgba(0,0,0,0.06));
 }
 
 .helpdesk-ticket-row:last-child {

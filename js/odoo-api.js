@@ -812,7 +812,7 @@ const OdooAPI = {
     return this.searchRead(
       'helpdesk.ticket',
       [['user_id', '=', uid], ['stage_id.closed', '=', false]],
-      ['name', 'stage_id', 'priority', 'create_date', 'partner_id'],
+      ['name', 'stage_id', 'priority', 'create_date', 'partner_id', 'team_id'],
       { order: 'create_date desc', limit }
     );
   },

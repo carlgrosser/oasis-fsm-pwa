@@ -249,26 +249,53 @@ const Helpdesk = {
         return;
       }
 
-      const rows = tickets.map(t => {
-        const stage = Array.isArray(t.stage_id) ? t.stage_id[1] : (t.stage_id || 'Unknown');
-        const priority = t.priority === '1' ? '⬆️' : t.priority === '2' ? '🔴' : '';
-        const date = t.create_date
-          ? new Date(t.create_date.replace(' ', 'T') + 'Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-          : '';
-        return `
-          <div class="helpdesk-ticket-row" data-ticket-id="${t.id}">
-            <div class="helpdesk-ticket-title">${priority ? priority + ' ' : ''}${this._esc(t.name)}</div>
-            <div class="helpdesk-ticket-meta">
-              <span class="helpdesk-stage">${this._esc(stage)}</span>
-              <span class="helpdesk-date">${date}</span>
-            </div>
-          </div>`;
-      }).join('');
+      // Group by team, preserving first-seen order
+      const groups = {};
+      const groupOrder = [];
+      tickets.forEach(t => {
+        const teamName = Array.isArray(t.team_id) ? t.team_id[1] : (t.team_id || 'No Team');
+        if (!groups[teamName]) {
+          groups[teamName] = [];
+          groupOrder.push(teamName);
+        }
+        groups[teamName].push(t);
+      });
 
-      container.innerHTML = `<div class="helpdesk-ticket-list">${rows}</div>`;
+      let html = '';
+      groupOrder.forEach(teamName => {
+        html += `<div class="helpdesk-team-header">${this._esc(teamName)}</div>`;
+        groups[teamName].forEach(t => {
+          const stage = Array.isArray(t.stage_id) ? t.stage_id[1] : (t.stage_id || 'Unknown');
+          const priority = t.priority === '1' ? '⬆️' : t.priority === '2' ? '🔴' : '';
+          const date = t.create_date
+            ? new Date(t.create_date.replace(' ', 'T') + 'Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+            : '';
+          html += `
+            <div class="helpdesk-ticket-row" data-ticket-id="${t.id}">
+              <div class="helpdesk-ticket-title">${priority ? priority + ' ' : ''}${this._esc(t.name)}</div>
+              <div class="helpdesk-ticket-meta">
+                <span class="helpdesk-stage">${this._esc(stage)}</span>
+                <span class="helpdesk-date">${date}</span>
+              </div>
+            </div>`;
+        });
+      });
+
+      container.innerHTML = `<div class="helpdesk-ticket-list">${html}</div>`;
+
+      // Open ticket in Odoo on click
+      container.querySelectorAll('.helpdesk-ticket-row').forEach(row => {
+        row.addEventListener('click', () => this._openTicket(row.dataset.ticketId));
+      });
     } catch (err) {
       container.innerHTML = `<p style="padding:var(--spacing-md);color:var(--error-color);">Failed to load tickets. ${navigator.onLine ? '' : 'No network.'}</p>`;
     }
+  },
+
+  _openTicket(ticketId) {
+    const base = CONFIG.ODOO_URL || window.location.origin;
+    const url = `${base}/web#model=helpdesk.ticket&id=${ticketId}&view_type=form`;
+    window.open(url, '_blank', 'noopener');
   },
 
   _renderCreateForm(container, modalOverlay) {
