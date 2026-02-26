@@ -10,8 +10,9 @@ const Helpdesk = {
   _activeCount: 0,
   _POLL_INTERVAL: 5 * 60 * 1000, // 5 minutes
   _allTickets: [],
-  _sortOrder: 'desc',   // 'desc' = newest first, 'asc' = oldest first
-  _filterTeam: null,    // null = all teams, string = specific team name
+  _sortOrder: 'desc',    // 'desc' = newest first, 'asc' = oldest first
+  _filterTeam: null,     // null = all teams, string = specific team name
+  _filterStage: null,    // null = all stages, string = specific stage name
 
   // ========== BADGE POLLING ==========
 
@@ -240,44 +241,51 @@ const Helpdesk = {
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     try {
       const raw = await OdooAPI.getMyHelpdeskTickets();
+      this._allTickets = raw;
 
-      // Exclude done/canceled stages by name pattern
-      this._allTickets = raw.filter(t => {
-        const stage = Array.isArray(t.stage_id) ? t.stage_id[1] : '';
-        return !/\b(done|cancel|cancelled|closed)\b/i.test(stage);
-      });
-      this._activeCount = this._allTickets.length;
-      this._updateBadge(this._allTickets.length);
-
-      // Build sorted team list for the filter select
+      // Build sorted team and stage lists for filter selects
       const teamNames = [...new Set(
-        this._allTickets.map(t => Array.isArray(t.team_id) ? t.team_id[1] : 'No Team')
+        raw.map(t => Array.isArray(t.team_id) ? t.team_id[1] : 'No Team')
       )].sort();
-      const teamOptions = teamNames.map(name =>
-        `<option value="${this._esc(name)}">${this._esc(name)}</option>`
-      ).join('');
+      const stageNames = [...new Set(
+        raw.map(t => Array.isArray(t.stage_id) ? t.stage_id[1] : 'Unknown')
+      )].sort();
 
-      const sortLabel = this._sortOrder === 'desc' ? 'Newest ↓' : 'Oldest ↑';
+      const teamOptions  = teamNames.map(n => `<option value="${this._esc(n)}">${this._esc(n)}</option>`).join('');
+      const stageOptions = stageNames.map(n => `<option value="${this._esc(n)}">${this._esc(n)}</option>`).join('');
+      const sortLabel    = this._sortOrder === 'desc' ? 'Newest ↓' : 'Oldest ↑';
+
       container.innerHTML = `
         <div class="helpdesk-controls">
           <select id="hdTeamFilter" class="helpdesk-control-select">
             <option value="">All Teams</option>
             ${teamOptions}
           </select>
+          <select id="hdStageFilter" class="helpdesk-control-select">
+            <option value="">All Stages</option>
+            ${stageOptions}
+          </select>
           <button id="hdSortBtn" class="helpdesk-control-btn">${sortLabel}</button>
         </div>
         <div id="hdTicketList"></div>
       `;
 
-      const listEl  = container.querySelector('#hdTicketList');
-      const teamSel = container.querySelector('#hdTeamFilter');
-      const sortBtn = container.querySelector('#hdSortBtn');
+      const listEl   = container.querySelector('#hdTicketList');
+      const teamSel  = container.querySelector('#hdTeamFilter');
+      const stageSel = container.querySelector('#hdStageFilter');
+      const sortBtn  = container.querySelector('#hdSortBtn');
 
       // Restore previous filter/sort state
-      if (this._filterTeam) teamSel.value = this._filterTeam;
+      if (this._filterTeam)  teamSel.value  = this._filterTeam;
+      if (this._filterStage) stageSel.value = this._filterStage;
 
       teamSel.addEventListener('change', () => {
         this._filterTeam = teamSel.value || null;
+        this._applyAndRender(listEl);
+      });
+
+      stageSel.addEventListener('change', () => {
+        this._filterStage = stageSel.value || null;
         this._applyAndRender(listEl);
       });
 
@@ -303,6 +311,13 @@ const Helpdesk = {
       );
     }
 
+    // Apply stage filter
+    if (this._filterStage) {
+      tickets = tickets.filter(t =>
+        (Array.isArray(t.stage_id) ? t.stage_id[1] : 'Unknown') === this._filterStage
+      );
+    }
+
     // Sort by create_date
     tickets.sort((a, b) => {
       const aMs = a.create_date ? new Date(a.create_date.replace(' ', 'T') + 'Z').getTime() : 0;
@@ -311,10 +326,11 @@ const Helpdesk = {
     });
 
     if (tickets.length === 0) {
+      const hasFilter = this._filterTeam || this._filterStage;
       listEl.innerHTML = `
         <div class="empty-state" style="padding:var(--spacing-xl);">
           <div style="font-size:40px;opacity:0.3;">🎫</div>
-          <p>${this._filterTeam ? 'No open tickets for this team.' : 'No open tickets assigned to you.'}</p>
+          <p>${hasFilter ? 'No tickets match the selected filters.' : 'No tickets found.'}</p>
         </div>`;
       return;
     }

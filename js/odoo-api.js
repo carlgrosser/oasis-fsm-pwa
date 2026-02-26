@@ -811,7 +811,7 @@ const OdooAPI = {
     if (!uid) return [];
     return this.searchRead(
       'helpdesk.ticket',
-      [['user_id', '=', uid]],
+      ['|', ['user_id', '=', uid], ['create_uid', '=', uid]],
       ['name', 'stage_id', 'priority', 'create_date', 'partner_id', 'team_id'],
       { limit }
     );
