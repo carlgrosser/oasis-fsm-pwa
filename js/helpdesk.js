@@ -247,12 +247,12 @@ const Helpdesk = {
         return !HIDDEN_STAGES.has(stage);
       });
 
-      // Build sorted team and stage lists for filter selects
+      // Build sorted team and stage lists for filter selects (from filtered set)
       const teamNames = [...new Set(
-        raw.map(t => Array.isArray(t.team_id) ? t.team_id[1] : 'No Team')
+        this._allTickets.map(t => Array.isArray(t.team_id) ? t.team_id[1] : 'No Team')
       )].sort();
       const stageNames = [...new Set(
-        raw.map(t => Array.isArray(t.stage_id) ? t.stage_id[1] : 'Unknown')
+        this._allTickets.map(t => Array.isArray(t.stage_id) ? t.stage_id[1] : 'Unknown')
       )].sort();
 
       const teamOptions  = teamNames.map(n => `<option value="${this._esc(n)}">${this._esc(n)}</option>`).join('');
