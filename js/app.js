@@ -49,6 +49,14 @@ const App = {
     // Bind UI events
     this._bindEvents();
 
+    // Show admin-only menu items
+    if (Auth.isAdmin()) {
+      ['viewAsBtnList', 'viewAsBtnDetail'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = '';
+      });
+    }
+
     // Init list tab swiping
     this._initListTabs();
 

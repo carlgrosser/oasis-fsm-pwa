@@ -9,6 +9,7 @@ const Auth = {
   _employeeId: null,
   _timezone: null,
   _persona: null,   // { uid, name, personId, employeeId } when impersonating, else null
+  _isAdmin: false,
 
   /**
    * Get stored session from localStorage.
@@ -79,6 +80,8 @@ const Auth = {
       const userTz = (result.user_context && result.user_context.tz) || null;
       this._timezone = userTz;
 
+      this._isAdmin = !!(result.is_admin || result.is_superuser);
+
       const sessionData = {
         sessionId: result.session_id,
         uid: result.uid,
@@ -89,6 +92,7 @@ const Auth = {
         personName: person.name,
         employeeId: this._employeeId,
         timezone: userTz,
+        isAdmin: this._isAdmin,
         timestamp: Date.now(),
       };
 
@@ -145,6 +149,7 @@ const Auth = {
     this._personId = stored.personId;
     this._employeeId = stored.employeeId || null;
     this._timezone = stored.timezone || null;
+    this._isAdmin = stored.isAdmin || false;
 
     // If we're online, verify the session is still valid
     if (navigator.onLine) {
@@ -239,6 +244,10 @@ const Auth = {
    */
   getEmployeeId() {
     return this._persona ? this._persona.employeeId : this._employeeId;
+  },
+
+  isAdmin() {
+    return this._isAdmin;
   },
 
   /** Set impersonation persona. Pass null to clear. */
