@@ -806,14 +806,14 @@ const OdooAPI = {
    * Fetch active helpdesk tickets assigned to the current user.
    * Uses OCA helpdesk_mgmt model (helpdesk.ticket / helpdesk.ticket.stage).
    */
-  async getMyHelpdeskTickets(limit = 50) {
+  async getMyHelpdeskTickets(limit = 100) {
     const uid = Auth.getUser() && Auth.getUser().uid;
     if (!uid) return [];
     return this.searchRead(
       'helpdesk.ticket',
-      [['user_id', '=', uid], ['stage_id.closed', '=', false]],
+      [['user_id', '=', uid]],
       ['name', 'stage_id', 'priority', 'create_date', 'partner_id', 'team_id'],
-      { order: 'create_date desc', limit }
+      { limit }
     );
   },
 

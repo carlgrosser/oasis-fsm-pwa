@@ -484,6 +484,42 @@ body {
   min-height: 0;
 }
 
+.helpdesk-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-color);
+}
+
+.helpdesk-control-select {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: var(--font-size-small);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--input-bg, var(--bg-color));
+  color: var(--text-primary);
+}
+
+.helpdesk-control-btn {
+  padding: 4px 10px;
+  font-size: var(--font-size-small);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.helpdesk-control-btn:active {
+  background: var(--primary-color);
+  color: #fff;
+  border-color: var(--primary-color);
+}
+
 .helpdesk-ticket-list {
   display: flex;
   flex-direction: column;

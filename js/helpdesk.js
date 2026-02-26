@@ -9,6 +9,9 @@ const Helpdesk = {
   _pollTimer: null,
   _activeCount: 0,
   _POLL_INTERVAL: 5 * 60 * 1000, // 5 minutes
+  _allTickets: [],
+  _sortOrder: 'desc',   // 'desc' = newest first, 'asc' = oldest first
+  _filterTeam: null,    // null = all teams, string = specific team name
 
   // ========== BADGE POLLING ==========
 
@@ -236,60 +239,124 @@ const Helpdesk = {
   async _renderTicketList(container) {
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     try {
-      const tickets = await OdooAPI.getMyHelpdeskTickets();
-      this._activeCount = tickets.length;
-      this._updateBadge(tickets.length);
+      const raw = await OdooAPI.getMyHelpdeskTickets();
 
-      if (tickets.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state" style="padding:var(--spacing-xl);">
-            <div style="font-size:40px;opacity:0.3;">🎫</div>
-            <p>No open tickets assigned to you.</p>
-          </div>`;
-        return;
-      }
+      // Exclude done/canceled stages by name pattern
+      this._allTickets = raw.filter(t => {
+        const stage = Array.isArray(t.stage_id) ? t.stage_id[1] : '';
+        return !/\b(done|cancel|cancelled|closed)\b/i.test(stage);
+      });
+      this._activeCount = this._allTickets.length;
+      this._updateBadge(this._allTickets.length);
 
-      // Group by team, preserving first-seen order
-      const groups = {};
-      const groupOrder = [];
-      tickets.forEach(t => {
-        const teamName = Array.isArray(t.team_id) ? t.team_id[1] : (t.team_id || 'No Team');
-        if (!groups[teamName]) {
-          groups[teamName] = [];
-          groupOrder.push(teamName);
-        }
-        groups[teamName].push(t);
+      // Build sorted team list for the filter select
+      const teamNames = [...new Set(
+        this._allTickets.map(t => Array.isArray(t.team_id) ? t.team_id[1] : 'No Team')
+      )].sort();
+      const teamOptions = teamNames.map(name =>
+        `<option value="${this._esc(name)}">${this._esc(name)}</option>`
+      ).join('');
+
+      const sortLabel = this._sortOrder === 'desc' ? 'Newest ↓' : 'Oldest ↑';
+      container.innerHTML = `
+        <div class="helpdesk-controls">
+          <select id="hdTeamFilter" class="helpdesk-control-select">
+            <option value="">All Teams</option>
+            ${teamOptions}
+          </select>
+          <button id="hdSortBtn" class="helpdesk-control-btn">${sortLabel}</button>
+        </div>
+        <div id="hdTicketList"></div>
+      `;
+
+      const listEl  = container.querySelector('#hdTicketList');
+      const teamSel = container.querySelector('#hdTeamFilter');
+      const sortBtn = container.querySelector('#hdSortBtn');
+
+      // Restore previous filter/sort state
+      if (this._filterTeam) teamSel.value = this._filterTeam;
+
+      teamSel.addEventListener('change', () => {
+        this._filterTeam = teamSel.value || null;
+        this._applyAndRender(listEl);
       });
 
-      let html = '';
-      groupOrder.forEach(teamName => {
-        html += `<div class="helpdesk-team-header">${this._esc(teamName)}</div>`;
-        groups[teamName].forEach(t => {
-          const stage = Array.isArray(t.stage_id) ? t.stage_id[1] : (t.stage_id || 'Unknown');
-          const priority = t.priority === '1' ? '⬆️' : t.priority === '2' ? '🔴' : '';
-          const date = t.create_date
-            ? new Date(t.create_date.replace(' ', 'T') + 'Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-            : '';
-          html += `
-            <div class="helpdesk-ticket-row" data-ticket-id="${t.id}">
-              <div class="helpdesk-ticket-title">${priority ? priority + ' ' : ''}${this._esc(t.name)}</div>
-              <div class="helpdesk-ticket-meta">
-                <span class="helpdesk-stage">${this._esc(stage)}</span>
-                <span class="helpdesk-date">${date}</span>
-              </div>
-            </div>`;
-        });
+      sortBtn.addEventListener('click', () => {
+        this._sortOrder = this._sortOrder === 'desc' ? 'asc' : 'desc';
+        sortBtn.textContent = this._sortOrder === 'desc' ? 'Newest ↓' : 'Oldest ↑';
+        this._applyAndRender(listEl);
       });
 
-      container.innerHTML = `<div class="helpdesk-ticket-list">${html}</div>`;
-
-      // Open ticket in Odoo on click
-      container.querySelectorAll('.helpdesk-ticket-row').forEach(row => {
-        row.addEventListener('click', () => this._openTicket(row.dataset.ticketId));
-      });
+      this._applyAndRender(listEl);
     } catch (err) {
       container.innerHTML = `<p style="padding:var(--spacing-md);color:var(--error-color);">Failed to load tickets. ${navigator.onLine ? '' : 'No network.'}</p>`;
     }
+  },
+
+  _applyAndRender(listEl) {
+    let tickets = [...this._allTickets];
+
+    // Apply team filter
+    if (this._filterTeam) {
+      tickets = tickets.filter(t =>
+        (Array.isArray(t.team_id) ? t.team_id[1] : 'No Team') === this._filterTeam
+      );
+    }
+
+    // Sort by create_date
+    tickets.sort((a, b) => {
+      const aMs = a.create_date ? new Date(a.create_date.replace(' ', 'T') + 'Z').getTime() : 0;
+      const bMs = b.create_date ? new Date(b.create_date.replace(' ', 'T') + 'Z').getTime() : 0;
+      return this._sortOrder === 'asc' ? aMs - bMs : bMs - aMs;
+    });
+
+    if (tickets.length === 0) {
+      listEl.innerHTML = `
+        <div class="empty-state" style="padding:var(--spacing-xl);">
+          <div style="font-size:40px;opacity:0.3;">🎫</div>
+          <p>${this._filterTeam ? 'No open tickets for this team.' : 'No open tickets assigned to you.'}</p>
+        </div>`;
+      return;
+    }
+
+    let html = '';
+    if (!this._filterTeam) {
+      // Group by team when showing all
+      const groups = {};
+      const groupOrder = [];
+      tickets.forEach(t => {
+        const teamName = Array.isArray(t.team_id) ? t.team_id[1] : 'No Team';
+        if (!groups[teamName]) { groups[teamName] = []; groupOrder.push(teamName); }
+        groups[teamName].push(t);
+      });
+      groupOrder.forEach(teamName => {
+        html += `<div class="helpdesk-team-header">${this._esc(teamName)}</div>`;
+        groups[teamName].forEach(t => { html += this._ticketRowHtml(t); });
+      });
+    } else {
+      tickets.forEach(t => { html += this._ticketRowHtml(t); });
+    }
+
+    listEl.innerHTML = `<div class="helpdesk-ticket-list">${html}</div>`;
+    listEl.querySelectorAll('.helpdesk-ticket-row').forEach(row => {
+      row.addEventListener('click', () => this._openTicket(row.dataset.ticketId));
+    });
+  },
+
+  _ticketRowHtml(t) {
+    const stage    = Array.isArray(t.stage_id) ? t.stage_id[1] : (t.stage_id || 'Unknown');
+    const priority = t.priority === '1' ? '⬆️' : t.priority === '2' ? '🔴' : '';
+    const date     = t.create_date
+      ? new Date(t.create_date.replace(' ', 'T') + 'Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : '';
+    return `
+      <div class="helpdesk-ticket-row" data-ticket-id="${t.id}">
+        <div class="helpdesk-ticket-title">${priority ? priority + ' ' : ''}${this._esc(t.name)}</div>
+        <div class="helpdesk-ticket-meta">
+          <span class="helpdesk-stage">${this._esc(stage)}</span>
+          <span class="helpdesk-date">${date}</span>
+        </div>
+      </div>`;
   },
 
   _openTicket(ticketId) {
@@ -343,14 +410,12 @@ const Helpdesk = {
         container.querySelector('#ticketDescription').value = '';
         btn.textContent = 'Submit Another';
         btn.disabled = false;
-        // Refresh badge and list
+        // Refresh badge, switch to list tab, and re-fetch ticket list
         this._pollOnce();
-        // Switch back to list tab and refresh
-        const listTab = modalOverlay && modalOverlay.querySelector('[data-modal-tab="list"]');
-        if (listTab) {
-          listTab.click();
-          delete modalOverlay.querySelector('#ticketListPanel').dataset.rendered;
-        }
+        const listTab   = modalOverlay && modalOverlay.querySelector('[data-modal-tab="list"]');
+        const listPanel = modalOverlay && modalOverlay.querySelector('#ticketListPanel');
+        if (listTab) listTab.click();
+        if (listPanel) this._renderTicketList(listPanel);
       } catch (err) {
         statusEl.style.color = 'var(--error-color)';
         statusEl.textContent = 'Failed to submit. Try again.';
