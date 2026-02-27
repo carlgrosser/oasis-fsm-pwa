@@ -35,8 +35,8 @@ const WrapUp = {
   _updatePlacementMenuLabels() {
     const placement = this.getPlacement();
     const label = placement === 'above_footer'
-      ? '📌 Wrap-Up Btn: Above Footer'
-      : '📌 Wrap-Up Btn: Above Tabs';
+      ? '📌 Close Job Btn: Above Footer'
+      : '📌 Close Job Btn: Above Tabs';
     ['wrapupPlacementBtnList', 'wrapupPlacementBtnDetail'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.textContent = label;
@@ -65,13 +65,14 @@ const WrapUp = {
   },
 
 
-  // ── Full Wrap-Up ────────────────────────────────────────────────────────────
+  // ── Close Job (full) ────────────────────────────────────────────────────────
 
   /**
-   * Show the full wrap-up modal for a job that is already in a completed stage.
+   * Show the Close Job modal for a completed-stage job.
    * @param {Object} job - fsm.order data object
+   * @param {boolean} editMode - true when re-opening a previously closed job
    */
-  async show(job) {
+  async show(job, editMode = false) {
     this._currentJob = job;
 
     const customerName = Array.isArray(job.location_id) ? job.location_id[1] : (job.location_id || '');
@@ -84,7 +85,7 @@ const WrapUp = {
     overlay.innerHTML = `
       <div class="modal modal-wrapup">
         <div class="modal-header">
-          <h3>Job Wrap-Up</h3>
+          <h3>${editMode ? 'Edit Closed Job' : 'Close Job'}</h3>
           <button class="modal-close" id="wrapupClose">&times;</button>
         </div>
         <div class="modal-body modal-body-scroll">
@@ -140,11 +141,23 @@ const WrapUp = {
 
           <!-- Resolution -->
           <div class="wrapup-field">
+            ${editMode ? `
+            <label class="wrapup-label" id="resolutionLabel">
+              Additional notes <span class="wrapup-nudge">(will be appended to resolution)</span>
+            </label>
+            <textarea class="form-input" id="wrapupResolution" rows="3"
+              placeholder="Add more detail…"></textarea>
+            <label class="wrapup-check-label" style="margin-top:6px;">
+              <input type="checkbox" id="editOriginalCheck">
+              <span>Edit original resolution instead</span>
+            </label>
+            ` : `
             <label class="wrapup-label">
               What was done? <span class="wrapup-nudge">(quick note about job)</span>
             </label>
             <textarea class="form-input" id="wrapupResolution" rows="3"
               placeholder="Describe the work completed…">${this._esc(existingResolution)}</textarea>
+            `}
           </div>
 
           <!-- Note to Office (hidden behind toggle) -->
@@ -161,18 +174,18 @@ const WrapUp = {
         </div>
         <div class="modal-footer wrapup-footer">
           <button class="btn btn-primary btn-block btn-lg" id="wrapupSubmitBtn">
-            Wrap It Up!
+            ${editMode ? 'Save Changes' : 'Close Job'}
           </button>
         </div>
       </div>
     `;
 
     document.body.appendChild(overlay);
-    this._bindFullModal(overlay, job, workerCount);
-    this._loadPaymentStatus(job, overlay);
+    this._bindFullModal(overlay, job, workerCount, editMode);
+    if (!editMode) this._loadPaymentStatus(job, overlay);
   },
 
-  _bindFullModal(overlay, job, workerCount) {
+  _bindFullModal(overlay, job, workerCount, editMode = false) {
     // Close button
     overlay.querySelector('#wrapupClose').addEventListener('click', () => overlay.remove());
 
@@ -207,6 +220,23 @@ const WrapUp = {
       overlay.querySelector('#wrapupOfficeToggleBtn').textContent = isHidden ? '− Note to Office' : '+ Note to Office';
     });
 
+    // Edit mode: "edit original resolution" checkbox → pre-fill textarea
+    if (editMode) {
+      const editOriginalCheck = overlay.querySelector('#editOriginalCheck');
+      const resolutionLabel = overlay.querySelector('#resolutionLabel');
+      const resolutionTA = overlay.querySelector('#wrapupResolution');
+      const existingResolution = (job.resolution || '').trim();
+      editOriginalCheck?.addEventListener('change', e => {
+        if (e.target.checked) {
+          resolutionTA.value = existingResolution;
+          resolutionLabel.innerHTML = 'Resolution <span class="wrapup-nudge">(editing original)</span>';
+        } else {
+          resolutionTA.value = '';
+          resolutionLabel.innerHTML = 'Additional notes <span class="wrapup-nudge">(will be appended to resolution)</span>';
+        }
+      });
+    }
+
     // Submit
     overlay.querySelector('#wrapupSubmitBtn').addEventListener('click', async () => {
       const jobComplete = overlay.querySelector('#jobStatusToggle .toggle-btn.active').dataset.val === 'complete';
@@ -222,23 +252,36 @@ const WrapUp = {
         reasons.push(otherText ? `Other: ${otherText}` : 'Other');
       }
 
+      const resolutionText = overlay.querySelector('#wrapupResolution').value.trim();
+      const isEditingOriginal = editMode && !!overlay.querySelector('#editOriginalCheck')?.checked;
+
       const data = {
+        edit_mode:               editMode,
         job_complete:            jobComplete,
         return_trip_note:        overlay.querySelector('#returnTripNote').value.trim(),
         payment_not_collected:   paymentNotCollected,
         payment_followup_note:   reasons.join('; '),
-        resolution:              overlay.querySelector('#wrapupResolution').value.trim(),
         office_note:             overlay.querySelector('#wrapupOfficeNote')?.value.trim() || '',
       };
+      if (editMode) {
+        if (isEditingOriginal) {
+          data.resolution = resolutionText;
+        } else {
+          data.resolution_append = resolutionText;
+        }
+      } else {
+        data.resolution = resolutionText;
+      }
 
-      overlay.querySelector('#wrapupSubmitBtn').disabled = true;
-      overlay.querySelector('#wrapupSubmitBtn').textContent = 'Submitting…';
+      const submitBtn = overlay.querySelector('#wrapupSubmitBtn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting…';
 
-      await this._submitFull(overlay, job, workerCount, data);
+      await this._submitFull(overlay, job, workerCount, data, editMode);
     });
   },
 
-  async _submitFull(overlay, job, workerCount, data) {
+  async _submitFull(overlay, job, workerCount, data, editMode = false) {
     let gps = '';
     let gpsAccuracy = 0;
     if (typeof GPS !== 'undefined') {
@@ -249,21 +292,27 @@ const WrapUp = {
       }
     }
 
+    const btnLabel = editMode ? 'Save Changes' : 'Close Job';
+
     if (navigator.onLine) {
       try {
         const result = await OdooAPI.submitWrapup(job.id, { ...data, gps, gps_accuracy: gpsAccuracy });
         overlay.remove();
 
         if (result.already_submitted) {
-          App.showToast(`Wrap-up already submitted by ${result.submitted_by || 'another worker'}.`, 'info');
+          App.showToast(`Job already closed by ${result.submitted_by || 'another worker'}.`, 'info');
           this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
         } else {
-          this._showClockOffPrompt(job, workerCount, result.clocked_out_count, gps, gpsAccuracy);
+          if (editMode) {
+            App.showToast('Changes saved.', 'success');
+          } else {
+            this._showClockOffPrompt(job, workerCount, result.clocked_out_count, gps, gpsAccuracy);
+          }
         }
       } catch (err) {
-        App.showToast('Wrap-up failed: ' + err.message, 'error');
+        App.showToast('Close Job failed: ' + err.message, 'error');
         const btn = overlay.querySelector('#wrapupSubmitBtn');
-        if (btn) { btn.disabled = false; btn.textContent = 'Wrap It Up!'; }
+        if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
       }
     } else {
       // Queue for offline sync
@@ -276,8 +325,8 @@ const WrapUp = {
         synced: 0,
       });
       overlay.remove();
-      App.showToast('Wrap-up saved — will sync when online.', 'info');
-      this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
+      App.showToast(editMode ? 'Changes saved — will sync when online.' : 'Job closed — will sync when online.', 'info');
+      if (!editMode) this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
     }
   },
 
@@ -422,7 +471,7 @@ const WrapUp = {
     overlay.innerHTML = `
       <div class="modal modal-clockoff">
         <div class="modal-header">
-          <h3>✓ Wrap-Up Submitted</h3>
+          <h3>✓ Job Closed</h3>
         </div>
         <div class="modal-body">
           ${alreadyClockedOut > 0

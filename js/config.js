@@ -61,6 +61,7 @@ const CONFIG = {
     'gps_enroute', 'gps_enroute_timestamp',
     'photo_count_before', 'photo_count_after', 'photos_complete',
     'project_id',
+    'wrapup_submitted', 'resolution',
   ],
 
   // Set to true after installing the custom Odoo modules

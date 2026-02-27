@@ -110,7 +110,7 @@
             <button id="importSettingsBtnList" class="menu-item">⚙️ Import Settings</button>
             <button id="viewAsBtnList" class="menu-item" style="display:none;">👁️ View As Worker</button>
             <div class="menu-divider"></div>
-            <button id="wrapupPlacementBtnList" class="menu-item">📌 Wrap-Up Btn: Above Tabs</button>
+            <button id="wrapupPlacementBtnList" class="menu-item">📌 Close Job Btn: Above Tabs</button>
             <div class="menu-divider"></div>
             <button id="logoutBtnList" class="menu-item menu-item-danger">&#9211; Log Out</button>
           </div>
@@ -144,7 +144,7 @@
             <button id="importSettingsBtnDetail" class="menu-item">⚙️ Import Settings</button>
             <button id="viewAsBtnDetail" class="menu-item" style="display:none;">👁️ View As Worker</button>
             <div class="menu-divider"></div>
-            <button id="wrapupPlacementBtnDetail" class="menu-item">📌 Wrap-Up Btn: Above Tabs</button>
+            <button id="wrapupPlacementBtnDetail" class="menu-item">📌 Close Job Btn: Above Tabs</button>
             <div class="menu-divider"></div>
             <button id="logoutBtnDetail" class="menu-item menu-item-danger">&#9211; Log Out</button>
           </div>
@@ -288,11 +288,7 @@
   <script src="js/wrapup.js"></script>
   <script src="js/app.js"></script>
 
-  <!-- Wrap-Up button: above-footer placement (hidden by default, shown via JS) -->
-  <div id="wrapupAboveFooterBar" style="display:none;">
-    <button class="btn btn-success btn-block btn-xl" id="footerWrapupBtn">
-      Wrap Up Job
-    </button>
-  </div>
+  <!-- Close Job bar: above-footer placement (hidden by default, content set by JS) -->
+  <div id="wrapupAboveFooterBar" style="display:none;"></div>
 </body>
 </html>

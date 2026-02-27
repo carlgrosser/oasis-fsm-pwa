@@ -296,6 +296,11 @@ const Jobs = {
       ? '<span class="overdue-badge" title="Needs completion">⚠️ OVERDUE</span>'
       : '';
 
+    // "Open / Not Closed" badge for history jobs not yet closed via Close Job
+    const notClosedHtml = (this._currentView === 'history' && !job.wrapup_submitted)
+      ? '<span class="not-closed-badge">Open / Not Closed</span>'
+      : '';
+
     // Contact info on card (simple text with SMS link for mobile)
     let cardContactHtml = '';
     const cardHasMobile = job.mobile && job.mobile.trim();
@@ -331,6 +336,7 @@ const Jobs = {
     if (isHistoryComplete) {
       const completedIcon = '<span class="status-icon complete" title="Completed">✓</span>';
       card.innerHTML = `
+        ${notClosedHtml}
         <div class="job-card-header compact">
           <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
           <span class="job-card-meta">
@@ -344,6 +350,7 @@ const Jobs = {
     } else {
       card.innerHTML = `
         ${overdueHtml}
+        ${notClosedHtml}
         <div class="job-card-header">
           <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
           <span class="job-card-time">${timeStr}</span>
@@ -406,12 +413,14 @@ const Jobs = {
         <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
       </div>
 
-      ${showInlineBanner ? `
-      <div class="wrapup-banner" id="wrapupBanner">
-        <button class="btn btn-success btn-block btn-xl" id="wrapupBtn">
-          Wrap Up Job
-        </button>
-      </div>` : ''}
+      ${showInlineBanner ? (job.wrapup_submitted ? `
+      <div class="close-job-banner closed" id="closeJobBanner">
+        <span class="job-closed-label">✓ Job Closed</span>
+        <button class="btn btn-sm job-closed-edit-btn" id="closeJobEditBtn">Edit</button>
+      </div>` : `
+      <div class="close-job-banner" id="closeJobBanner">
+        <button class="btn btn-close-job btn-block btn-xl" id="closeJobBtn">Close Job</button>
+      </div>`) : ''}
 
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
@@ -437,10 +446,14 @@ const Jobs = {
       App.showJobList();
     });
 
-    // Bind full wrap-up button (visible when job is complete)
-    const wrapupBtn = document.getElementById('wrapupBtn');
-    if (wrapupBtn && typeof WrapUp !== 'undefined') {
-      wrapupBtn.addEventListener('click', () => WrapUp.show(job));
+    // Bind Close Job / Edit Closed Job buttons (visible when job is complete)
+    const closeJobBtn = document.getElementById('closeJobBtn');
+    if (closeJobBtn && typeof WrapUp !== 'undefined') {
+      closeJobBtn.addEventListener('click', () => WrapUp.show(job));
+    }
+    const closeJobEditBtn = document.getElementById('closeJobEditBtn');
+    if (closeJobEditBtn && typeof WrapUp !== 'undefined') {
+      closeJobEditBtn.addEventListener('click', () => WrapUp.show(job, true));
     }
 
     // Bind early wrap-up button (Info tab, in-progress stages)
@@ -1458,13 +1471,23 @@ const Jobs = {
 
     if (aboveFooterBar) {
       aboveFooterBar.style.display = showAboveFooter ? '' : 'none';
+      if (showAboveFooter && typeof WrapUp !== 'undefined') {
+        if (job.wrapup_submitted) {
+          aboveFooterBar.innerHTML = `
+            <div class="close-job-banner closed">
+              <span class="job-closed-label">✓ Job Closed</span>
+              <button class="btn btn-sm job-closed-edit-btn" id="footerEditClosedBtn">Edit</button>
+            </div>`;
+          document.getElementById('footerEditClosedBtn')?.addEventListener('click', () => WrapUp.show(job, true));
+        } else {
+          aboveFooterBar.innerHTML = `
+            <button class="btn btn-close-job btn-block btn-xl" id="footerCloseJobBtn">Close Job</button>`;
+          document.getElementById('footerCloseJobBtn')?.addEventListener('click', () => WrapUp.show(job));
+        }
+      }
     }
     if (detailView) {
       detailView.classList.toggle('wrapup-above-footer', showAboveFooter);
-    }
-    if (footerWrapupBtn && typeof WrapUp !== 'undefined') {
-      // Re-bind each time (renderJobDetail may have re-created the job reference)
-      footerWrapupBtn.onclick = () => WrapUp.show(job);
     }
   },
 

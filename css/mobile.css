@@ -1022,10 +1022,10 @@ body {
 }
 
 
-/* ── Job Wrap-Up ──────────────────────────────────────────────────────────── */
+/* ── Close Job Banner ─────────────────────────────────────────────────────── */
 
-/* Big banner button above the tab bar on completed jobs */
-.wrapup-banner {
+/* Container shared by both open (orange-red button) and closed (green) states */
+.close-job-banner {
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--bg-primary, #fff);
   border-bottom: 1px solid var(--border-color, #e0e0e0);
@@ -1037,6 +1037,40 @@ body {
   font-weight: 700;
   letter-spacing: 0.02em;
 }
+
+/* Close Job button — vivid orange-red for maximum attention */
+.btn-close-job {
+  background: #e8480c;
+  color: #fff;
+  border: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  box-shadow: 0 3px 8px rgba(232,72,12,0.4);
+}
+.btn-close-job:active { background: #bf3b08; }
+
+/* Job Closed green banner state */
+.close-job-banner.closed {
+  background: #e8f5e9;
+  border-bottom-color: #a5d6a7;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.job-closed-label {
+  flex: 1;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #2e7d32;
+}
+.job-closed-edit-btn {
+  font-size: 0.82rem;
+  padding: 4px 12px;
+  color: #2e7d32;
+  border: 1px solid #66bb6a;
+  border-radius: var(--border-radius);
+  background: transparent;
+}
+.job-closed-edit-btn:active { background: #c8e6c9; }
 
 .btn-success {
   background: var(--success, #2e7d32);
