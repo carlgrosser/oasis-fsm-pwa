@@ -1019,4 +1019,8 @@ const OdooAPI = {
     return this.callKw('fsm.order', 'clock_out_workers_for_job',
       [orderId, gps || '', gpsAccuracy || 0], {});
   },
+
+  async reopenJob(orderId) {
+    return this.callKw('fsm.order', 'reopen_job', [orderId], {});
+  },
 };

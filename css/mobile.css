@@ -1071,6 +1071,15 @@ body {
   background: transparent;
 }
 .job-closed-edit-btn:active { background: #c8e6c9; }
+.job-reopen-btn {
+  font-size: 0.82rem;
+  padding: 4px 12px;
+  color: #bf360c;
+  border: 1px solid #ff7043;
+  border-radius: var(--border-radius);
+  background: transparent;
+}
+.job-reopen-btn:active { background: #fbe9e7; }
 
 .btn-success {
   background: var(--success, #2e7d32);

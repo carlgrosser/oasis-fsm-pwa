@@ -296,10 +296,26 @@ const Jobs = {
       ? '<span class="overdue-badge" title="Needs completion">⚠️ OVERDUE</span>'
       : '';
 
-    // "Open / Not Closed" badge for history jobs not yet closed via Close Job
-    const notClosedHtml = (this._currentView === 'history' && !job.wrapup_submitted)
-      ? '<span class="not-closed-badge">Open / Not Closed</span>'
-      : '';
+    // "Open / Not Closed" badge logic:
+    //   History tab — any non-closed job
+    //   Today tab   — job date is older than today (any stage), OR today + completed stage
+    //   Week tab    — never (future-dated jobs)
+    let showNotClosed = false;
+    if (!job.wrapup_submitted && this._currentView !== 'week') {
+      if (this._currentView === 'history') {
+        showNotClosed = true;
+      } else if (this._currentView === 'today') {
+        const jobStart = job.scheduled_date_start ? new Date(job.scheduled_date_start) : null;
+        if (jobStart) {
+          const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+          const tomorrowMidnight = new Date(todayMidnight.getTime() + 86400000);
+          const isPast = jobStart < todayMidnight;
+          const isToday = jobStart >= todayMidnight && jobStart < tomorrowMidnight;
+          showNotClosed = isPast || (isToday && statusClass === 'complete');
+        }
+      }
+    }
+    const notClosedHtml = showNotClosed ? '<span class="not-closed-badge">Open / Not Closed</span>' : '';
 
     // Contact info on card (simple text with SMS link for mobile)
     let cardContactHtml = '';
@@ -417,6 +433,7 @@ const Jobs = {
       <div class="close-job-banner closed" id="closeJobBanner">
         <span class="job-closed-label">✓ Job Closed</span>
         <button class="btn btn-sm job-closed-edit-btn" id="closeJobEditBtn">Edit</button>
+        <button class="btn btn-sm job-reopen-btn" id="closeJobReopenBtn">Reopen</button>
       </div>` : `
       <div class="close-job-banner" id="closeJobBanner">
         <button class="btn btn-close-job btn-block btn-xl" id="closeJobBtn">Close Job</button>
@@ -454,6 +471,10 @@ const Jobs = {
     const closeJobEditBtn = document.getElementById('closeJobEditBtn');
     if (closeJobEditBtn && typeof WrapUp !== 'undefined') {
       closeJobEditBtn.addEventListener('click', () => WrapUp.show(job, true));
+    }
+    const closeJobReopenBtn = document.getElementById('closeJobReopenBtn');
+    if (closeJobReopenBtn) {
+      closeJobReopenBtn.addEventListener('click', () => this._reopenJob(job));
     }
 
     // Bind early wrap-up button (Info tab, in-progress stages)
@@ -1477,8 +1498,10 @@ const Jobs = {
             <div class="close-job-banner closed">
               <span class="job-closed-label">✓ Job Closed</span>
               <button class="btn btn-sm job-closed-edit-btn" id="footerEditClosedBtn">Edit</button>
+              <button class="btn btn-sm job-reopen-btn" id="footerReopenBtn">Reopen</button>
             </div>`;
           document.getElementById('footerEditClosedBtn')?.addEventListener('click', () => WrapUp.show(job, true));
+          document.getElementById('footerReopenBtn')?.addEventListener('click', () => this._reopenJob(job));
         } else {
           aboveFooterBar.innerHTML = `
             <button class="btn btn-close-job btn-block btn-xl" id="footerCloseJobBtn">Close Job</button>`;
@@ -1488,6 +1511,26 @@ const Jobs = {
     }
     if (detailView) {
       detailView.classList.toggle('wrapup-above-footer', showAboveFooter);
+    }
+  },
+
+  /**
+   * Reopen a previously closed job (clears wrapup_submitted on the server).
+   */
+  async _reopenJob(job) {
+    if (!confirm('Remove the Closed status from this job?')) return;
+    try {
+      await OdooAPI.reopenJob(job.id);
+      // Update local state so the banner re-renders without a full sync
+      job.wrapup_submitted = false;
+      const idx = this._jobs.findIndex(j => j.id === job.id);
+      if (idx >= 0) this._jobs[idx].wrapup_submitted = false;
+      // Re-render job detail
+      const container = document.getElementById('jobDetail');
+      if (container) this.renderJobDetail(job.id, container);
+      App.showToast('Job reopened.', 'info');
+    } catch (err) {
+      App.showToast('Reopen failed: ' + err.message, 'error');
     }
   },
 
