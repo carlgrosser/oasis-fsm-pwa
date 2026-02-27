@@ -409,7 +409,7 @@ const Jobs = {
       ${showInlineBanner ? `
       <div class="wrapup-banner" id="wrapupBanner">
         <button class="btn btn-success btn-block btn-xl" id="wrapupBtn">
-          ✓ Job Wrap-Up
+          Wrap Up Job
         </button>
       </div>` : ''}
 

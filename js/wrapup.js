@@ -85,6 +85,7 @@ const WrapUp = {
       <div class="modal modal-wrapup">
         <div class="modal-header">
           <h3>Job Wrap-Up</h3>
+          <button class="modal-close" id="wrapupClose">&times;</button>
         </div>
         <div class="modal-body modal-body-scroll">
 
@@ -124,31 +125,37 @@ const WrapUp = {
             </div>
           </div>
 
-          <!-- Payment notice + follow-up note (conditional) -->
-          <div class="wrapup-payment-notice" id="paymentNotice" style="display:none;">
-            <p>⚠ Payment not collected. Enter details in the Sales tab or add reason / follow-up notes below.</p>
-            <textarea class="form-input" id="paymentFollowupNote" rows="2"
-              placeholder="Reason, customer follow-up plan, invoice to send…"></textarea>
+          <!-- Payment reasons (conditional) -->
+          <div class="wrapup-payment-reasons" id="paymentNotice" style="display:none;">
+            <p class="wrapup-payment-notice-text">⚠ Enter details in the Sales tab or select reason below.</p>
+            <label class="wrapup-check-label"><input type="checkbox" id="payReasonHome"> No one home</label>
+            <label class="wrapup-check-label"><input type="checkbox" id="payReasonNotRequired"> No payment required</label>
+            <label class="wrapup-check-label"><input type="checkbox" id="payReasonRefused"> Payment refused</label>
+            <label class="wrapup-check-label"><input type="checkbox" id="payReasonOther"> Other</label>
+            <div id="payReasonOtherField" style="display:none; margin-top:var(--spacing-xs);">
+              <textarea class="form-input" id="paymentFollowupNote" rows="2"
+                placeholder="Explain…"></textarea>
+            </div>
           </div>
 
           <!-- Resolution -->
           <div class="wrapup-field">
             <label class="wrapup-label">
-              What was done?
-              <span class="wrapup-nudge">(helps with invoicing)</span>
+              What was done? <span class="wrapup-nudge">(quick note about job)</span>
             </label>
             <textarea class="form-input" id="wrapupResolution" rows="3"
               placeholder="Describe the work completed…">${this._esc(existingResolution)}</textarea>
           </div>
 
-          <!-- Note to Office -->
+          <!-- Note to Office (hidden behind toggle) -->
           <div class="wrapup-field">
-            <label class="wrapup-label">
-              Note to Office
-              <span class="wrapup-nudge">(optional)</span>
-            </label>
-            <textarea class="form-input" id="wrapupOfficeNote" rows="2"
-              placeholder="Internal note for billing or dispatch…"></textarea>
+            <button class="btn btn-outline btn-sm wrapup-office-toggle-btn" id="wrapupOfficeToggleBtn" type="button">
+              + Note to Office
+            </button>
+            <div id="wrapupOfficeNoteWrap" style="display:none; margin-top:var(--spacing-xs);">
+              <textarea class="form-input" id="wrapupOfficeNote" rows="2"
+                placeholder="Internal note for billing or dispatch…"></textarea>
+            </div>
           </div>
 
         </div>
@@ -166,6 +173,9 @@ const WrapUp = {
   },
 
   _bindFullModal(overlay, job, workerCount) {
+    // Close button
+    overlay.querySelector('#wrapupClose').addEventListener('click', () => overlay.remove());
+
     // Job status toggle
     const toggleBtns = overlay.querySelectorAll('#jobStatusToggle .toggle-btn');
     const returnTripField = overlay.querySelector('#returnTripField');
@@ -184,18 +194,41 @@ const WrapUp = {
       payNotice.style.display = payCheck.checked ? '' : 'none';
     });
 
+    // "Other" reason → show text field
+    overlay.querySelector('#payReasonOther').addEventListener('change', e => {
+      overlay.querySelector('#payReasonOtherField').style.display = e.target.checked ? '' : 'none';
+    });
+
+    // Note to Office toggle
+    overlay.querySelector('#wrapupOfficeToggleBtn').addEventListener('click', () => {
+      const wrap = overlay.querySelector('#wrapupOfficeNoteWrap');
+      const isHidden = wrap.style.display === 'none';
+      wrap.style.display = isHidden ? '' : 'none';
+      overlay.querySelector('#wrapupOfficeToggleBtn').textContent = isHidden ? '− Note to Office' : '+ Note to Office';
+    });
+
     // Submit
     overlay.querySelector('#wrapupSubmitBtn').addEventListener('click', async () => {
       const jobComplete = overlay.querySelector('#jobStatusToggle .toggle-btn.active').dataset.val === 'complete';
       const paymentNotCollected = payCheck.checked;
 
+      // Collect payment reasons
+      const reasons = [];
+      if (overlay.querySelector('#payReasonHome')?.checked) reasons.push('No one home');
+      if (overlay.querySelector('#payReasonNotRequired')?.checked) reasons.push('No payment required');
+      if (overlay.querySelector('#payReasonRefused')?.checked) reasons.push('Payment refused');
+      const otherText = overlay.querySelector('#paymentFollowupNote')?.value.trim() || '';
+      if (overlay.querySelector('#payReasonOther')?.checked) {
+        reasons.push(otherText ? `Other: ${otherText}` : 'Other');
+      }
+
       const data = {
         job_complete:            jobComplete,
         return_trip_note:        overlay.querySelector('#returnTripNote').value.trim(),
         payment_not_collected:   paymentNotCollected,
-        payment_followup_note:   overlay.querySelector('#paymentFollowupNote')?.value.trim() || '',
+        payment_followup_note:   reasons.join('; '),
         resolution:              overlay.querySelector('#wrapupResolution').value.trim(),
-        office_note:             overlay.querySelector('#wrapupOfficeNote').value.trim(),
+        office_note:             overlay.querySelector('#wrapupOfficeNote')?.value.trim() || '',
       };
 
       overlay.querySelector('#wrapupSubmitBtn').disabled = true;
@@ -229,7 +262,7 @@ const WrapUp = {
         }
       } catch (err) {
         App.showToast('Wrap-up failed: ' + err.message, 'error');
-        const btn = document.querySelector('#wrapupSubmitBtn');
+        const btn = overlay.querySelector('#wrapupSubmitBtn');
         if (btn) { btn.disabled = false; btn.textContent = 'Wrap It Up!'; }
       }
     } else {

@@ -983,7 +983,7 @@ body {
   bottom: calc(var(--safe-bottom) + var(--spacing-lg));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -1130,6 +1130,31 @@ body {
   font-size: 0.88rem;
   color: #6d4c00;
   margin: 0 0 8px;
+}
+
+/* Payment reasons checkboxes (replaces single follow-up textarea) */
+.wrapup-payment-reasons {
+  background: #fff8e1;
+  border: 1px solid #f9a825;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wrapup-payment-notice-text {
+  font-size: 0.88rem;
+  color: #6d4c00;
+  margin: 0 0 4px;
+}
+
+/* Note to Office toggle button */
+.wrapup-office-toggle-btn {
+  font-size: 0.9rem;
+  color: var(--color-primary, #1565c0);
+  border-color: var(--color-primary, #1565c0);
+  padding: 6px 14px;
 }
 
 .wrapup-footer {
