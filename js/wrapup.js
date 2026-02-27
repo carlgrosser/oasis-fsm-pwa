@@ -251,8 +251,8 @@ const WrapUp = {
   // ── Early Wrap-Up ───────────────────────────────────────────────────────────
 
   /**
-   * Show the simplified early wrap-up modal for in-progress jobs.
-   * Only asks about payment status.
+   * Show the early wrap-up modal for in-progress jobs.
+   * Captures reason for leaving early, payment status, and an optional note to office.
    * @param {Object} job - fsm.order data object
    */
   async showEarly(job) {
@@ -268,17 +268,32 @@ const WrapUp = {
           <button class="modal-close" id="earlyWrapupClose">&times;</button>
         </div>
         <div class="modal-body">
-          <p style="margin-bottom:var(--spacing-md); color:var(--text-secondary);">
-            Leaving before the job is marked complete. Was payment collected?
-          </p>
-          <div class="toggle-trio" id="earlyPaymentToggle">
-            <button class="toggle-btn" data-val="collected">✓ Collected</button>
-            <button class="toggle-btn" data-val="not_collected">✕ Not Collected</button>
-            <button class="toggle-btn active" data-val="na">N/A</button>
+          <div class="wrapup-field">
+            <label class="wrapup-label">Reason for early wrap-up</label>
+            <textarea class="form-input" id="earlyWrapupReason" rows="2"
+              placeholder="Why are you leaving before the job is complete?"></textarea>
           </div>
-          <div id="earlyPaymentNoteField" style="display:none; margin-top:var(--spacing-md);">
-            <textarea class="form-input" id="earlyPaymentNote" rows="2"
-              placeholder="Reason or follow-up plan…"></textarea>
+
+          <div class="wrapup-field">
+            <label class="wrapup-label">Was payment collected?</label>
+            <div class="toggle-trio" id="earlyPaymentToggle">
+              <button class="toggle-btn" data-val="collected">✓ Collected</button>
+              <button class="toggle-btn" data-val="not_collected">✕ Not Collected</button>
+              <button class="toggle-btn active" data-val="na">N/A</button>
+            </div>
+            <div id="earlyPaymentNoteField" style="display:none; margin-top:var(--spacing-sm);">
+              <textarea class="form-input" id="earlyPaymentNote" rows="2"
+                placeholder="Reason or follow-up plan…"></textarea>
+            </div>
+          </div>
+
+          <div class="wrapup-field">
+            <label class="wrapup-label">
+              Note to Office
+              <span class="wrapup-nudge">(optional)</span>
+            </label>
+            <textarea class="form-input" id="earlyOfficeNote" rows="2"
+              placeholder="Internal note for billing or dispatch…"></textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -309,7 +324,12 @@ const WrapUp = {
     // Submit
     overlay.querySelector('#earlyWrapupSubmitBtn').addEventListener('click', async () => {
       const status = overlay.querySelector('#earlyPaymentToggle .toggle-btn.active').dataset.val;
-      const note = overlay.querySelector('#earlyPaymentNote')?.value.trim() || '';
+      const earlyData = {
+        early_wrapup_reason: overlay.querySelector('#earlyWrapupReason').value.trim(),
+        payment_status:      status,
+        payment_note:        overlay.querySelector('#earlyPaymentNote')?.value.trim() || '',
+        office_note:         overlay.querySelector('#earlyOfficeNote').value.trim(),
+      };
 
       overlay.querySelector('#earlyWrapupSubmitBtn').disabled = true;
       overlay.querySelector('#earlyWrapupSubmitBtn').textContent = 'Submitting…';
@@ -323,12 +343,7 @@ const WrapUp = {
 
       if (navigator.onLine) {
         try {
-          const result = await OdooAPI.submitEarlyWrapup(job.id, {
-            payment_status: status,
-            payment_note: note,
-            gps,
-            gps_accuracy: gpsAccuracy,
-          });
+          await OdooAPI.submitEarlyWrapup(job.id, { ...earlyData, gps, gps_accuracy: gpsAccuracy });
           overlay.remove();
           this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
         } catch (err) {
@@ -341,7 +356,7 @@ const WrapUp = {
           temp_id: 'wu_' + Date.now(),
           order_id: job.id,
           type: 'early',
-          data: { payment_status: status, payment_note: note, gps, gps_accuracy: gpsAccuracy },
+          data: { ...earlyData, gps, gps_accuracy: gpsAccuracy },
           timestamp: new Date().toISOString(),
           synced: 0,
         });
