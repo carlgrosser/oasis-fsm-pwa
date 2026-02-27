@@ -1742,12 +1742,16 @@ const Jobs = {
         <div class="modal-tabs">
           <button class="modal-tab active" data-modal-tab="journal">Journal</button>
           <button class="modal-tab" data-modal-tab="photos">Photos</button>
+          <button class="modal-tab" data-modal-tab="system">System</button>
         </div>
         <div class="modal-body">
           <div class="modal-tab-content active" data-modal-content="journal" id="journalModalBody">
             <div class="loading"><div class="spinner"></div></div>
           </div>
           <div class="modal-tab-content" data-modal-content="photos" id="photosModalBody">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
+          <div class="modal-tab-content" data-modal-content="system" id="systemModalBody">
             <div class="loading"><div class="spinner"></div></div>
           </div>
         </div>
@@ -1762,28 +1766,38 @@ const Jobs = {
       if (e.target === overlay) close();
     });
 
-    // Tab switching
+    // Tab switching — load content lazily on first activation
     const tabs = overlay.querySelectorAll('.modal-tab');
     const contents = overlay.querySelectorAll('.modal-tab-content');
+    const loaded = { journal: false, photos: false, system: false };
+
+    const loadTab = (target) => {
+      if (target === 'journal' && !loaded.journal) {
+        loaded.journal = true;
+        const body = document.getElementById('journalModalBody');
+        if (body && typeof Journal !== 'undefined') Journal.renderSection(jobId, body);
+      } else if (target === 'photos' && !loaded.photos) {
+        loaded.photos = true;
+        const body = document.getElementById('photosModalBody');
+        if (body && typeof Photos !== 'undefined') Photos.renderAllPhotosGallery(jobId, body);
+      } else if (target === 'system' && !loaded.system) {
+        loaded.system = true;
+        const body = document.getElementById('systemModalBody');
+        if (body && typeof Journal !== 'undefined') Journal.renderSystemTab(jobId, body);
+      }
+    };
+
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const target = tab.dataset.modalTab;
         tabs.forEach(t => t.classList.toggle('active', t.dataset.modalTab === target));
         contents.forEach(c => c.classList.toggle('active', c.dataset.modalContent === target));
+        loadTab(target);
       });
     });
 
-    // Load journal content
-    const journalBody = document.getElementById('journalModalBody');
-    if (journalBody && typeof Journal !== 'undefined') {
-      Journal.renderSection(jobId, journalBody);
-    }
-
-    // Load photos content (all categories, read-only gallery)
-    const photosBody = document.getElementById('photosModalBody');
-    if (photosBody && typeof Photos !== 'undefined') {
-      Photos.renderAllPhotosGallery(jobId, photosBody);
-    }
+    // Load journal content immediately (default tab)
+    loadTab('journal');
   },
 
   /**
@@ -1844,6 +1858,13 @@ const Jobs = {
     if (navigator.onLine) {
       // Push stage change immediately — backend automations depend on this
       await OdooAPI.updateOrderStage(job.id, stage.id, extraValues);
+
+      // Log stage change to System tab (fire-and-forget)
+      const workerName = (typeof Auth !== 'undefined' && Auth.getUser()) ? Auth.getUser().name : '';
+      const stageNote = workerName
+        ? `Stage changed to "${stage.name}" by ${workerName}`
+        : `Stage changed to "${stage.name}"`;
+      OdooAPI.postSystemNote(job.id, stageNote).catch(() => {});
 
       // If we didn't get GPS yet but need it, capture in background and follow up
       if (needsGps && !gpsCoords && typeof GPS !== 'undefined') {

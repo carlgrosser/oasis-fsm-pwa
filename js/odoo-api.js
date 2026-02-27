@@ -580,6 +580,22 @@ const OdooAPI = {
     return this.callKw('fsm.order', 'post_journal_entry', [[orderId], body], {});
   },
 
+  /**
+   * Get system notes (internal log notes) for an FSM order.
+   */
+  async getSystemNotes(orderId) {
+    return this.callKw('fsm.order', 'get_system_notes', [[orderId]], {});
+  },
+
+  /**
+   * Post an internal system note to an FSM order's chatter.
+   * Used for automated activity logging (stage changes, photos, billing, etc).
+   * Fire-and-forget safe — errors are non-fatal.
+   */
+  async postSystemNote(orderId, body) {
+    return this.callKw('fsm.order', 'post_system_note', [[orderId], body], {});
+  },
+
   // ========== ATTENDANCE / TIME TRACKING ==========
 
   /**
@@ -618,9 +634,12 @@ const OdooAPI = {
 
   /**
    * Clock in — create attendance record with GPS.
+   * @param {string|null} payCategory - 'production' | 'hourly_pay' | null (defaults to employee's pay type)
    */
-  async clockIn(employeeId, gpsCoords, gpsAccuracy) {
-    return this.callKw('hr.attendance', 'mobile_clock_in', [employeeId, gpsCoords || '', gpsAccuracy || 0], {});
+  async clockIn(employeeId, gpsCoords, gpsAccuracy, payCategory) {
+    const args = [employeeId, gpsCoords || '', gpsAccuracy || 0];
+    if (payCategory) args.push(payCategory);
+    return this.callKw('hr.attendance', 'mobile_clock_in', args, {});
   },
 
   /**
@@ -677,6 +696,21 @@ const OdooAPI = {
    */
   async getAttendanceHistory(employeeId, dateFrom, dateTo) {
     return this.callKw('hr.attendance', 'mobile_get_attendance_history', [employeeId, dateFrom, dateTo], {});
+  },
+
+  /**
+   * Get current and previous pay period hours summary for the employee.
+   */
+  async getPayPeriodSummary(employeeId) {
+    return this.callKw('hr.attendance', 'mobile_get_pay_period_summary', [employeeId], {});
+  },
+
+  /**
+   * Set (override) the pay category on a completed attendance record.
+   * Only HR managers can call this successfully.
+   */
+  async setPayCategory(attendanceId, payCategory) {
+    return this.callKw('hr.attendance', 'mobile_set_pay_category', [attendanceId, payCategory], {});
   },
 
   /**

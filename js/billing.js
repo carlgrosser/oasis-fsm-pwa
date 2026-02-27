@@ -282,6 +282,7 @@ const Billing = {
           const result = await OdooAPI.acceptAsQuoted(data.sale_order.id);
           if (result.success) {
             App.showToast(`${result.lines_updated} line(s) updated`, 'success');
+            OdooAPI.postSystemNote(job.id, `Billing: Accepted as Quoted (${result.lines_updated} line(s) updated)`).catch(() => {});
             await this.renderSalesTab(job, container);
           }
         } catch (err) {
@@ -302,6 +303,7 @@ const Billing = {
           const result = await OdooAPI.createInvoice(job.id);
           if (result.success) {
             App.showToast('Invoice created: ' + (result.invoice_name || ''), 'success');
+            OdooAPI.postJournalEntry(job.id, `Invoice created: ${result.invoice_name || ''}`).catch(() => {});
             await this.renderSalesTab(job, container);
           }
         } catch (err) {
@@ -321,6 +323,7 @@ const Billing = {
         try {
           await OdooAPI.setReadyToInvoice(data.sale_order.id, true);
           App.showToast('Marked ready for invoicing', 'success');
+          OdooAPI.postSystemNote(job.id, 'Billing: Marked ready to invoice').catch(() => {});
           await this.renderSalesTab(job, container);
         } catch (err) {
           App.showToast('Failed: ' + err.message, 'error');
@@ -430,6 +433,7 @@ const Billing = {
       try {
         await OdooAPI.updateSaleLine(line.id, values);
         App.showToast('Line updated', 'success');
+        OdooAPI.postSystemNote(job.id, `Billing: Line updated — ${line.product_name || 'item'}`).catch(() => {});
         close();
 
         // Check for variance — if delivered != ordered, show variance modal
@@ -566,6 +570,7 @@ const Billing = {
 
         await OdooAPI.addSaleLine(data.sale_order.id, selectedProduct.id, qty, price, desc);
         App.showToast('Line added', 'success');
+        OdooAPI.postSystemNote(job.id, `Billing: Line added — ${selectedProduct.name} × ${qty} @ $${parseFloat(price).toFixed(2)}`).catch(() => {});
         close();
         await this.renderSalesTab(job, parentContainer);
       } catch (err) {
@@ -730,6 +735,7 @@ const Billing = {
         try {
           await OdooAPI.sendDocument(invoice.id, 'invoice', 'email', contact.email);
           App.showToast('Invoice emailed to ' + contact.email, 'success');
+          OdooAPI.postJournalEntry(job.id, `Invoice emailed to ${contact.email}`).catch(() => {});
           emailInvoiceBtn.textContent = 'Email Invoice PDF';
         } catch (err) {
           App.showToast('Failed to send email', 'error');
@@ -810,6 +816,7 @@ const Billing = {
         const result = await OdooAPI.registerCheckPayment(invoice.id, checkNum, amount);
         if (result.success) {
           App.showToast('Check payment recorded', 'success');
+          OdooAPI.postJournalEntry(job.id, `Payment collected: Check #${checkNum}, $${parseFloat(amount).toFixed(2)}`).catch(() => {});
           await this.renderSalesTab(job, parentContainer);
         }
       } catch (err) {
@@ -856,6 +863,7 @@ const Billing = {
         );
         if (result.success) {
           App.showToast('Venmo payment confirmed', 'success');
+          OdooAPI.postJournalEntry(job.id, `Payment collected: Venmo (${venmoUser}), $${parseFloat(invoice.amount_residual).toFixed(2)}`).catch(() => {});
           await this.renderSalesTab(job, parentContainer);
         }
       } catch (err) {
@@ -898,7 +906,7 @@ const Billing = {
         if (linkData.url) {
           window.open(linkData.url, '_blank');
           // Start polling for payment completion
-          this._startPaymentPolling(job, invoice.id, parentContainer);
+          this._startPaymentPolling(job, invoice.id, parentContainer, invoice.amount_residual);
           btn.disabled = false;
           btn.textContent = 'Collect Card Payment';
         }
@@ -953,7 +961,7 @@ const Billing = {
         if (result.success) {
           App.showToast('Payment link sent', 'success');
           OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phoneVal + ': ' + smsBody);
-          this._startPaymentPolling(job, invoice.id, parentContainer);
+          this._startPaymentPolling(job, invoice.id, parentContainer, invoice.amount_residual);
         } else {
           App.showToast(result.error || 'Failed to send', 'error');
         }
@@ -1057,6 +1065,7 @@ const Billing = {
         try {
           await OdooAPI.sendDocument(invoice.id, 'receipt', 'email', email);
           App.showToast('Receipt sent via email', 'success');
+          OdooAPI.postJournalEntry(job.id, `Receipt emailed to ${email}`).catch(() => {});
         } catch (err) {
           App.showToast('Failed: ' + err.message, 'error');
         }
@@ -1068,7 +1077,7 @@ const Billing = {
 
   // ========== PAYMENT STATUS POLLING ==========
 
-  _startPaymentPolling(job, invoiceId, container) {
+  _startPaymentPolling(job, invoiceId, container, invoiceAmount) {
     this._stopPolling();
 
     const statusArea = document.getElementById('paymentStatusArea');
@@ -1089,6 +1098,8 @@ const Billing = {
         if (status.payment_state === 'paid' || status.payment_state === 'in_payment') {
           this._stopPolling();
           App.showToast('Payment received!', 'success');
+          const amtStr = invoiceAmount ? `$${parseFloat(invoiceAmount).toFixed(2)}` : '';
+          OdooAPI.postJournalEntry(job.id, `Payment collected: Card${amtStr ? ', ' + amtStr : ''}`).catch(() => {});
           await this.renderSalesTab(job, container);
         }
       } catch (err) {
@@ -1233,6 +1244,7 @@ const Billing = {
 
         if (result.success) {
           App.showToast(`Change order ${result.change_order_name} created`, 'success');
+          OdooAPI.postJournalEntry(job.id, `Change order ${result.change_order_name} created. Reason: ${reason}. Signed by: ${signedBy}`).catch(() => {});
           close();
           await this.renderSalesTab(job, parentContainer);
         }

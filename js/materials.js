@@ -149,6 +149,25 @@ const Materials = {
       if (navigator.onLine) {
         await OdooAPI.saveMaterials(jobId, lines);
         App.showToast('Materials saved', 'success');
+
+        // Build a summary of non-zero lines for the system log
+        const nonZero = lines.filter(l => l.quantity > 0);
+        if (nonZero.length > 0) {
+          // Build a product ID → name map from the loaded config
+          const nameMap = {};
+          for (const mat of this._config) {
+            for (const v of mat.variants) {
+              const label = mat.variants.length === 1 && !v.variant_name
+                ? mat.product_name
+                : `${mat.product_name} (${v.variant_name})`;
+              nameMap[v.product_id] = label;
+            }
+          }
+          const summary = nonZero
+            .map(l => `${nameMap[l.product_id] || l.product_id}: ${l.quantity}`)
+            .join(', ');
+          OdooAPI.postSystemNote(jobId, `Materials saved — ${summary}`).catch(() => {});
+        }
       } else {
         // Queue for sync
         await DB.put('materialsQueue', {

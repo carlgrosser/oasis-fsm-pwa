@@ -231,6 +231,20 @@
         <button class="modal-close" id="timesheetClose">&times;</button>
       </div>
       <div class="modal-body">
+        <!-- Pay Period Summary Banner -->
+        <div class="pay-period-banner" id="payPeriodBanner">
+          <div class="pay-period-col">
+            <div class="pay-period-label">Current Period</div>
+            <div class="pay-period-dates" id="payPeriodCurrentDates">--</div>
+            <div class="pay-period-hours" id="payPeriodCurrentHours">-- hrs</div>
+          </div>
+          <div class="pay-period-divider"></div>
+          <div class="pay-period-col">
+            <div class="pay-period-label">Prev Period</div>
+            <div class="pay-period-dates" id="payPeriodPrevDates">--</div>
+            <div class="pay-period-hours" id="payPeriodPrevHours">-- hrs</div>
+          </div>
+        </div>
         <div class="timesheet-week-nav">
           <button class="timesheet-nav-btn" id="timesheetPrev" title="Previous week">&laquo;</button>
           <span class="timesheet-week-label" id="timesheetWeekLabel">--</span>

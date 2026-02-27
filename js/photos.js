@@ -162,6 +162,7 @@ const Photos = {
       photo.gdrive_file_id = driveResult.gdrive_file_id || null;
       photo.gdrive_url = driveResult.gdrive_url || null;
       await DB.put('photos', photo);
+      OdooAPI.postSystemNote(photo.job_id, `Photo uploaded: ${photo.category}`).catch(() => {});
       return driveResult.gdrive_file_id;
     }
 
@@ -172,6 +173,7 @@ const Photos = {
     photo.attachment_id = attachmentId;
     photo.drive_fallback = true;
     await DB.put('photos', photo);
+    OdooAPI.postSystemNote(photo.job_id, `Photo uploaded: ${photo.category}`).catch(() => {});
     return attachmentId;
   },
 

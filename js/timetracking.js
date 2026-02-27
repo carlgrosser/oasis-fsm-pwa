@@ -9,6 +9,8 @@ const TimeTracking = {
   _lunchStartTime: null,
   _timerInterval: null,
   _autoClockOutPromptActive: false,
+  _payType: '',          // employee's default pay type: 'hourly' | 'production' | ''
+  _payCategory: '',      // current shift pay category: 'hourly_pay' | 'production' | ''
 
   /**
    * Initialize time tracking state.
@@ -28,6 +30,8 @@ const TimeTracking = {
         if (att && att.attendance_id) {
           this._attendanceId = att.attendance_id;
           this._clockInTime = att.check_in ? this._parseOdooDatetime(att.check_in) : new Date();
+          this._payType = att.pay_type || '';
+          this._payCategory = att.pay_category || '';
 
           if (att.lunch_start && !att.lunch_end) {
             this._status = 'break';
@@ -38,6 +42,7 @@ const TimeTracking = {
           }
           await this._saveState();
         } else {
+          this._payType = (att && att.pay_type) || '';
           this._status = 'out';
           this._attendanceId = null;
           await this._saveState();
@@ -55,12 +60,20 @@ const TimeTracking = {
 
   /**
    * Clock in — capture GPS and create attendance.
+   * For production employees, prompts for pay category first.
    */
   async clockIn() {
     const employeeId = Auth.getEmployeeId();
     if (!employeeId) {
       App.showToast('No employee profile linked. Contact admin.', 'error');
       return false;
+    }
+
+    // For production employees, ask which type of work this shift is
+    let payCategory = null;
+    if (this._payType === 'production') {
+      payCategory = await this._showPayCategoryDialog();
+      if (payCategory === null) return false; // user cancelled
     }
 
     let gpsCoords = '';
@@ -75,10 +88,11 @@ const TimeTracking = {
 
     if (navigator.onLine) {
       try {
-        const result = await OdooAPI.clockIn(employeeId, gpsCoords, gpsAccuracy);
+        const result = await OdooAPI.clockIn(employeeId, gpsCoords, gpsAccuracy, payCategory);
         if (result && result.success) {
           this._attendanceId = result.attendance_id;
           this._clockInTime = new Date();
+          this._payCategory = result.pay_category || payCategory || '';
           this._status = 'in';
           await this._saveState();
           this._renderHeaderButton();
@@ -102,10 +116,12 @@ const TimeTracking = {
         employee_id: employeeId,
         gps: gpsCoords,
         gps_accuracy: gpsAccuracy,
+        pay_category: payCategory,
         timestamp: new Date().toISOString(),
         synced: 0,
       });
       this._clockInTime = new Date();
+      this._payCategory = payCategory || '';
       this._status = 'in';
       await this._saveState();
       this._renderHeaderButton();
@@ -113,6 +129,50 @@ const TimeTracking = {
       await this._maybePromptAutoClockOut();
       return true;
     }
+  },
+
+  /**
+   * Show a dialog asking whether this shift is production or hourly pay.
+   * Returns 'production' | 'hourly_pay' | null (cancelled).
+   */
+  _showPayCategoryDialog() {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Pay Type for This Shift</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p style="margin-bottom:var(--spacing-sm);color:var(--text-secondary);">
+              What type of work are you doing today?
+            </p>
+            <div style="display:flex;flex-direction:column;gap:var(--spacing-sm);">
+              <button class="btn btn-primary btn-block btn-lg" id="payCatProduction">Production</button>
+              <button class="btn btn-secondary btn-block btn-lg" id="payCatHourly">Hourly</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (val) => {
+        overlay.remove();
+        resolve(val);
+      };
+
+      overlay.querySelector('.modal-close').addEventListener('click', () => close(null));
+      requestAnimationFrame(() => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) close(null);
+        });
+      });
+
+      document.getElementById('payCatProduction').addEventListener('click', () => close('production'));
+      document.getElementById('payCatHourly').addEventListener('click', () => close('hourly_pay'));
+    });
   },
 
   /**
@@ -458,6 +518,8 @@ const TimeTracking = {
       attendanceId: this._attendanceId,
       clockInTime: this._clockInTime ? this._clockInTime.toISOString() : null,
       lunchStartTime: this._lunchStartTime ? this._lunchStartTime.toISOString() : null,
+      payType: this._payType,
+      payCategory: this._payCategory,
     });
   },
 
@@ -468,6 +530,8 @@ const TimeTracking = {
       this._attendanceId = state.attendanceId || null;
       this._clockInTime = state.clockInTime ? new Date(state.clockInTime) : null;
       this._lunchStartTime = state.lunchStartTime ? new Date(state.lunchStartTime) : null;
+      this._payType = state.payType || '';
+      this._payCategory = state.payCategory || '';
       if (this._status === 'break' && this._lunchStartTime) {
         this._startLunchTimer();
       }
@@ -1032,6 +1096,11 @@ const TimeTracking = {
             const result = await OdooAPI.sendOfficeNote(employeeId, body);
             if (result && result.success) {
               App.showToast('Note sent to office', 'success');
+              // Also log note to current job's chatter if we're in a job context
+              const currentJob = (typeof Jobs !== 'undefined' && Jobs._currentJob) ? Jobs._currentJob : null;
+              if (currentJob) {
+                OdooAPI.postJournalEntry(currentJob.id, `Note to Office: ${body}`).catch(() => {});
+              }
               close(true);
             } else {
               const errMsg = (result && result.error) || 'Failed to send note';
@@ -1093,10 +1162,11 @@ const TimeTracking = {
       for (const item of pending) {
         try {
           if (item.action === 'clock_in') {
-            const result = await OdooAPI.clockIn(item.employee_id, item.gps || '', item.gps_accuracy || 0);
+            const result = await OdooAPI.clockIn(item.employee_id, item.gps || '', item.gps_accuracy || 0, item.pay_category || null);
             if (result && result.attendance_id) {
               // Update local state with the real attendance ID
               this._attendanceId = result.attendance_id;
+              if (result.pay_category) this._payCategory = result.pay_category;
               await this._saveState();
             }
           } else if (item.action === 'clock_out') {

@@ -104,6 +104,50 @@ const Journal = {
   },
 
   /**
+   * Render the read-only System log tab for a job.
+   * Shows internal notes (mail.mt_note) posted by the PWA automatically.
+   */
+  async renderSystemTab(jobId, container) {
+    container.innerHTML = `
+      <div class="journal-entries system-entries">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    `;
+
+    const entriesEl = container.querySelector('.system-entries');
+
+    if (!navigator.onLine) {
+      entriesEl.innerHTML = '<p class="journal-offline">System log available when online</p>';
+      return;
+    }
+
+    try {
+      const notes = await OdooAPI.getSystemNotes(jobId);
+
+      if (notes.length === 0) {
+        entriesEl.innerHTML = '<p class="journal-empty">No system activity logged yet</p>';
+        return;
+      }
+
+      entriesEl.innerHTML = notes.map(entry => {
+        const date = this._formatDate(entry.create_date);
+        const body = this._stripHtml(entry.body || '');
+        return `
+          <div class="journal-entry system-entry">
+            <div class="journal-entry-header">
+              <span class="journal-entry-author system-entry-label">System</span>
+              <span class="journal-entry-date">${date}</span>
+            </div>
+            <div class="journal-entry-body">${this._escapeHtml(body)}</div>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      console.error('Failed to load system notes:', err);
+      entriesEl.innerHTML = `<p class="journal-empty">Could not load system log: ${this._escapeHtml(err.message || '')}</p>`;
+    }
+  },
+
+  /**
    * Sync any queued journal entries (called from Sync module).
    */
   async syncAll() {

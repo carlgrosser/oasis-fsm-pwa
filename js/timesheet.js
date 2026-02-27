@@ -20,7 +20,41 @@ const Timesheet = {
     if (!modal) return;
     modal.style.display = 'flex';
     this._setCurrentWeek();
-    await this._loadHistory();
+    // Load pay period banner and week history concurrently
+    await Promise.all([
+      this._loadPayPeriodSummary(),
+      this._loadHistory(),
+    ]);
+  },
+
+  async _loadPayPeriodSummary() {
+    const banner = document.getElementById('payPeriodBanner');
+    if (!banner) return;
+
+    const empId = typeof Auth !== 'undefined' ? Auth.getEmployeeId() : null;
+    if (!empId || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+
+    try {
+      const res = await OdooAPI.getPayPeriodSummary(empId);
+      if (!res || !res.success) return;
+
+      const cur = res.current || {};
+      const prev = res.previous || {};
+
+      const curDates = document.getElementById('payPeriodCurrentDates');
+      const curHours = document.getElementById('payPeriodCurrentHours');
+      const prevDates = document.getElementById('payPeriodPrevDates');
+      const prevHours = document.getElementById('payPeriodPrevHours');
+
+      if (curDates) curDates.textContent = cur.label || '--';
+      if (curHours) curHours.textContent = (cur.hours != null ? cur.hours : '--') + ' hrs';
+      if (prevDates) prevDates.textContent = prev.label || '--';
+      if (prevHours) prevHours.textContent = (prev.hours != null ? prev.hours : '--') + ' hrs';
+
+      banner.classList.add('pay-period-banner--loaded');
+    } catch (_) {
+      // Banner stays in placeholder state — non-critical
+    }
   },
 
   closeModal() {
@@ -166,6 +200,12 @@ const Timesheet = {
         reasonHtml = '<div class="timesheet-card-reason">' + this._esc(rec.adjustment_reason) + '</div>';
       }
 
+      let payCatHtml = '';
+      if (rec.pay_category) {
+        const payCatLabel = rec.pay_category === 'production' ? 'Production' : 'Hourly';
+        payCatHtml = '<span class="timesheet-card-pay-cat pay-cat-' + rec.pay_category + '">' + payCatLabel + '</span>';
+      }
+
       const clickable = checkOut ? ' onclick="Timesheet._showChangeRequestModal(' + rec.id + ')"' : '';
 
       html += '<div class="timesheet-card"' + clickable + '>'
@@ -179,6 +219,7 @@ const Timesheet = {
         + '</div>'
         + lunchHtml
         + reasonHtml
+        + payCatHtml
         + '</div>';
     }
 

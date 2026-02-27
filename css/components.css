@@ -1168,6 +1168,19 @@ textarea.form-input {
   padding: var(--spacing-md) 0;
 }
 
+/* System tab entries — neutral styling to differentiate from user journal notes */
+.system-entry {
+  border-left-color: var(--text-muted);
+  opacity: 0.9;
+}
+
+.system-entry-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -2219,6 +2232,57 @@ textarea.form-input {
   font-size: var(--font-size-small);
 }
 
+/* ========== PAY PERIOD BANNER (Timesheet Modal) ========== */
+
+.pay-period-banner {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  margin-bottom: var(--spacing-md);
+  overflow: hidden;
+}
+
+.pay-period-col {
+  flex: 1;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.pay-period-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color);
+}
+
+.pay-period-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.pay-period-dates {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.pay-period-hours {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Subtle fade-in once data loads */
+.pay-period-banner--loaded .pay-period-hours {
+  color: var(--primary-color);
+}
+
 /* ========== SHIFT ADJUSTMENT OPTIONS ========== */
 .shift-adjust-options {
   display: flex;
@@ -2278,4 +2342,27 @@ textarea.form-input {
 .shift-adjust-text span {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
+}
+
+/* ========== PAY CATEGORY BADGE (Timesheet Cards) ========== */
+
+.timesheet-card-pay-cat {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pay-cat-production {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.pay-cat-hourly_pay {
+  background: #d1ecf1;
+  color: #0c5460;
 }
