@@ -60,7 +60,7 @@ const TimeTracking = {
 
   /**
    * Clock in — capture GPS and create attendance.
-   * For production employees, prompts for pay category first.
+   * Pay category is derived automatically from the employee's configured pay type.
    */
   async clockIn() {
     const employeeId = Auth.getEmployeeId();
@@ -69,12 +69,7 @@ const TimeTracking = {
       return false;
     }
 
-    // For production employees, ask which type of work this shift is
-    let payCategory = null;
-    if (this._payType === 'production') {
-      payCategory = await this._showPayCategoryDialog();
-      if (payCategory === null) return false; // user cancelled
-    }
+    const payCategory = this._payType === 'production' ? 'production' : 'hourly_pay';
 
     let gpsCoords = '';
     let gpsAccuracy = 0;
@@ -129,50 +124,6 @@ const TimeTracking = {
       await this._maybePromptAutoClockOut();
       return true;
     }
-  },
-
-  /**
-   * Show a dialog asking whether this shift is production or hourly pay.
-   * Returns 'production' | 'hourly_pay' | null (cancelled).
-   */
-  _showPayCategoryDialog() {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `
-        <div class="modal">
-          <div class="modal-header">
-            <h3>Pay Type for This Shift</h3>
-            <button class="modal-close">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p style="margin-bottom:var(--spacing-sm);color:var(--text-secondary);">
-              What type of work are you doing today?
-            </p>
-            <div style="display:flex;flex-direction:column;gap:var(--spacing-sm);">
-              <button class="btn btn-primary btn-block btn-lg" id="payCatProduction">Production</button>
-              <button class="btn btn-secondary btn-block btn-lg" id="payCatHourly">Hourly</button>
-            </div>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(overlay);
-
-      const close = (val) => {
-        overlay.remove();
-        resolve(val);
-      };
-
-      overlay.querySelector('.modal-close').addEventListener('click', () => close(null));
-      requestAnimationFrame(() => {
-        overlay.addEventListener('click', (e) => {
-          if (e.target === overlay) close(null);
-        });
-      });
-
-      document.getElementById('payCatProduction').addEventListener('click', () => close('production'));
-      document.getElementById('payCatHourly').addEventListener('click', () => close('hourly_pay'));
-    });
   },
 
   /**
