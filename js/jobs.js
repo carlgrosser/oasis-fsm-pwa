@@ -395,12 +395,23 @@ const Jobs = {
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
 
+    const isComplete = statusClass === 'complete';
+    const wrapupPlacement = (typeof WrapUp !== 'undefined') ? WrapUp.getPlacement() : 'above_tabs';
+    const showInlineBanner = isComplete && wrapupPlacement === 'above_tabs';
+
     container.innerHTML = `
       <div class="detail-header">
         <button class="back-btn" id="backToList">←</button>
         <h2 style="flex:1; font-size:18px;">${this._escapeHtml(job.name || 'Job')}</h2>
         <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
       </div>
+
+      ${showInlineBanner ? `
+      <div class="wrapup-banner" id="wrapupBanner">
+        <button class="btn btn-success btn-block btn-xl" id="wrapupBtn">
+          ✓ Job Wrap-Up
+        </button>
+      </div>` : ''}
 
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
@@ -425,6 +436,18 @@ const Jobs = {
     document.getElementById('backToList').addEventListener('click', () => {
       App.showJobList();
     });
+
+    // Bind full wrap-up button (visible when job is complete)
+    const wrapupBtn = document.getElementById('wrapupBtn');
+    if (wrapupBtn && typeof WrapUp !== 'undefined') {
+      wrapupBtn.addEventListener('click', () => WrapUp.show(job));
+    }
+
+    // Bind early wrap-up button (Info tab, in-progress stages)
+    const earlyWrapupBtn = document.getElementById('earlyWrapupBtn');
+    if (earlyWrapupBtn && typeof WrapUp !== 'undefined') {
+      earlyWrapupBtn.addEventListener('click', () => WrapUp.showEarly(job));
+    }
 
     // Init tab swiping
     this._initDetailTabs();
@@ -645,7 +668,17 @@ const Jobs = {
           </button>
         </div>
       </div>`;
-      })() : ''}`;
+      })() : (() => {
+        // Show Early Wrap-Up for in-progress stages (not dispatched, not complete/cancelled)
+        const sc = this.getStatusClass(stageName);
+        if (sc === 'complete' || sc === 'cancelled') return '';
+        return `
+      <div class="detail-section wrapup-early-section">
+        <button class="btn btn-outline btn-block" id="earlyWrapupBtn">
+          Early Wrap-Up
+        </button>
+      </div>`;
+      })()}`;
   },
 
   /**
@@ -1413,6 +1446,26 @@ const Jobs = {
     if (contactBtn) {
       contactBtn.classList.toggle('disabled', !hasAnyContact);
     }
+
+    // Above-footer wrap-up bar (placement B)
+    const aboveFooterBar = document.getElementById('wrapupAboveFooterBar');
+    const footerWrapupBtn = document.getElementById('footerWrapupBtn');
+    const detailView = document.getElementById('detailView');
+    const stageName = this.getStageName(job.stage_id);
+    const isComplete = this.getStatusClass(stageName) === 'complete';
+    const wrapupPlacement = (typeof WrapUp !== 'undefined') ? WrapUp.getPlacement() : 'above_tabs';
+    const showAboveFooter = isComplete && wrapupPlacement === 'above_footer';
+
+    if (aboveFooterBar) {
+      aboveFooterBar.style.display = showAboveFooter ? '' : 'none';
+    }
+    if (detailView) {
+      detailView.classList.toggle('wrapup-above-footer', showAboveFooter);
+    }
+    if (footerWrapupBtn && typeof WrapUp !== 'undefined') {
+      // Re-bind each time (renderJobDetail may have re-created the job reference)
+      footerWrapupBtn.onclick = () => WrapUp.show(job);
+    }
   },
 
   /**
@@ -1425,6 +1478,11 @@ const Jobs = {
     this._hideContactPicker();
     this._hideSmsPicker();
     this._hideCategoryPicker();
+
+    // Hide above-footer wrap-up bar when leaving job detail
+    const aboveFooterBar = document.getElementById('wrapupAboveFooterBar');
+    if (aboveFooterBar) aboveFooterBar.style.display = 'none';
+    document.getElementById('detailView')?.classList.remove('wrapup-above-footer');
   },
 
   /**

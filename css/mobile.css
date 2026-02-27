@@ -1020,3 +1020,188 @@ body {
     padding: var(--spacing-xl) 48px;
   }
 }
+
+
+/* ── Job Wrap-Up ──────────────────────────────────────────────────────────── */
+
+/* Big banner button above the tab bar on completed jobs */
+.wrapup-banner {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.btn-xl {
+  font-size: 1.15rem;
+  padding: 14px var(--spacing-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.btn-success {
+  background: var(--success, #2e7d32);
+  color: #fff;
+  border: none;
+}
+.btn-success:active { background: #1b5e20; }
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-primary, #333);
+  border: 1.5px solid var(--border-color, #ccc);
+}
+.btn-outline:active { background: var(--bg-secondary, #f5f5f5); }
+
+/* Early wrap-up section on Info tab */
+.wrapup-early-section {
+  padding-top: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
+}
+
+/* ── Wrap-Up Modal ──────────────────────────────────────────────────────── */
+
+.modal-wrapup {
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-body-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+.wrapup-context {
+  background: var(--bg-secondary, #f5f5f5);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: var(--spacing-md);
+}
+.wrapup-job-name {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 2px;
+}
+.wrapup-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #666);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.wrapup-time { opacity: 0.8; }
+
+.wrapup-field {
+  margin-bottom: var(--spacing-md);
+}
+.wrapup-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+.wrapup-nudge {
+  font-weight: 400;
+  color: var(--text-secondary, #888);
+  font-size: 0.82rem;
+}
+.wrapup-check-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.wrapup-check-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.wrapup-payment-notice {
+  background: #fff8e1;
+  border: 1px solid #f9a825;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: var(--spacing-md);
+}
+.wrapup-payment-notice p {
+  font-size: 0.88rem;
+  color: #6d4c00;
+  margin: 0 0 8px;
+}
+
+.wrapup-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* ── Toggle buttons (2 or 3 options) ────────────────────────────────────── */
+
+.toggle-pair,
+.toggle-trio {
+  display: flex;
+  gap: 6px;
+}
+.toggle-pair .toggle-btn  { flex: 1; }
+.toggle-trio .toggle-btn  { flex: 1; }
+
+.toggle-btn {
+  padding: 10px 8px;
+  border: 1.5px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #333);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+.toggle-btn.active {
+  background: var(--color-primary, #1565c0);
+  color: #fff;
+  border-color: var(--color-primary, #1565c0);
+}
+
+/* ── Clock-Off Prompt ───────────────────────────────────────────────────── */
+
+.modal-clockoff .modal-header h3 {
+  color: var(--success, #2e7d32);
+}
+
+.clockoff-note {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #666);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Payment status line inside wrap-up modal */
+.wrapup-payment-status {
+  margin-top: 6px;
+  font-size: 0.82rem;
+}
+.wrapup-status-loading { color: var(--text-secondary, #888); font-style: italic; }
+.wrapup-status-paid    { color: #2e7d32; font-weight: 600; }
+.wrapup-status-unpaid  { color: #a06000; font-weight: 600; }
+
+/* ── Wrap-Up button: above-footer placement ──────────────────────────────── */
+
+#wrapupAboveFooterBar {
+  position: fixed;
+  bottom: 60px; /* sits just above the footer (min-height: 60px) */
+  left: 0;
+  right: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--card-background);
+  border-top: 2px solid var(--color-primary, #1565c0);
+  z-index: 99;
+}
+
+/* When the above-footer bar is visible, panels need extra bottom padding
+   so the last content isn't hidden behind both the footer and the bar. */
+#detailView.wrapup-above-footer .detail-panel {
+  padding-bottom: calc(var(--spacing-md) + 70px + 68px);
+}

@@ -982,4 +982,41 @@ const OdooAPI = {
     if (!data.success) throw new Error(data.error || 'Drive upload failed');
     return data;
   },
+
+  // ── Job Wrap-Up ───────────────────────────────────────────────────────────
+
+  /**
+   * Submit a full job wrap-up (post-completion).
+   * @param {number} orderId
+   * @param {Object} data - { job_complete, return_trip_note, payment_not_collected,
+   *                          payment_followup_note, resolution, office_note,
+   *                          gps, gps_accuracy }
+   * @returns {Promise<{success, already_submitted, submitted_by, clocked_out_count}>}
+   */
+  async submitWrapup(orderId, data) {
+    return this.callKw('fsm.order', 'submit_wrapup', [orderId, data], {});
+  },
+
+  /**
+   * Submit an early wrap-up (job still in-progress).
+   * @param {number} orderId
+   * @param {Object} data - { payment_status, payment_note, gps, gps_accuracy }
+   * @returns {Promise<{success, clocked_out_count}>}
+   */
+  async submitEarlyWrapup(orderId, data) {
+    return this.callKw('fsm.order', 'submit_early_wrapup', [orderId, data], {});
+  },
+
+  /**
+   * Clock out all workers currently clocked in on a job.
+   * Called from the clock-off prompt when "Clock All Workers Off" is checked.
+   * @param {number} orderId
+   * @param {string} gps
+   * @param {number} gpsAccuracy
+   * @returns {Promise<number>} count of attendance records closed
+   */
+  async clockOutJobWorkers(orderId, gps, gpsAccuracy) {
+    return this.callKw('fsm.order', 'clock_out_workers_for_job',
+      [orderId, gps || '', gpsAccuracy || 0], {});
+  },
 };
