@@ -109,6 +109,9 @@ const Sync = {
       if (result.uploaded > 0) {
         console.log(`Synced ${result.uploaded} photos, ${result.failed} failed`);
       }
+      if (result.failed > 0) {
+        App.showToast(`${result.failed} photo(s) failed to upload — will retry on next sync`, 'error');
+      }
     }
   },
 

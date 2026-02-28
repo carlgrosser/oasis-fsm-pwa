@@ -9,10 +9,17 @@
  */
 const Photos = {
   _fileInput: null,
-  _pendingCapture: null, // { jobId, category, resolve, reject }
+  _pendingCapture: null,    // { jobId, category, resolve, reject }
+  _visibilityListener: null, // safety-net listener reference
 
   /**
    * Initialize — create the hidden file input used for camera capture.
+   *
+   * NOTE: Do NOT set input.capture on this element. On Android, `capture`
+   * forces the camera to open as a separate OS Activity, which can cause
+   * Android to kill the PWA process in the background. Without `capture`,
+   * both Android and iOS present a native picker that includes camera as
+   * an option and keeps the browser context alive.
    */
   init() {
     if (this._fileInput) return;
@@ -20,7 +27,6 @@ const Photos = {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.capture = 'environment'; // rear camera
     input.style.display = 'none';
     input.id = 'photoCaptureInput';
     document.body.appendChild(input);
@@ -40,8 +46,33 @@ const Photos = {
     this.init();
 
     return new Promise((resolve, reject) => {
-      this._pendingCapture = { jobId, category, resolve, reject };
+      const pending = { jobId, category, resolve, reject };
+      this._pendingCapture = pending;
       this._fileInput.value = '';
+
+      // Safety net: Android can return the user to the app without firing
+      // the `change` event (cancel, or OS killed+reloaded the page).
+      // When the app regains visibility without a file being selected,
+      // resolve with null so the caller doesn't hang indefinitely.
+      let wentHidden = false;
+      const onVisibility = () => {
+        if (!wentHidden && document.visibilityState === 'hidden') {
+          wentHidden = true; // camera / file picker opened
+        } else if (wentHidden && document.visibilityState === 'visible') {
+          document.removeEventListener('visibilitychange', onVisibility);
+          this._visibilityListener = null;
+          // Brief delay — let the `change` event fire first if a photo was taken
+          setTimeout(() => {
+            if (this._pendingCapture === pending) {
+              this._pendingCapture = null;
+              resolve(null);
+            }
+          }, 600);
+        }
+      };
+      this._visibilityListener = onVisibility;
+      document.addEventListener('visibilitychange', onVisibility);
+
       this._fileInput.click();
     });
   },
@@ -53,6 +84,12 @@ const Photos = {
     const pending = this._pendingCapture;
     this._pendingCapture = null;
 
+    // Clean up the visibility safety-net listener
+    if (this._visibilityListener) {
+      document.removeEventListener('visibilitychange', this._visibilityListener);
+      this._visibilityListener = null;
+    }
+
     const file = event.target.files && event.target.files[0];
     if (!file || !pending) {
       if (pending) pending.resolve(null);
@@ -60,19 +97,25 @@ const Photos = {
     }
 
     try {
-      const base64Full = await this._readFileAsBase64(file);
-      const resized = await this._resizeImage(base64Full, 1920);
-      const thumbnail = await this._resizeImage(base64Full, 300);
+      // Use an object URL instead of reading the whole file as base64 first.
+      // This avoids a large memory spike (raw Android photos can be 15-25 MB
+      // in base64) — the canvas only ever holds the resized output.
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const resized   = await this._resizeImage(objectUrl, 1920);
+        const thumbnail = await this._resizeImage(objectUrl, 300);
 
-      const photo = await this.savePhoto(
-        pending.jobId,
-        resized,
-        thumbnail,
-        pending.category,
-        file.name || `photo_${Date.now()}.jpg`
-      );
-
-      pending.resolve(photo);
+        const photo = await this.savePhoto(
+          pending.jobId,
+          resized,
+          thumbnail,
+          pending.category,
+          file.name || `photo_${Date.now()}.jpg`
+        );
+        pending.resolve(photo);
+      } finally {
+        URL.revokeObjectURL(objectUrl); // release immediately
+      }
     } catch (err) {
       console.error('Photo capture error:', err);
       pending.reject(err);
@@ -470,15 +513,6 @@ const Photos = {
   // ------------------------------------------------------------------
   // Image processing helpers
   // ------------------------------------------------------------------
-
-  _readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-  },
 
   _resizeImage(dataUrl, maxWidth) {
     return new Promise((resolve, reject) => {
