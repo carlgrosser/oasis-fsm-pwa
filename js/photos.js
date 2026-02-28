@@ -264,7 +264,7 @@ const Photos = {
 
   /**
    * Render a filtered photo section — only specified category keys.
-   * Shows all local photos (synced + pending) using local thumbnails.
+   * Shows local photos (synced + pending) plus Drive-only photos from other devices.
    *
    * @param {number} jobId
    * @param {HTMLElement} container
@@ -272,7 +272,15 @@ const Photos = {
    * @param {Function} [onPhotoAdded] - callback after a photo is captured
    */
   async renderFilteredPhotoSection(jobId, container, categoryKeys, onPhotoAdded) {
-    const allLocal = await this.getPhotosForJob(jobId);
+    const [allLocal, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+
+    // Drive-only: photos from other devices not yet in local IndexedDB
+    const localDriveIds = new Set(allLocal.filter(p => p.gdrive_file_id).map(p => p.gdrive_file_id));
+    const driveOnly = drivePhotos.filter(p => !localDriveIds.has(p.gdrive_file_id));
+
     const categories = (CONFIG.PHOTO_CATEGORIES || []).filter(c => categoryKeys.includes(c.key));
 
     let html = '';
@@ -286,7 +294,8 @@ const Photos = {
       }
 
       const catPhotos = allLocal.filter(p => p.category === cat.key);
-      const totalCount = catPhotos.length;
+      const catDrive = driveOnly.filter(p => p.category === cat.key);
+      const totalCount = catPhotos.length + catDrive.length;
       const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
       const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
 
@@ -298,6 +307,7 @@ const Photos = {
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
             ${this._renderThumbnails(catPhotos)}
+            ${this._renderDriveThumbnails(catDrive)}
             <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
               <span class="photo-add-icon">+</span>
               <span class="photo-add-label">Add</span>
@@ -312,13 +322,21 @@ const Photos = {
 
   /**
    * Render a read-only gallery of all photos for a job, grouped by category.
-   * Uses local IndexedDB thumbnails for all photos to avoid Drive auth issues.
+   * Merges local IndexedDB photos with Drive-only photos from other devices.
    */
   async renderAllPhotosGallery(jobId, container) {
-    const allLocal = await this.getPhotosForJob(jobId);
+    const [allLocal, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+
+    // Drive-only: photos from other devices not yet in local IndexedDB
+    const localDriveIds = new Set(allLocal.filter(p => p.gdrive_file_id).map(p => p.gdrive_file_id));
+    const driveOnly = drivePhotos.filter(p => !localDriveIds.has(p.gdrive_file_id));
+
     const categories = CONFIG.PHOTO_CATEGORIES || [];
 
-    if (allLocal.length === 0) {
+    if (allLocal.length === 0 && driveOnly.length === 0) {
       container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
       return;
     }
@@ -326,16 +344,19 @@ const Photos = {
     let html = '';
     for (const cat of categories) {
       const catPhotos = allLocal.filter(p => p.category === cat.key);
-      if (catPhotos.length === 0) continue;
+      const catDrive = driveOnly.filter(p => p.category === cat.key);
+      if (catPhotos.length === 0 && catDrive.length === 0) continue;
 
+      const totalCount = catPhotos.length + catDrive.length;
       html += `
         <div class="photo-category photo-category-readonly">
           <div class="photo-category-header">
             <span class="photo-category-title">${cat.label}</span>
-            <span class="photo-count complete">${catPhotos.length}</span>
+            <span class="photo-count complete">${totalCount}</span>
           </div>
           <div class="photo-grid">
             ${this._renderThumbnails(catPhotos)}
+            ${this._renderDriveThumbnails(catDrive)}
           </div>
         </div>`;
     }
@@ -344,14 +365,23 @@ const Photos = {
     container.querySelectorAll('.photo-thumb-local').forEach(thumb => {
       thumb.addEventListener('click', () => this._showFullPhoto(thumb.dataset.tempId));
     });
+    this._bindDriveThumbEvents(container);
   },
 
   /**
    * Render the photo section for a job's detail view.
-   * Uses local IndexedDB thumbnails for all photos to avoid Drive auth issues.
+   * Merges local IndexedDB photos with Drive-only photos from other devices.
    */
   async renderPhotoSection(jobId, container) {
-    const allLocal = await this.getPhotosForJob(jobId);
+    const [allLocal, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+
+    // Drive-only: photos from other devices not yet in local IndexedDB
+    const localDriveIds = new Set(allLocal.filter(p => p.gdrive_file_id).map(p => p.gdrive_file_id));
+    const driveOnly = drivePhotos.filter(p => !localDriveIds.has(p.gdrive_file_id));
+
     const categories = CONFIG.PHOTO_CATEGORIES || [
       { key: 'before', label: 'Before Photos', required: 2 },
       { key: 'after', label: 'After Photos', required: 2 },
@@ -368,7 +398,8 @@ const Photos = {
       }
 
       const catPhotos = allLocal.filter(p => p.category === cat.key);
-      const totalCount = catPhotos.length;
+      const catDrive = driveOnly.filter(p => p.category === cat.key);
+      const totalCount = catPhotos.length + catDrive.length;
       const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
       const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
 
@@ -380,6 +411,7 @@ const Photos = {
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
             ${this._renderThumbnails(catPhotos)}
+            ${this._renderDriveThumbnails(catDrive)}
             <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
               <span class="photo-add-icon">+</span>
               <span class="photo-add-label">Add</span>
