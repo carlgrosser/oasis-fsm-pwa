@@ -481,7 +481,8 @@ const Jobs = {
    * Render a single job's detail view with swipeable tabs.
    */
   async renderJobDetail(jobId, container) {
-    let job = this._jobs.find(j => j.id === jobId);
+    let job = this._jobs.find(j => j.id === jobId)
+      || this._upcomingJobs.find(j => j.id === jobId);
     if (!job) {
       job = await DB.getJob(jobId);
     }
