@@ -851,6 +851,41 @@ textarea.form-input {
 }
 
 /* ========== DIVIDER ========== */
+/* ========== TODAY: HISTORY ALERT BANNER ========== */
+.history-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  background: var(--warning-bg, #fff8e1);
+  border-left: 4px solid var(--warning-color, #f59e0b);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-small);
+}
+
+.history-alert-text {
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.history-alert-btn {
+  background: none;
+  border: 1px solid var(--warning-color, #f59e0b);
+  border-radius: var(--radius-sm);
+  color: var(--warning-color, #f59e0b);
+  padding: 4px 10px;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.history-alert-btn:active {
+  opacity: 0.7;
+}
+
 .jobs-section-divider {
   display: flex;
   align-items: center;

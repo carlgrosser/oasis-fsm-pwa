@@ -70,6 +70,8 @@ const Jobs = {
   _historyCompletedOffset: 0, // Pagination offset for "load more" in history
   _historyHasMore: false, // Whether there are more completed jobs to load
   _upcomingJobs: [], // Jobs on the next scheduled day (shown below today's jobs)
+  _overdueCount: 0,   // Overdue jobs count (for today banner)
+  _notClosedCount: 0, // Completed-but-not-wrapped-up count (for today banner, excludes overdue)
 
   /**
    * Fetch jobs from Odoo for the given date range.
@@ -122,6 +124,30 @@ const Jobs = {
       const d = this._parseOdooDatetime(job.scheduled_date_start);
       return d && d >= firstDay && d < nextDay;
     });
+  },
+
+  /**
+   * Fetch counts of overdue and not-closed jobs for the today banner.
+   * Overdue = uncompleted jobs scheduled before today.
+   * Not closed = completed-stage jobs where wrapup_submitted is false (excludes overdue).
+   */
+  async fetchHistoryCounts(personId) {
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStr = todayMidnight.toISOString().replace('T', ' ').slice(0, 19);
+
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().replace('T', ' ').slice(0, 19);
+
+    const [overdueJobs, completedJobs] = await Promise.all([
+      OdooAPI.getOverdueOrders(personId, todayStr),
+      OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, 0),
+    ]);
+
+    const overdueCount = overdueJobs.length;
+    const notClosedCount = completedJobs.filter(j => !j.wrapup_submitted).length;
+    return { overdueCount, notClosedCount };
   },
 
   /**
@@ -191,9 +217,17 @@ const Jobs = {
         jobs = await this.fetchJobs(this._currentView);
         if (this._currentView === 'today') {
           const personId = Auth.getPersonId();
-          this._upcomingJobs = personId ? await this.fetchUpcomingJobs(personId) : [];
+          const [upcoming, counts] = await Promise.all([
+            personId ? this.fetchUpcomingJobs(personId) : Promise.resolve([]),
+            personId ? this.fetchHistoryCounts(personId) : Promise.resolve({ overdueCount: 0, notClosedCount: 0 }),
+          ]);
+          this._upcomingJobs = upcoming;
+          this._overdueCount = counts.overdueCount;
+          this._notClosedCount = counts.notClosedCount;
         } else {
           this._upcomingJobs = [];
+          this._overdueCount = 0;
+          this._notClosedCount = 0;
         }
         await DB.saveJobs(jobs);
         await DB.setState('lastSync', Date.now());
@@ -201,10 +235,14 @@ const Jobs = {
         console.warn('Failed to fetch from Odoo, using cache:', err);
         jobs = await DB.getJobs();
         this._upcomingJobs = [];
+        this._overdueCount = 0;
+        this._notClosedCount = 0;
       }
     } else {
       jobs = await DB.getJobs();
       this._upcomingJobs = [];
+      this._overdueCount = 0;
+      this._notClosedCount = 0;
     }
 
     // Filter cached jobs based on current view
@@ -247,6 +285,24 @@ const Jobs = {
     if (this._currentView === 'history') {
       this._renderHistoryList(container);
       return;
+    }
+
+    // Today view — history alert banner
+    if (this._overdueCount > 0 || this._notClosedCount > 0) {
+      const parts = [];
+      if (this._overdueCount > 0) parts.push(`${this._overdueCount} job${this._overdueCount !== 1 ? 's' : ''} overdue`);
+      if (this._notClosedCount > 0) parts.push(`${this._notClosedCount} not closed`);
+
+      const banner = document.createElement('div');
+      banner.className = 'history-alert-banner';
+      banner.innerHTML = `
+        <span class="history-alert-text">&#9888; You have ${parts.join(' and ')}. View history to resolve.</span>
+        <button class="history-alert-btn">History &rsaquo;</button>
+      `;
+      banner.querySelector('.history-alert-btn').addEventListener('click', () => {
+        App.switchTab('history');
+      });
+      container.appendChild(banner);
     }
 
     // Today view — today's jobs + upcoming section
