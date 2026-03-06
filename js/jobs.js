@@ -129,7 +129,9 @@ const Jobs = {
    */
   async _fetchHistoryJobs(personId) {
     const now = new Date();
-    const todayStr = now.toISOString().replace('T', ' ').slice(0, 19);
+    // Use local midnight so today's jobs don't bleed into overdue
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStr = todayMidnight.toISOString().replace('T', ' ').slice(0, 19);
 
     // 30 days ago for completed jobs
     const thirtyDaysAgo = new Date(now);
