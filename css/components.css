@@ -851,6 +851,29 @@ textarea.form-input {
 }
 
 /* ========== DIVIDER ========== */
+.jobs-section-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) var(--spacing-md) var(--spacing-sm);
+}
+
+.jobs-section-divider::before,
+.jobs-section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.jobs-section-label {
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
 .divider {
   height: 1px;
   background: var(--border-color);

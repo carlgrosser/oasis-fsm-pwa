@@ -2,9 +2,9 @@
  * Main app controller — view switching, init, toast notifications.
  */
 const App = {
-  _currentView: 'today', // 'today' | 'week' | 'history'
+  _currentView: 'today', // 'today' | 'history'
   _currentScreen: 'list', // 'list' | 'detail'
-  _viewsLoaded: { today: false, week: false, history: false },
+  _viewsLoaded: { today: false, history: false },
 
   /**
    * Initialize the app after login.
@@ -67,13 +67,12 @@ const App = {
   /** Map view keys to page titles. */
   _viewTitles: {
     today: "Today's Jobs",
-    week: 'This Week',
     history: 'History',
   },
 
   /** Map view keys to panel indices. */
-  _viewIndices: { today: 0, week: 1, history: 2 },
-  _indexViews: ['today', 'week', 'history'],
+  _viewIndices: { today: 0, history: 1 },
+  _indexViews: ['today', 'history'],
 
   _bindEvents() {
     const bindMenuAction = (id, handler) => {
@@ -318,7 +317,6 @@ const App = {
   async _loadViewJobs(view) {
     const containerMap = {
       today: 'jobListToday',
-      week: 'jobListWeek',
       history: 'jobListHistory',
     };
 
@@ -347,7 +345,7 @@ const App = {
    * Force refresh all views.
    */
   async refreshAllViews() {
-    this._viewsLoaded = { today: false, week: false, history: false };
+    this._viewsLoaded = { today: false, history: false };
     await this._loadViewJobs(this._currentView);
   },
 

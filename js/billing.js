@@ -297,6 +297,14 @@ const Billing = {
     const invoiceBtn = container.querySelector('#createInvoiceBtn');
     if (invoiceBtn) {
       invoiceBtn.addEventListener('click', async () => {
+        // All lines must be fully delivered before invoicing
+        const undelivered = data.lines.filter(l => l.qty_delivered < l.quantity);
+        if (undelivered.length > 0) {
+          const names = undelivered.map(l => l.product_name || 'item').join(', ');
+          App.showToast(`Deliver all items before invoicing: ${names}`, 'error');
+          return;
+        }
+
         invoiceBtn.disabled = true;
         invoiceBtn.textContent = 'Creating Invoice...';
         try {

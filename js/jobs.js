@@ -69,6 +69,7 @@ const Jobs = {
 
   _historyCompletedOffset: 0, // Pagination offset for "load more" in history
   _historyHasMore: false, // Whether there are more completed jobs to load
+  _upcomingJobs: [], // Jobs on the next scheduled day (shown below today's jobs)
 
   /**
    * Fetch jobs from Odoo for the given date range.
@@ -78,25 +79,49 @@ const Jobs = {
     if (!personId) throw new Error('Not logged in');
 
     const now = new Date();
-    let dateFrom, dateTo;
 
     if (view === 'today') {
-      dateFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      dateTo = new Date(dateFrom);
+      const dateFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const dateTo = new Date(dateFrom);
       dateTo.setDate(dateTo.getDate() + 1);
-    } else if (view === 'week') {
-      dateFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      dateTo = new Date(dateFrom);
-      dateTo.setDate(dateTo.getDate() + 7);
+      const fromStr = dateFrom.toISOString().replace('T', ' ').slice(0, 19);
+      const toStr = dateTo.toISOString().replace('T', ' ').slice(0, 19);
+      return OdooAPI.getMyOrders(personId, fromStr, toStr);
     } else {
       // history — handled separately
       return this._fetchHistoryJobs(personId);
     }
+  },
 
-    const fromStr = dateFrom.toISOString().replace('T', ' ').slice(0, 19);
-    const toStr = dateTo.toISOString().replace('T', ' ').slice(0, 19);
+  /**
+   * Fetch jobs on the next calendar day (after today) that has any scheduled jobs.
+   * Returns all jobs on that day, or [] if nothing is scheduled in the next 14 days.
+   */
+  async fetchUpcomingJobs(personId) {
+    const now = new Date();
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const lookAheadEnd = new Date(tomorrow);
+    lookAheadEnd.setDate(lookAheadEnd.getDate() + 13); // 14 days total
 
-    return OdooAPI.getMyOrders(personId, fromStr, toStr);
+    const fromStr = tomorrow.toISOString().replace('T', ' ').slice(0, 19);
+    const toStr = lookAheadEnd.toISOString().replace('T', ' ').slice(0, 19);
+
+    const jobs = await OdooAPI.getMyOrders(personId, fromStr, toStr);
+    if (!jobs || jobs.length === 0) return [];
+
+    // Find the earliest scheduled date among returned jobs
+    const firstDate = this._parseOdooDatetime(jobs[0].scheduled_date_start);
+    if (!firstDate) return [];
+
+    // Return only jobs that fall on the same calendar day as the first job
+    const firstDay = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate());
+    const nextDay = new Date(firstDay);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    return jobs.filter(job => {
+      const d = this._parseOdooDatetime(job.scheduled_date_start);
+      return d && d >= firstDay && d < nextDay;
+    });
   },
 
   /**
@@ -162,14 +187,22 @@ const Jobs = {
     if (navigator.onLine) {
       try {
         jobs = await this.fetchJobs(this._currentView);
+        if (this._currentView === 'today') {
+          const personId = Auth.getPersonId();
+          this._upcomingJobs = personId ? await this.fetchUpcomingJobs(personId) : [];
+        } else {
+          this._upcomingJobs = [];
+        }
         await DB.saveJobs(jobs);
         await DB.setState('lastSync', Date.now());
       } catch (err) {
         console.warn('Failed to fetch from Odoo, using cache:', err);
         jobs = await DB.getJobs();
+        this._upcomingJobs = [];
       }
     } else {
       jobs = await DB.getJobs();
+      this._upcomingJobs = [];
     }
 
     // Filter cached jobs based on current view
@@ -196,10 +229,6 @@ const Jobs = {
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
         return start >= today && start < tomorrow;
-      } else if (view === 'week') {
-        const weekEnd = new Date(today);
-        weekEnd.setDate(weekEnd.getDate() + 7);
-        return start >= today && start < weekEnd;
       } else {
         // history
         return this._isCompletedJob(job);
@@ -213,23 +242,74 @@ const Jobs = {
   renderJobList(container) {
     container.innerHTML = '';
 
-    if (this._jobs.length === 0) {
+    if (this._currentView === 'history') {
+      this._renderHistoryList(container);
+      return;
+    }
+
+    // Today view — today's jobs + upcoming section
+    if (this._jobs.length === 0 && this._upcomingJobs.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div style="font-size: 48px; opacity: 0.3;">📋</div>
-          <p>No jobs ${this._currentView === 'history' ? 'in history' : 'scheduled'}</p>
+          <p>No jobs scheduled</p>
         </div>
       `;
       return;
     }
 
     for (const job of this._jobs) {
-      const card = this._createJobCard(job);
-      container.appendChild(card);
+      container.appendChild(this._createJobCard(job));
     }
 
-    // Add "Load more" link for history view
-    if (this._currentView === 'history' && this._historyHasMore) {
+    if (this._upcomingJobs.length > 0) {
+      const firstDate = this._parseOdooDatetime(this._upcomingJobs[0].scheduled_date_start);
+      const dateLabel = firstDate
+        ? firstDate.toLocaleDateString([], this._tzOptions({ weekday: 'long', month: 'long', day: 'numeric' }))
+        : 'Upcoming';
+
+      const divider = document.createElement('div');
+      divider.className = 'jobs-section-divider';
+      divider.innerHTML = `<span class="jobs-section-label">Upcoming &middot; ${dateLabel}</span>`;
+      container.appendChild(divider);
+
+      for (const job of this._upcomingJobs) {
+        container.appendChild(this._createJobCard(job));
+      }
+    }
+  },
+
+  /**
+   * Render history list with a section divider between overdue/open and completed jobs.
+   */
+  _renderHistoryList(container) {
+    if (this._jobs.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div style="font-size: 48px; opacity: 0.3;">📋</div>
+          <p>No jobs in history</p>
+        </div>
+      `;
+      return;
+    }
+
+    let completedDividerAdded = false;
+
+    for (const job of this._jobs) {
+      const isCompleted = this._isCompletedJob(job) && !job._isOverdue;
+
+      if (isCompleted && !completedDividerAdded) {
+        completedDividerAdded = true;
+        const divider = document.createElement('div');
+        divider.className = 'jobs-section-divider';
+        divider.innerHTML = `<span class="jobs-section-label">Completed</span>`;
+        container.appendChild(divider);
+      }
+
+      container.appendChild(this._createJobCard(job));
+    }
+
+    if (this._historyHasMore) {
       const loadMoreDiv = document.createElement('div');
       loadMoreDiv.className = 'load-more-container';
       loadMoreDiv.innerHTML = `
@@ -301,7 +381,7 @@ const Jobs = {
     //   Today tab   — job date is older than today (any stage), OR today + completed stage
     //   Week tab    — never (future-dated jobs)
     let showNotClosed = false;
-    if (!job.wrapup_submitted && this._currentView !== 'week') {
+    if (!job.wrapup_submitted) {
       if (this._currentView === 'history') {
         showNotClosed = true;
       } else if (this._currentView === 'today') {
@@ -2235,12 +2315,17 @@ const Jobs = {
     const d = this._parseOdooDatetime(dateStr);
     if (!d) return '';
     const time = d.toLocaleTimeString([], this._tzOptions({ hour: 'numeric', minute: '2-digit' }));
-    if (this._currentView === 'week') {
-      const day = d.toLocaleDateString([], this._tzOptions({ weekday: 'short' }));
-      return `${day} · ${time}`;
-    }
     if (this._currentView === 'history') {
       return d.toLocaleDateString([], this._tzOptions({ month: 'short', day: 'numeric' }));
+    }
+    // For non-today dates (e.g. upcoming jobs shown on the today panel), include the weekday
+    const now = new Date();
+    const isToday = d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+    if (!isToday) {
+      const day = d.toLocaleDateString([], this._tzOptions({ weekday: 'short' }));
+      return `${day} · ${time}`;
     }
     return time;
   },
