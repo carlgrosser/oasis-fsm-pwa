@@ -409,7 +409,7 @@ textarea.form-input {
 /* ========== NOT CLOSED BADGE (history tab) ========== */
 .not-closed-badge {
   display: block;
-  background: linear-gradient(135deg, #e8480c, #bf3b08);
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff;
   font-size: var(--font-size-xs);
   font-weight: 600;
