@@ -179,8 +179,11 @@ const Jobs = {
     // Check if there might be more completed jobs
     this._historyHasMore = completedJobs.length >= CONFIG.JOBS_PER_PAGE;
 
-    // Combine: overdue first, then completed
-    return [...overdueJobs, ...completedJobs];
+    // Separate completed jobs: not-closed float to top alongside overdue, fully-closed go below divider
+    const notClosedCompleted = completedJobs.filter(j => !j.wrapup_submitted);
+    const closedCompleted = completedJobs.filter(j => j.wrapup_submitted);
+
+    return [...overdueJobs, ...notClosedCompleted, ...closedCompleted];
   },
 
   /**
@@ -354,7 +357,7 @@ const Jobs = {
     let completedDividerAdded = false;
 
     for (const job of this._jobs) {
-      const isCompleted = this._isCompletedJob(job) && !job._isOverdue;
+      const isCompleted = this._isCompletedJob(job) && !job._isOverdue && job.wrapup_submitted;
 
       if (isCompleted && !completedDividerAdded) {
         completedDividerAdded = true;
@@ -399,7 +402,7 @@ const Jobs = {
     const card = document.createElement('div');
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
-    const isHistoryComplete = this._currentView === 'history' && this._isCompletedJob(job) && !job._isOverdue;
+    const isHistoryComplete = this._currentView === 'history' && this._isCompletedJob(job) && !job._isOverdue && job.wrapup_submitted;
 
     card.className = `job-card status-${statusClass}${isHistoryComplete ? ' compact' : ''}`;
     card.dataset.jobId = job.id;
