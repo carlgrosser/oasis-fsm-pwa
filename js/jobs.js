@@ -219,23 +219,25 @@ const Jobs = {
 
     if (navigator.onLine) {
       try {
-        jobs = await this.fetchJobs(this._currentView);
+        const personId = Auth.getPersonId();
+        const fetchList = [this.fetchJobs(this._currentView)];
         if (this._currentView === 'today') {
-          const personId = Auth.getPersonId();
-          const [upcoming, counts] = await Promise.all([
+          fetchList.push(
             personId ? this.fetchUpcomingJobs(personId) : Promise.resolve([]),
-            personId ? this.fetchHistoryCounts(personId) : Promise.resolve({ overdueCount: 0, notClosedCount: 0 }),
-          ]);
-          this._upcomingJobs = upcoming;
-          this._overdueCount = counts.overdueCount;
-          this._notClosedCount = counts.notClosedCount;
-          this._uncollectedCount = counts.uncollectedCount || 0;
+            personId ? this.fetchHistoryCounts(personId) : Promise.resolve({ overdueCount: 0, notClosedCount: 0, uncollectedCount: 0 }),
+          );
         } else {
-          this._upcomingJobs = [];
-          this._overdueCount = 0;
-          this._notClosedCount = 0;
-          this._uncollectedCount = 0;
+          fetchList.push(
+            Promise.resolve([]),
+            personId ? this.fetchHistoryCounts(personId) : Promise.resolve({ overdueCount: 0, notClosedCount: 0, uncollectedCount: 0 }),
+          );
         }
+        const [fetchedJobs, upcoming, counts] = await Promise.all(fetchList);
+        jobs = fetchedJobs;
+        this._upcomingJobs = this._currentView === 'today' ? (upcoming || []) : [];
+        this._overdueCount = counts.overdueCount || 0;
+        this._notClosedCount = counts.notClosedCount || 0;
+        this._uncollectedCount = counts.uncollectedCount || 0;
         await DB.saveJobs(jobs);
         await DB.setState('lastSync', Date.now());
       } catch (err) {
