@@ -879,8 +879,8 @@ const OdooAPI = {
   /**
    * Count completed jobs assigned to this worker with an unpaid invoice.
    */
-  async countUncollected(personId) {
-    return this.callKw('fsm.order', 'worker_count_uncollected', [personId], {});
+  async getBillingStates(personId) {
+    return this.callKw('fsm.order', 'worker_get_billing_states', [personId], {});
   },
 
   /**
