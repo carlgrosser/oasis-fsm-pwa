@@ -142,11 +142,17 @@ const Jobs = {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().replace('T', ' ').slice(0, 19);
 
-    const [overdueJobs, completedJobs, billingStates] = await Promise.all([
+    const [overdueJobs, completedJobs] = await Promise.all([
       OdooAPI.getOverdueOrders(personId, todayStr),
       OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, 0),
-      OdooAPI.getBillingStates(personId),
     ]);
+
+    // getBillingStates requires a module upgrade — catch independently so
+    // overdue/not-closed counts still work if the method isn't installed yet.
+    let billingStates = { uninvoiced_ids: [], unpaid_ids: [] };
+    try {
+      billingStates = await OdooAPI.getBillingStates(personId);
+    } catch (e) { /* module not yet upgraded */ }
 
     const overdueCount = overdueJobs.length;
     const notClosedCount = completedJobs.filter(j => !j.wrapup_submitted).length;
