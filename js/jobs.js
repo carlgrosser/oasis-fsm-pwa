@@ -223,26 +223,26 @@ const Jobs = {
     if (navigator.onLine) {
       try {
         const personId = Auth.getPersonId();
-        const fetchList = [this.fetchJobs(this._currentView)];
-        const emptyBilling = { overdueCount: 0, notClosedCount: 0, uninvoicedIds: new Set(), unpaidIds: new Set() };
-        if (this._currentView === 'today') {
-          fetchList.push(
-            personId ? this.fetchUpcomingJobs(personId) : Promise.resolve([]),
-            personId ? this.fetchHistoryCounts(personId) : Promise.resolve(emptyBilling),
-          );
-        } else {
-          fetchList.push(
-            Promise.resolve([]),
-            personId ? this.fetchHistoryCounts(personId) : Promise.resolve(emptyBilling),
-          );
-        }
-        const [fetchedJobs, upcoming, counts] = await Promise.all(fetchList);
+        // Fetch jobs + upcoming in one group; billing states separately so
+        // a missing server method doesn't break the whole job load.
+        const upcomingPromise = this._currentView === 'today' && personId
+          ? this.fetchUpcomingJobs(personId)
+          : Promise.resolve([]);
+        const countsPromise = personId
+          ? this.fetchHistoryCounts(personId).catch(() => null)
+          : Promise.resolve(null);
+
+        const [fetchedJobs, upcoming, counts] = await Promise.all([
+          this.fetchJobs(this._currentView),
+          upcomingPromise,
+          countsPromise,
+        ]);
         jobs = fetchedJobs;
         this._upcomingJobs = this._currentView === 'today' ? (upcoming || []) : [];
-        this._overdueCount = counts.overdueCount || 0;
-        this._notClosedCount = counts.notClosedCount || 0;
-        this._uninvoicedIds = counts.uninvoicedIds || new Set();
-        this._unpaidIds = counts.unpaidIds || new Set();
+        this._overdueCount = counts ? (counts.overdueCount || 0) : 0;
+        this._notClosedCount = counts ? (counts.notClosedCount || 0) : 0;
+        this._uninvoicedIds = counts ? (counts.uninvoicedIds || new Set()) : new Set();
+        this._unpaidIds = counts ? (counts.unpaidIds || new Set()) : new Set();
         await DB.saveJobs(jobs);
         await DB.setState('lastSync', Date.now());
       } catch (err) {
