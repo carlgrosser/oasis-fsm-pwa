@@ -70,8 +70,9 @@ const Jobs = {
   _historyCompletedOffset: 0, // Pagination offset for "load more" in history
   _historyHasMore: false, // Whether there are more completed jobs to load
   _upcomingJobs: [], // Jobs on the next scheduled day (shown below today's jobs)
-  _overdueCount: 0,   // Overdue jobs count (for today banner)
-  _notClosedCount: 0, // Completed-but-not-wrapped-up count (for today banner, excludes overdue)
+  _overdueCount: 0,      // Overdue jobs count (for today banner)
+  _notClosedCount: 0,    // Completed-but-not-wrapped-up count (for today banner, excludes overdue)
+  _uncollectedCount: 0,  // Completed jobs with unpaid invoice (for today banner)
 
   /**
    * Fetch jobs from Odoo for the given date range.
@@ -140,14 +141,15 @@ const Jobs = {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().replace('T', ' ').slice(0, 19);
 
-    const [overdueJobs, completedJobs] = await Promise.all([
+    const [overdueJobs, completedJobs, uncollectedCount] = await Promise.all([
       OdooAPI.getOverdueOrders(personId, todayStr),
       OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, 0),
+      OdooAPI.countUncollected(personId),
     ]);
 
     const overdueCount = overdueJobs.length;
     const notClosedCount = completedJobs.filter(j => !j.wrapup_submitted).length;
-    return { overdueCount, notClosedCount };
+    return { overdueCount, notClosedCount, uncollectedCount };
   },
 
   /**
@@ -227,10 +229,12 @@ const Jobs = {
           this._upcomingJobs = upcoming;
           this._overdueCount = counts.overdueCount;
           this._notClosedCount = counts.notClosedCount;
+          this._uncollectedCount = counts.uncollectedCount || 0;
         } else {
           this._upcomingJobs = [];
           this._overdueCount = 0;
           this._notClosedCount = 0;
+          this._uncollectedCount = 0;
         }
         await DB.saveJobs(jobs);
         await DB.setState('lastSync', Date.now());
@@ -240,12 +244,14 @@ const Jobs = {
         this._upcomingJobs = [];
         this._overdueCount = 0;
         this._notClosedCount = 0;
+        this._uncollectedCount = 0;
       }
     } else {
       jobs = await DB.getJobs();
       this._upcomingJobs = [];
       this._overdueCount = 0;
       this._notClosedCount = 0;
+      this._uncollectedCount = 0;
     }
 
     // Filter cached jobs based on current view
@@ -291,15 +297,16 @@ const Jobs = {
     }
 
     // Today view — history alert banner
-    if (this._overdueCount > 0 || this._notClosedCount > 0) {
+    if (this._overdueCount > 0 || this._notClosedCount > 0 || this._uncollectedCount > 0) {
       const parts = [];
       if (this._overdueCount > 0) parts.push(`${this._overdueCount} job${this._overdueCount !== 1 ? 's' : ''} overdue`);
       if (this._notClosedCount > 0) parts.push(`${this._notClosedCount} not closed`);
+      if (this._uncollectedCount > 0) parts.push(`${this._uncollectedCount} unpaid`);
 
       const banner = document.createElement('div');
       banner.className = 'history-alert-banner';
       banner.innerHTML = `
-        <span class="history-alert-text">&#9888; You have ${parts.join(' and ')}. View history to resolve.</span>
+        <span class="history-alert-text">&#9888; You have ${parts.join(', ')}. View history to resolve.</span>
         <button class="history-alert-btn">History &rsaquo;</button>
       `;
       banner.querySelector('.history-alert-btn').addEventListener('click', () => {
@@ -2393,7 +2400,8 @@ const Jobs = {
   },
 
   _formatHistoryDate(job) {
-    const raw = job.date_end || job.scheduled_date_start;
+    // Use scheduled date (when the job was booked), not wrap-up/close date
+    const raw = job.scheduled_date_start || job.date_end;
     const d = this._parseOdooDatetime(raw);
     if (!d) return '';
     const now = new Date();

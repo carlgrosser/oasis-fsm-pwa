@@ -218,21 +218,37 @@ const Billing = {
       ? `<span class="so-line-onsite-badge">Added On-Site</span>`
       : '';
 
+    // Do-not-invoice badge + toggle
+    const dniClass = line.x_do_not_invoice ? ' so-line-excluded' : '';
+    const dniBadge = line.x_do_not_invoice
+      ? `<span class="so-line-dni-badge">Excluded</span>`
+      : '';
+    const dniBtn = editable
+      ? `<button class="btn btn-sm so-line-dni-btn ${line.x_do_not_invoice ? 'btn-secondary' : 'btn-outline'}"
+               data-line-id="${line.id}" data-dni="${line.x_do_not_invoice ? '1' : '0'}"
+               title="${line.x_do_not_invoice ? 'Re-include in invoice' : 'Exclude from invoice'}">
+           ${line.x_do_not_invoice ? 'Include' : 'Exclude'}
+         </button>`
+      : '';
+
     // Description (show if different from product name)
     const desc = line.description && line.description !== line.product_name
       ? `<div class="so-line-desc">${this._esc(line.description)}</div>`
       : '';
 
-    // Qty delivered indicator
-    const qtyMatch = line.qty_delivered === line.quantity;
+    // Qty delivered indicator (muted if excluded)
+    const qtyMatch = line.x_do_not_invoice || line.qty_delivered === line.quantity;
     const qtyClass = qtyMatch ? 'so-line-qty-match' : 'so-line-qty-mismatch';
+    const deliveredLabel = line.x_do_not_invoice
+      ? 'Not invoiced'
+      : `Delivered: ${line.qty_delivered}/${line.quantity}`;
 
     return `
-      <div class="so-line" data-line-id="${line.id}">
+      <div class="so-line${dniClass}" data-line-id="${line.id}">
         <div class="so-line-info">
           <div class="so-line-name">
             ${this._esc(line.product_name || line.description)}
-            ${onsiteBadge}
+            ${onsiteBadge}${dniBadge}
           </div>
           ${desc}
           <div class="so-line-qty-row">
@@ -240,20 +256,44 @@ const Billing = {
               ${line.quantity} ${this._esc(line.product_uom)} × $${this._money(line.price_unit)}
               ${line.discount ? ' (-' + line.discount + '%)' : ''}
             </span>
-            <span class="${qtyClass}">
-              Delivered: ${line.qty_delivered}/${line.quantity}
-            </span>
+            <span class="${qtyClass}">${deliveredLabel}</span>
           </div>
         </div>
         <div class="so-line-right">
           <div class="so-line-price">$${this._money(line.price_subtotal)}</div>
-          ${editBtn}
+          <div style="display:flex;gap:4px;">
+            ${dniBtn}
+            ${editBtn}
+          </div>
         </div>
       </div>
     `;
   },
 
   _bindSOEvents(job, data, container) {
+    // Do-not-invoice toggle buttons
+    container.querySelectorAll('.so-line-dni-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const lineId = parseInt(btn.dataset.lineId, 10);
+        const currentlyExcluded = btn.dataset.dni === '1';
+        const newValue = !currentlyExcluded;
+        btn.disabled = true;
+        try {
+          await OdooAPI.setDoNotInvoice(lineId, newValue);
+          const line = data.lines.find(l => l.id === lineId);
+          if (line) line.x_do_not_invoice = newValue;
+          OdooAPI.postSystemNote(job.id,
+            `Billing: Line "${line ? line.product_name : lineId}" ${newValue ? 'excluded from' : 'included in'} invoice`
+          ).catch(() => {});
+          await this.renderSalesTab(job, container);
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+
     // Edit line buttons
     container.querySelectorAll('.so-line-edit').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -297,11 +337,11 @@ const Billing = {
     const invoiceBtn = container.querySelector('#createInvoiceBtn');
     if (invoiceBtn) {
       invoiceBtn.addEventListener('click', async () => {
-        // All lines must be fully delivered before invoicing
-        const undelivered = data.lines.filter(l => l.qty_delivered < l.quantity);
+        // All lines must be delivered or marked do-not-invoice
+        const undelivered = data.lines.filter(l => !l.x_do_not_invoice && l.qty_delivered < l.quantity);
         if (undelivered.length > 0) {
           const names = undelivered.map(l => l.product_name || 'item').join(', ');
-          App.showToast(`Deliver all items before invoicing: ${names}`, 'error');
+          App.showToast(`Deliver or exclude items before invoicing: ${names}`, 'error');
           return;
         }
 
@@ -786,6 +826,8 @@ const Billing = {
   // ---------- Check Payment ----------
 
   _showCheckPaymentView(invoice, contentArea, job, parentContainer) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
     contentArea.innerHTML = `
       <div style="margin-top:var(--spacing-md);">
         <div class="form-group">
@@ -797,6 +839,10 @@ const Billing = {
           <input type="number" class="form-input" id="checkAmount"
                  value="${invoice.amount_residual}" min="0" step="0.01">
         </div>
+        <div class="form-group">
+          <label for="checkDate">Check Date</label>
+          <input type="date" class="form-input" id="checkDate" value="${todayStr}">
+        </div>
         <button class="btn btn-success btn-block" id="recordCheckBtn">
           Record Check Payment
         </button>
@@ -807,6 +853,7 @@ const Billing = {
       const btn = document.getElementById('recordCheckBtn');
       const checkNum = document.getElementById('checkNumber').value.trim();
       const amount = parseFloat(document.getElementById('checkAmount').value) || 0;
+      const checkDate = document.getElementById('checkDate').value || todayStr;
 
       if (!checkNum) {
         App.showToast('Enter a check number', 'error');
@@ -821,10 +868,10 @@ const Billing = {
       btn.textContent = 'Recording...';
 
       try {
-        const result = await OdooAPI.registerCheckPayment(invoice.id, checkNum, amount);
+        const result = await OdooAPI.registerCheckPayment(invoice.id, checkNum, amount, checkDate);
         if (result.success) {
           App.showToast('Check payment recorded', 'success');
-          OdooAPI.postJournalEntry(job.id, `Payment collected: Check #${checkNum}, $${parseFloat(amount).toFixed(2)}`).catch(() => {});
+          OdooAPI.postJournalEntry(job.id, `Payment collected: Check #${checkNum}, $${parseFloat(amount).toFixed(2)}, date ${checkDate}`).catch(() => {});
           await this.renderSalesTab(job, parentContainer);
         }
       } catch (err) {

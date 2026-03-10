@@ -850,8 +850,9 @@ const OdooAPI = {
   /**
    * Register a check payment on an invoice.
    */
-  async registerCheckPayment(invoiceId, checkNumber, amount) {
-    return this.callKw('fsm.order', 'worker_register_check_payment', [invoiceId, checkNumber, amount], {});
+  async registerCheckPayment(invoiceId, checkNumber, amount, paymentDate) {
+    const kwargs = paymentDate ? { payment_date: paymentDate } : {};
+    return this.callKw('fsm.order', 'worker_register_check_payment', [invoiceId, checkNumber, amount], kwargs);
   },
 
   /**
@@ -859,6 +860,20 @@ const OdooAPI = {
    */
   async registerManualPayment(invoiceId, method, reference, amount) {
     return this.callKw('fsm.order', 'worker_register_manual_payment', [invoiceId, method, reference, amount], {});
+  },
+
+  /**
+   * Set or clear the do-not-invoice flag on a sale order line.
+   */
+  async setDoNotInvoice(lineId, value) {
+    return this.callKw('fsm.order', 'worker_set_do_not_invoice', [lineId, value], {});
+  },
+
+  /**
+   * Count completed jobs assigned to this worker with an unpaid invoice.
+   */
+  async countUncollected(personId) {
+    return this.callKw('fsm.order', 'worker_count_uncollected', [personId], {});
   },
 
   /**
