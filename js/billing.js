@@ -74,9 +74,6 @@ const Billing = {
       'cancel': 'Cancelled',
     }[so.state] || so.state;
 
-    // Check if all delivered = ordered
-    const allMatch = lines.length > 0 && lines.every(l => l.qty_delivered === l.quantity);
-
     let html = `
       <div class="detail-section">
         <div class="billing-so-header">
@@ -97,16 +94,6 @@ const Billing = {
     }
 
     html += '</div>';
-
-    // Accept as Quoted button (only for confirmed SOs with mismatched qtys)
-    if (so.state === 'sale' && !allMatch) {
-      html += `
-        <button class="btn btn-outline btn-block btn-sm" id="acceptAsQuotedBtn"
-                style="margin-top:var(--spacing-sm);">
-          Accept as Quoted
-        </button>
-      `;
-    }
 
     // Add Line button (only for confirmed SOs)
     if (so.state === 'sale') {
@@ -312,39 +299,10 @@ const Billing = {
       });
     }
 
-    // Accept as Quoted button
-    const acceptBtn = container.querySelector('#acceptAsQuotedBtn');
-    if (acceptBtn) {
-      acceptBtn.addEventListener('click', async () => {
-        acceptBtn.disabled = true;
-        acceptBtn.textContent = 'Updating...';
-        try {
-          const result = await OdooAPI.acceptAsQuoted(data.sale_order.id);
-          if (result.success) {
-            App.showToast(`${result.lines_updated} line(s) updated`, 'success');
-            OdooAPI.postSystemNote(job.id, `Billing: Accepted as Quoted (${result.lines_updated} line(s) updated)`).catch(() => {});
-            await this.renderSalesTab(job, container);
-          }
-        } catch (err) {
-          App.showToast('Failed: ' + err.message, 'error');
-          acceptBtn.disabled = false;
-          acceptBtn.textContent = 'Accept as Quoted';
-        }
-      });
-    }
-
     // Create invoice button
     const invoiceBtn = container.querySelector('#createInvoiceBtn');
     if (invoiceBtn) {
       invoiceBtn.addEventListener('click', async () => {
-        // All lines must be delivered or marked do-not-invoice
-        const undelivered = data.lines.filter(l => !l.x_do_not_invoice && l.qty_delivered < l.quantity);
-        if (undelivered.length > 0) {
-          const names = undelivered.map(l => l.product_name || 'item').join(', ');
-          App.showToast(`Deliver or exclude items before invoicing: ${names}`, 'error');
-          return;
-        }
-
         invoiceBtn.disabled = true;
         invoiceBtn.textContent = 'Creating Invoice...';
         try {
@@ -769,10 +727,39 @@ const Billing = {
       </div>
 
       <div id="paymentStatusArea"></div>
+
+      ${invoice.payment_state === 'not_paid' ? `
+      <div class="detail-section">
+        <button class="btn btn-outline btn-block btn-sm" id="voidInvoiceBtn"
+                style="color:var(--danger-color);border-color:var(--danger-color);">
+          Void Invoice &amp; Return to Edit
+        </button>
+      </div>
+      ` : ''}
     `;
 
     container.innerHTML = html;
     this._bindPaymentMethodEvents(job, data, invoice, phone, container);
+
+    // Void Invoice button
+    const voidBtn = container.querySelector('#voidInvoiceBtn');
+    if (voidBtn) {
+      voidBtn.addEventListener('click', async () => {
+        if (!confirm('Void this invoice? The sales order will return to editable state.')) return;
+        voidBtn.disabled = true;
+        voidBtn.textContent = 'Voiding...';
+        try {
+          await OdooAPI.cancelInvoice(invoice.id);
+          App.showToast('Invoice voided — sales order is editable again', 'success');
+          OdooAPI.postJournalEntry(job.id, `Invoice ${invoice.name} voided`).catch(() => {});
+          await this.renderSalesTab(job, container);
+        } catch (err) {
+          App.showToast('Failed: ' + err.message, 'error');
+          voidBtn.disabled = false;
+          voidBtn.textContent = 'Void Invoice & Return to Edit';
+        }
+      });
+    }
 
     // Email Invoice via Odoo mail server
     const emailInvoiceBtn = container.querySelector('#emailInvoiceBtn');

@@ -787,6 +787,13 @@ const OdooAPI = {
   },
 
   /**
+   * Void an unpaid posted invoice so the SO can be edited and re-invoiced.
+   */
+  async cancelInvoice(invoiceId) {
+    return this.callKw('fsm.order', 'worker_cancel_invoice', [invoiceId], {});
+  },
+
+  /**
    * Get a Stripe payment link for an invoice.
    */
   async getPaymentLink(invoiceId) {
