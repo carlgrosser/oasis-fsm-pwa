@@ -886,6 +886,11 @@ textarea.form-input {
   opacity: 0.7;
 }
 
+.history-alert-banner--billing {
+  background: #e0f2fe;
+  border-left-color: #0284c7;
+}
+
 .jobs-section-divider {
   display: flex;
   align-items: center;

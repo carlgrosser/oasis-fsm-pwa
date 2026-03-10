@@ -301,7 +301,7 @@ const Jobs = {
       const parts = [];
       if (this._overdueCount > 0) parts.push(`${this._overdueCount} job${this._overdueCount !== 1 ? 's' : ''} overdue`);
       if (this._notClosedCount > 0) parts.push(`${this._notClosedCount} not closed`);
-      if (this._uncollectedCount > 0) parts.push(`${this._uncollectedCount} unpaid`);
+      if (this._uncollectedCount > 0) parts.push(`${this._uncollectedCount} billing due`);
 
       const banner = document.createElement('div');
       banner.className = 'history-alert-banner';
@@ -351,13 +351,24 @@ const Jobs = {
    * Render history list with a section divider between overdue/open and completed jobs.
    */
   _renderHistoryList(container) {
-    if (this._jobs.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div style="font-size: 48px; opacity: 0.3;">📋</div>
-          <p>No jobs in history</p>
-        </div>
+    // Billing banner — uninvoiced or unpaid jobs need attention
+    if (this._uncollectedCount > 0) {
+      const banner = document.createElement('div');
+      banner.className = 'history-alert-banner history-alert-banner--billing';
+      banner.innerHTML = `
+        <span class="history-alert-text">&#128178; ${this._uncollectedCount} job${this._uncollectedCount !== 1 ? 's' : ''} need billing (uninvoiced or unpaid).</span>
       `;
+      container.appendChild(banner);
+    }
+
+    if (this._jobs.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML = `
+        <div style="font-size: 48px; opacity: 0.3;">📋</div>
+        <p>No jobs in history</p>
+      `;
+      container.appendChild(empty);
       return;
     }
 
