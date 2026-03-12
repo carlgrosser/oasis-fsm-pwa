@@ -2226,12 +2226,11 @@ const Jobs = {
       }).catch(() => {});
     }
 
-    // Load project Google Drive photos folder
-    const projectId = Array.isArray(job.project_id) ? job.project_id[0] : job.project_id;
-    if (projectId && navigator.onLine) {
-      OdooAPI.getProjectGdriveFolders(projectId).then(proj => {
-        if (!proj || !proj.gdrive_photos_folder_id) return;
-        const folderId = proj.gdrive_photos_folder_id;
+    // Load Google Drive folder link for this order
+    if (navigator.onLine) {
+      OdooAPI.getOrderFolderIds(job.id).then(folders => {
+        if (!folders || !folders.effectiveFolderId) return;
+        const folderId = folders.effectiveFolderId;
         const row = document.getElementById('infoGdriveRow');
         const link = document.getElementById('infoGdriveLink');
         const section = document.getElementById('infoExtrasSection');
