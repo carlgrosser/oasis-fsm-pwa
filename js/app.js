@@ -41,6 +41,11 @@ const App = {
       Themes.init();
     }
 
+    // Init camera mode toggle (per-device setting)
+    if (typeof Photos !== 'undefined') {
+      Photos.initCameraModeToggle();
+    }
+
     // Start helpdesk badge polling
     if (typeof Helpdesk !== 'undefined') {
       Helpdesk.startBadgePolling();

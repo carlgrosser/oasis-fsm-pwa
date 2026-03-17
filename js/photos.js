@@ -11,6 +11,45 @@ const Photos = {
   _fileInput: null,
   _pendingCapture: null,    // { jobId, category, resolve, reject }
   _visibilityListener: null, // safety-net listener reference
+  _CAMERA_MODE_KEY: 'photos_camera_mode',
+
+  // ========== CAMERA MODE SETTING ==========
+
+  /**
+   * @returns {'inapp'|'picker'} — 'inapp' uses getUserMedia overlay; 'picker' uses file input.
+   */
+  getCameraMode() {
+    return localStorage.getItem(this._CAMERA_MODE_KEY) || 'inapp';
+  },
+
+  setCameraMode(mode) {
+    localStorage.setItem(this._CAMERA_MODE_KEY, mode);
+    this._updateCameraModeLabels();
+  },
+
+  _updateCameraModeLabels() {
+    const mode = this.getCameraMode();
+    const label = mode === 'picker'
+      ? '📷 Camera: File Picker'
+      : '📷 Camera: In-App';
+    ['cameraModeBtnList', 'cameraModeBtnDetail'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = label;
+    });
+  },
+
+  /**
+   * Bind the camera mode toggle in both menus. Called once after DOM is ready.
+   */
+  initCameraModeToggle() {
+    this._updateCameraModeLabels();
+    ['cameraModeBtnList', 'cameraModeBtnDetail'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', () => {
+        const next = this.getCameraMode() === 'inapp' ? 'picker' : 'inapp';
+        this.setCameraMode(next);
+      });
+    });
+  },
 
   /**
    * Initialize — create the hidden file input used for camera capture.
@@ -51,7 +90,8 @@ const Photos = {
   capturePhoto(jobId, category) {
     this.init();
 
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    if (this.getCameraMode() !== 'picker' &&
+        navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       return this._captureWithInAppCamera(jobId, category);
     }
     return this._captureWithFilePicker(jobId, category);
