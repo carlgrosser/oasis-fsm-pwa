@@ -425,9 +425,19 @@ const WrapUp = {
 
       if (navigator.onLine) {
         try {
-          await OdooAPI.submitEarlyWrapup(job.id, { ...earlyData, gps, gps_accuracy: gpsAccuracy });
+          const result = await OdooAPI.submitEarlyWrapup(job.id, { ...earlyData, gps, gps_accuracy: gpsAccuracy });
           overlay.remove();
-          this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
+          // Update cached job so re-render shows the correct (Incomplete) stage
+          if (result.new_stage_id) {
+            job.stage_id = [result.new_stage_id, result.new_stage_name];
+          }
+          job.wrapup_submitted = true;
+          // Refresh the job detail in the background (behind the clock-off prompt)
+          const detailContainer = document.getElementById('jobDetail');
+          if (detailContainer && typeof Jobs !== 'undefined') {
+            Jobs.renderJobDetail(job.id, detailContainer);
+          }
+          this._showClockOffPrompt(job, workerCount, result.clocked_out_count || 0, gps, gpsAccuracy);
         } catch (err) {
           App.showToast('Wrap-up failed: ' + err.message, 'error');
           const btn = document.querySelector('#earlyWrapupSubmitBtn');
@@ -443,6 +453,12 @@ const WrapUp = {
           synced: 0,
         });
         overlay.remove();
+        // Optimistically mark as closed so the UI reflects it offline too
+        job.wrapup_submitted = true;
+        const detailContainer = document.getElementById('jobDetail');
+        if (detailContainer && typeof Jobs !== 'undefined') {
+          Jobs.renderJobDetail(job.id, detailContainer);
+        }
         App.showToast('Wrap-up saved — will sync when online.', 'info');
         this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
       }
