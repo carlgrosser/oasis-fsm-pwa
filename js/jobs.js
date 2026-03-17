@@ -620,6 +620,7 @@ const Jobs = {
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
         <button class="detail-tab" data-tab="2">Sales</button>
+        <button class="detail-tab" data-tab="3">Options <span class="options-tab-badge" id="optionsTabBadge" style="display:none;"></span></button>
       </div>
 
       <div class="detail-panels" id="detailPanels">
@@ -631,6 +632,9 @@ const Jobs = {
         </div>
         <div class="detail-panel" data-panel="2">
           ${this._renderSalesPanel(job)}
+        </div>
+        <div class="detail-panel" data-panel="3">
+          <div id="optionsTabContent"></div>
         </div>
       </div>
     `;
@@ -702,6 +706,43 @@ const Jobs = {
       const salesContent = document.getElementById('salesTabContent');
       if (salesContent) {
         Billing.renderSalesTab(job, salesContent);
+      }
+    }
+
+    // Lazy-load Options tab — only when the panel is first scrolled to
+    if (typeof Options !== 'undefined') {
+      let optionsLoaded = false;
+      const optionsContent = document.getElementById('optionsTabContent');
+      if (optionsContent) {
+        const panels = document.getElementById('detailPanels');
+        const loadOptions = () => {
+          if (!optionsLoaded) {
+            optionsLoaded = true;
+            Options.renderSection(job, optionsContent);
+          }
+        };
+
+        // Also load badge count eagerly (lightweight — just fetch proposed_count)
+        OdooAPI.getJobOptions(job.id).then(data => {
+          if (data && data.proposed_count > 0) {
+            Options._updateBadge(data.proposed_count);
+          }
+        }).catch(() => {});
+
+        // Load full options when panel 3 becomes visible
+        if (panels) {
+          const onScroll = () => {
+            const panelWidth = panels.offsetWidth;
+            if (panelWidth > 0) {
+              const idx = Math.round(panels.scrollLeft / panelWidth);
+              if (idx === 3) {
+                loadOptions();
+                panels.removeEventListener('scroll', onScroll);
+              }
+            }
+          };
+          panels.addEventListener('scroll', onScroll);
+        }
       }
     }
 

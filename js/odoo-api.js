@@ -891,6 +891,39 @@ const OdooAPI = {
       [fsmOrderId, lines, reason, signatureBase64, signedByName], {});
   },
 
+  // ========== OPTIONS (sale_optional_buckets) ==========
+
+  /**
+   * Fetch optional items for the sale order linked to an FSM order.
+   * Returns bucketed/sectioned structure for the Options tab.
+   */
+  async getJobOptions(fsmOrderId) {
+    return this.callKw('fsm.order', 'worker_get_options', [fsmOrderId], {});
+  },
+
+  /**
+   * Add a proposed optional item to the current job's sale order.
+   */
+  async addOptionToOrder(fsmOrderId, optionLineId) {
+    return this.callKw('fsm.order', 'worker_add_option_to_order', [fsmOrderId, optionLineId], {});
+  },
+
+  /**
+   * Mark a proposed optional item as declined.
+   */
+  async declineOption(fsmOrderId, optionLineId) {
+    return this.callKw('fsm.order', 'worker_decline_option', [fsmOrderId, optionLineId], {});
+  },
+
+  /**
+   * Create a new FSM order + sale order from selected optional items.
+   * Used when customer accepts additional work on-site that needs a separate job.
+   */
+  async createFsmFromOptions(fsmOrderId, optionLineIds, notes) {
+    return this.callKw('fsm.order', 'worker_create_fsm_from_options',
+      [fsmOrderId, optionLineIds, notes || ''], {});
+  },
+
   // ========== PWA SETTINGS ==========
 
   /**
