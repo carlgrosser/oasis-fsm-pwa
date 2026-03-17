@@ -872,7 +872,18 @@ const Jobs = {
           </span>
         </div>`;
 
+    // Early Wrap-Up button — shown for in-progress stages (not pre-work, not complete/cancelled)
+    const sc = this.getStatusClass(stageName);
+    const showEarlyWrapup = !this._isPreWorkStage(stageName) && sc !== 'complete' && sc !== 'cancelled';
+    const earlyWrapupHtml = showEarlyWrapup ? `
+      <div class="detail-section wrapup-early-section">
+        <button class="btn btn-outline btn-block" id="earlyWrapupBtn">
+          Early Wrap-Up
+        </button>
+      </div>` : '';
+
     return `
+      ${earlyWrapupHtml}
       <div class="detail-section">
         <h3>${this._escapeHtml(locationName)}</h3>
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
@@ -920,17 +931,7 @@ const Jobs = {
           </button>
         </div>
       </div>`;
-      })() : (() => {
-        // Show Early Wrap-Up for in-progress stages (not dispatched, not complete/cancelled)
-        const sc = this.getStatusClass(stageName);
-        if (sc === 'complete' || sc === 'cancelled') return '';
-        return `
-      <div class="detail-section wrapup-early-section">
-        <button class="btn btn-outline btn-block" id="earlyWrapupBtn">
-          Early Wrap-Up
-        </button>
-      </div>`;
-      })()}`;
+      })() : ''}`;
   },
 
   /**
