@@ -36,13 +36,142 @@ const Photos = {
   },
 
   /**
-   * Launch the camera / file picker for a specific job and category.
+   * Launch the camera for a specific job and category.
+   *
+   * Prefers an in-app camera overlay using getUserMedia so no external OS
+   * Activity is launched (avoids the Android memory-kill issue and ensures
+   * a camera option is always available on Samsung devices whose file picker
+   * omits it). Falls back to the file input picker if getUserMedia is
+   * unavailable or permission is denied.
    *
    * @param {number} jobId
    * @param {string} category
    * @returns {Promise<object|null>} - The saved photo record, or null if cancelled.
    */
   capturePhoto(jobId, category) {
+    this.init();
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      return this._captureWithInAppCamera(jobId, category);
+    }
+    return this._captureWithFilePicker(jobId, category);
+  },
+
+  /**
+   * In-app camera overlay using getUserMedia.
+   * Streams the rear camera directly in the browser — no Activity switch,
+   * no memory pressure, no Samsung picker quirks.
+   */
+  _captureWithInAppCamera(jobId, category) {
+    return new Promise((resolve, reject) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'camera-overlay';
+      overlay.innerHTML = `
+        <div class="camera-container">
+          <video class="camera-preview" id="cameraPreview" autoplay playsinline muted></video>
+          <div class="camera-hint" id="cameraHint">Starting camera…</div>
+          <div class="camera-controls">
+            <button class="camera-btn camera-btn-secondary" id="cameraGalleryBtn" title="Choose from gallery">
+              <span class="camera-btn-icon">🖼️</span>
+              <span class="camera-btn-label">Gallery</span>
+            </button>
+            <button class="camera-btn camera-btn-shutter" id="cameraShutterBtn" title="Take photo" disabled>
+              <span class="camera-shutter-ring"></span>
+            </button>
+            <button class="camera-btn camera-btn-secondary" id="cameraCloseBtn" title="Cancel">
+              <span class="camera-btn-icon">✕</span>
+              <span class="camera-btn-label">Cancel</span>
+            </button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      let stream = null;
+
+      const cleanup = () => {
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
+        }
+        overlay.remove();
+      };
+
+      // Start rear camera
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      }).then(s => {
+        stream = s;
+        const video = overlay.querySelector('#cameraPreview');
+        video.srcObject = stream;
+        video.addEventListener('playing', () => {
+          overlay.querySelector('#cameraHint').style.display = 'none';
+          overlay.querySelector('#cameraShutterBtn').disabled = false;
+        });
+      }).catch(() => {
+        // Permission denied or unsupported — fall back to file picker silently
+        cleanup();
+        resolve(this._captureWithFilePicker(jobId, category));
+      });
+
+      // Take photo — draw directly to scaled canvases from the live video frame
+      overlay.querySelector('#cameraShutterBtn').addEventListener('click', async () => {
+        const video = overlay.querySelector('#cameraPreview');
+        if (!video.videoWidth) return; // not ready yet
+
+        try {
+          // Full-size (max 1920px wide)
+          const maxW = 1920;
+          let w = video.videoWidth, h = video.videoHeight;
+          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+          const resized = canvas.toDataURL('image/jpeg', 0.85);
+
+          // Thumbnail (max 300px wide)
+          const thumbW = 300;
+          let tw = w, th = h;
+          if (tw > thumbW) { th = Math.round(th * thumbW / tw); tw = thumbW; }
+          const thumbCanvas = document.createElement('canvas');
+          thumbCanvas.width = tw; thumbCanvas.height = th;
+          thumbCanvas.getContext('2d').drawImage(video, 0, 0, tw, th);
+          const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+          cleanup();
+          const photo = await this.savePhoto(
+            jobId, resized, thumbnail, category, `photo_${Date.now()}.jpg`
+          );
+          resolve(photo);
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      });
+
+      // Gallery fallback — stop camera and use file picker instead
+      overlay.querySelector('#cameraGalleryBtn').addEventListener('click', () => {
+        cleanup();
+        resolve(this._captureWithFilePicker(jobId, category));
+      });
+
+      // Cancel
+      overlay.querySelector('#cameraCloseBtn').addEventListener('click', () => {
+        cleanup();
+        resolve(null);
+      });
+    });
+  },
+
+  /**
+   * File-input picker fallback (original behavior, no `capture` attribute).
+   * On most devices presents the native picker with gallery access.
+   */
+  _captureWithFilePicker(jobId, category) {
     this.init();
 
     return new Promise((resolve, reject) => {
@@ -52,16 +181,13 @@ const Photos = {
 
       // Safety net: Android can return the user to the app without firing
       // the `change` event (cancel, or OS killed+reloaded the page).
-      // When the app regains visibility without a file being selected,
-      // resolve with null so the caller doesn't hang indefinitely.
       let wentHidden = false;
       const onVisibility = () => {
         if (!wentHidden && document.visibilityState === 'hidden') {
-          wentHidden = true; // camera / file picker opened
+          wentHidden = true;
         } else if (wentHidden && document.visibilityState === 'visible') {
           document.removeEventListener('visibilitychange', onVisibility);
           this._visibilityListener = null;
-          // Brief delay — let the `change` event fire first if a photo was taken
           setTimeout(() => {
             if (this._pendingCapture === pending) {
               this._pendingCapture = null;
