@@ -622,6 +622,14 @@ const Photos = {
    * Bind all thumbnail and add-button events on a container.
    */
   _bindThumbnailEvents(container, jobId, categoryKeys, onPhotoAdded, mode) {
+    const rerender = async (jid) => {
+      if (mode === 'filtered') {
+        await this.renderFilteredPhotoSection(jid, container, categoryKeys, onPhotoAdded);
+      } else {
+        await this.renderPhotoSection(jid, container);
+      }
+    };
+
     // Add-photo buttons
     container.querySelectorAll('.photo-add-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -629,16 +637,29 @@ const Photos = {
         const jid = parseInt(btn.dataset.jobId, 10);
         try {
           const photo = await this.capturePhoto(jid, cat);
-          if (photo) {
-            if (mode === 'filtered') {
-              await this.renderFilteredPhotoSection(jid, container, categoryKeys, onPhotoAdded);
-            } else {
-              await this.renderPhotoSection(jid, container);
+          if (!photo) return;
+
+          // Show thumbnail immediately (pending indicator)
+          await rerender(jid);
+          if (onPhotoAdded) onPhotoAdded();
+
+          // Attempt immediate upload in background while online
+          if (navigator.onLine) {
+            App.showToast('Photo saved — uploading…', 'info');
+            try {
+              await this.uploadPhoto(photo);
+              // Re-render to flip pending → synced checkmark
+              await rerender(jid);
+              App.showToast('Photo uploaded', 'success');
+            } catch (err) {
+              console.warn('Immediate photo upload failed, queued for sync:', err);
+              App.showToast('Photo saved — upload failed, will retry on sync', 'error');
             }
-            App.showToast('Photo added', 'success');
-            if (onPhotoAdded) onPhotoAdded();
+          } else {
+            App.showToast('Photo saved — will upload when online', 'info');
           }
         } catch (err) {
+          console.error('Photo capture error:', err);
           App.showToast('Failed to capture photo', 'error');
         }
       });
