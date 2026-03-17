@@ -160,6 +160,16 @@ const App = {
       });
     });
 
+    // Camera mode toggle buttons
+    ['cameraModeBtnList', 'cameraModeBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => {
+        if (typeof Photos !== 'undefined') {
+          const next = Photos.getCameraMode() === 'inapp' ? 'picker' : 'inapp';
+          Photos.setCameraMode(next);
+        }
+      });
+    });
+
     // Time Off buttons
     ['timeOffBtnList', 'timeOffBtnDetail'].forEach(id => {
       bindMenuAction(id, () => {

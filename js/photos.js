@@ -39,16 +39,12 @@ const Photos = {
   },
 
   /**
-   * Bind the camera mode toggle in both menus. Called once after DOM is ready.
+   * Update camera mode button labels. Called once after DOM is ready
+   * and after each toggle. Event binding is handled by app.js/_bindEvents()
+   * via bindMenuAction so iOS touchstart is handled correctly.
    */
   initCameraModeToggle() {
     this._updateCameraModeLabels();
-    ['cameraModeBtnList', 'cameraModeBtnDetail'].forEach(id => {
-      document.getElementById(id)?.addEventListener('click', () => {
-        const next = this.getCameraMode() === 'inapp' ? 'picker' : 'inapp';
-        this.setCameraMode(next);
-      });
-    });
   },
 
   /**
