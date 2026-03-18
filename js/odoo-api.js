@@ -998,6 +998,14 @@ const OdooAPI = {
   },
 
   /**
+   * Fetch discovery asset photos from Google Drive for a job.
+   * Returns [{ file_id, name, view_url, folder_name }] or [].
+   */
+  async getDiscoveryPhotos(orderId) {
+    return this.callKw('fsm.order', 'worker_get_discovery_photos', [orderId], {});
+  },
+
+  /**
    * Fetch all gdrive.photo.link records for an FSM order.
    */
   async getDrivePhotoLinks(orderId) {

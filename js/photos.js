@@ -491,9 +491,10 @@ const Photos = {
    * Merges local IndexedDB photos with Drive-only photos from other devices.
    */
   async renderAllPhotosGallery(jobId, container) {
-    const [allLocal, drivePhotos] = await Promise.all([
+    const [allLocal, drivePhotos, discoveryPhotos] = await Promise.all([
       this.getPhotosForJob(jobId),
       this._loadDrivePhotos(jobId),
+      this._loadDiscoveryPhotos(jobId),
     ]);
 
     // Drive-only: photos from other devices not yet in local IndexedDB
@@ -501,37 +502,59 @@ const Photos = {
     const driveOnly = drivePhotos.filter(p => !localDriveIds.has(p.gdrive_file_id));
 
     const categories = CONFIG.PHOTO_CATEGORIES || [];
+    const lbItems = [];  // built in render order for lightbox navigation
 
-    if (allLocal.length === 0 && driveOnly.length === 0) {
+    if (allLocal.length === 0 && driveOnly.length === 0 && discoveryPhotos.length === 0) {
       container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
       return;
     }
 
     let html = '';
     for (const cat of categories) {
-      const catPhotos = allLocal.filter(p => p.category === cat.key);
+      const catLocal = allLocal.filter(p => p.category === cat.key);
       const catDrive = driveOnly.filter(p => p.category === cat.key);
-      if (catPhotos.length === 0 && catDrive.length === 0) continue;
+      if (catLocal.length === 0 && catDrive.length === 0) continue;
 
-      const totalCount = catPhotos.length + catDrive.length;
+      const localStart = lbItems.length;
+      catLocal.forEach(p => lbItems.push({ src: p.data, caption: cat.label, type: 'local', tempId: p.temp_id, synced: p.synced, jobId }));
+      const driveStart = lbItems.length;
+      catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive' }));
+
       html += `
         <div class="photo-category photo-category-readonly">
           <div class="photo-category-header">
             <span class="photo-category-title">${cat.label}</span>
-            <span class="photo-count complete">${totalCount}</span>
+            <span class="photo-count complete">${catLocal.length + catDrive.length}</span>
           </div>
           <div class="photo-grid">
-            ${this._renderThumbnails(catPhotos)}
-            ${this._renderDriveThumbnails(catDrive)}
+            ${this._renderThumbnails(catLocal, localStart)}
+            ${this._renderDriveThumbnails(catDrive, driveStart)}
+          </div>
+        </div>`;
+    }
+
+    if (discoveryPhotos.length) {
+      const discStart = lbItems.length;
+      discoveryPhotos.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.file_id}&sz=w1600`, caption: `Discovery · ${p.name}`, type: 'discovery' }));
+      html += `
+        <div class="photo-category photo-category-readonly">
+          <div class="photo-category-header">
+            <span class="photo-category-title">Discovery Assets</span>
+            <span class="photo-count complete">${discoveryPhotos.length}</span>
+          </div>
+          <div class="photo-grid">
+            ${this._renderDiscoveryThumbnails(discoveryPhotos, discStart)}
           </div>
         </div>`;
     }
 
     container.innerHTML = html || '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
-    container.querySelectorAll('.photo-thumb-local').forEach(thumb => {
-      thumb.addEventListener('click', () => this._showFullPhoto(thumb.dataset.tempId));
+    container.querySelectorAll('[data-lb-idx]').forEach(thumb => {
+      thumb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showLightbox(lbItems, parseInt(thumb.dataset.lbIdx, 10));
+      });
     });
-    this._bindDriveThumbEvents(container);
   },
 
   /**
@@ -553,6 +576,7 @@ const Photos = {
       { key: 'after', label: 'After Photos', required: 2 },
     ];
 
+    const lbItems = [];
     let html = '';
     let addedDivider = false;
     for (const cat of categories) {
@@ -563,11 +587,16 @@ const Photos = {
         </div>`;
       }
 
-      const catPhotos = allLocal.filter(p => p.category === cat.key);
+      const catLocal = allLocal.filter(p => p.category === cat.key);
       const catDrive = driveOnly.filter(p => p.category === cat.key);
-      const totalCount = catPhotos.length + catDrive.length;
+      const totalCount = catLocal.length + catDrive.length;
       const countLabel = cat.required ? `${totalCount}/${cat.required}` : `${totalCount}`;
       const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
+
+      const localStart = lbItems.length;
+      catLocal.forEach(p => lbItems.push({ src: p.data, caption: cat.label, type: 'local', tempId: p.temp_id, synced: p.synced, jobId }));
+      const driveStart = lbItems.length;
+      catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive' }));
 
       html += `
         <div class="photo-category">
@@ -576,8 +605,8 @@ const Photos = {
             <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
-            ${this._renderThumbnails(catPhotos)}
-            ${this._renderDriveThumbnails(catDrive)}
+            ${this._renderThumbnails(catLocal, localStart)}
+            ${this._renderDriveThumbnails(catDrive, driveStart)}
             <button class="photo-add-btn" data-category="${cat.key}" data-job-id="${jobId}">
               <span class="photo-add-icon">+</span>
               <span class="photo-add-label">Add</span>
@@ -587,20 +616,21 @@ const Photos = {
     }
 
     container.innerHTML = html;
-    this._bindThumbnailEvents(container, jobId, null, null, 'full');
+    this._bindThumbnailEvents(container, jobId, null, null, 'full', lbItems);
   },
 
   /**
-   * Render thumbnail grid HTML for local photos (both synced and pending).
-   * Uses local base64 thumbnails to avoid Drive auth issues.
+   * Render thumbnail grid HTML for local photos.
+   * lbStart: index of first item in the shared lightbox array (null = no lightbox).
    */
-  _renderThumbnails(photos) {
-    return photos.map(p => {
+  _renderThumbnails(photos, lbStart) {
+    return photos.map((p, i) => {
       const icon = p.synced
         ? '<span class="photo-synced-icon" title="Synced to Drive">&#10003;</span>'
         : '<span class="photo-pending-icon" title="Pending upload">&#8635;</span>';
+      const lbAttr = lbStart != null ? `data-lb-idx="${lbStart + i}"` : '';
       return `
-        <div class="photo-thumb photo-thumb-local" data-temp-id="${p.temp_id}">
+        <div class="photo-thumb photo-thumb-local" data-temp-id="${p.temp_id}" ${lbAttr}>
           <img src="${p.thumbnail}" alt="${p.category}" loading="lazy">
           ${icon}
         </div>`;
@@ -609,12 +639,14 @@ const Photos = {
 
   /**
    * Render Drive thumbnail grid HTML for synced photos.
+   * lbStart: index of first item in the shared lightbox array.
    */
-  _renderDriveThumbnails(drivePhotos) {
-    return drivePhotos.map(p => {
+  _renderDriveThumbnails(drivePhotos, lbStart) {
+    return drivePhotos.map((p, i) => {
       const thumbUrl = `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w400`;
+      const lbAttr = lbStart != null ? `data-lb-idx="${lbStart + i}"` : '';
       return `
-        <div class="photo-thumb photo-thumb-drive" data-drive-url="${p.gdrive_url}" data-file-id="${p.gdrive_file_id}" title="${p.filename}">
+        <div class="photo-thumb photo-thumb-drive" data-file-id="${p.gdrive_file_id}" title="${p.filename}" ${lbAttr}>
           <img src="${thumbUrl}" alt="${p.category}" loading="lazy">
           <span class="photo-synced-icon" title="Synced to Drive">&#10003;</span>
         </div>
@@ -623,9 +655,136 @@ const Photos = {
   },
 
   /**
-   * Bind all thumbnail and add-button events on a container.
+   * Render discovery asset thumbnail HTML.
    */
-  _bindThumbnailEvents(container, jobId, categoryKeys, onPhotoAdded, mode) {
+  _renderDiscoveryThumbnails(items, lbStart) {
+    return items.map((p, i) => {
+      const thumbUrl = `https://drive.google.com/thumbnail?id=${p.file_id}&sz=w400`;
+      return `
+        <div class="photo-thumb photo-thumb-drive photo-thumb-discovery" data-file-id="${p.file_id}" title="${p.name}" data-lb-idx="${lbStart + i}">
+          <img src="${thumbUrl}" alt="${p.name}" loading="lazy">
+          <span class="photo-discovery-badge" title="Discovery Asset">&#9733;</span>
+        </div>`;
+    }).join('');
+  },
+
+  /**
+   * Fetch discovery asset photos for a job from the server.
+   * Returns [] if the gdrive_integration module isn't active or no folder found.
+   */
+  async _loadDiscoveryPhotos(jobId) {
+    if (!navigator.onLine) return [];
+    try {
+      return await OdooAPI.getDiscoveryPhotos(jobId) || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  /**
+   * Show a full-screen in-app lightbox for a list of photos.
+   * items: [{ src, caption, type, tempId? }]
+   *   src      — full-res URL or base64
+   *   caption  — display text below image
+   *   type     — 'local' | 'drive' | 'discovery'
+   *   tempId   — set for local photos that can be deleted
+   */
+  _showLightbox(items, startIndex) {
+    if (!items || !items.length) return;
+    let current = Math.max(0, Math.min(startIndex, items.length - 1));
+
+    const existing = document.getElementById('photoLightbox');
+    if (existing) existing.remove();
+
+    const multi = items.length > 1;
+    const lb = document.createElement('div');
+    lb.id = 'photoLightbox';
+    lb.className = 'photo-lightbox';
+    lb.innerHTML = `
+      <div class="photo-lightbox-top">
+        <span class="photo-lightbox-counter"></span>
+        <button class="photo-lightbox-close">&times;</button>
+      </div>
+      <div class="photo-lightbox-stage">
+        <button class="photo-lightbox-nav photo-lightbox-prev" ${multi ? '' : 'style="visibility:hidden"'}>&#8249;</button>
+        <div class="photo-lightbox-img-wrap">
+          <img class="photo-lightbox-img" src="" alt="">
+          <div class="photo-lightbox-spinner">Loading…</div>
+        </div>
+        <button class="photo-lightbox-nav photo-lightbox-next" ${multi ? '' : 'style="visibility:hidden"'}>&#8250;</button>
+      </div>
+      <div class="photo-lightbox-footer">
+        <span class="photo-lightbox-caption"></span>
+        <button class="photo-lightbox-delete btn btn-danger btn-sm" style="display:none;">Delete</button>
+      </div>`;
+    document.body.appendChild(lb);
+
+    const img      = lb.querySelector('.photo-lightbox-img');
+    const spinner  = lb.querySelector('.photo-lightbox-spinner');
+    const caption  = lb.querySelector('.photo-lightbox-caption');
+    const counter  = lb.querySelector('.photo-lightbox-counter');
+    const delBtn   = lb.querySelector('.photo-lightbox-delete');
+
+    const show = (idx) => {
+      current = ((idx % items.length) + items.length) % items.length;
+      const item = items[current];
+      img.style.opacity = '0';
+      spinner.style.display = 'block';
+      img.onload  = () => { spinner.style.display = 'none'; img.style.opacity = '1'; };
+      img.onerror = () => { spinner.textContent = 'Image unavailable — may require Google sign-in'; };
+      img.src = item.src;
+      caption.textContent = item.caption || '';
+      counter.textContent = multi ? `${current + 1} / ${items.length}` : '';
+      delBtn.style.display = (item.type === 'local' && item.tempId && !item.synced) ? '' : 'none';
+      delBtn.dataset.tempId = item.tempId || '';
+      delBtn.dataset.jobId  = item.jobId  || '';
+    };
+
+    const close = () => {
+      lb.remove();
+      document.removeEventListener('keydown', onKey);
+    };
+
+    lb.querySelector('.photo-lightbox-close').addEventListener('click', close);
+    lb.addEventListener('click', (e) => { if (e.target === lb || e.target.classList.contains('photo-lightbox-stage')) close(); });
+    lb.querySelector('.photo-lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); show(current - 1); });
+    lb.querySelector('.photo-lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); show(current + 1); });
+
+    delBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Delete this photo?')) return;
+      const tid = delBtn.dataset.tempId;
+      const jid = parseInt(delBtn.dataset.jobId, 10);
+      await this.deletePhoto(tid);
+      close();
+      const section = document.getElementById('photoSection');
+      if (section && jid) await this.renderPhotoSection(jid, section);
+      App.showToast('Photo deleted', 'success');
+    });
+
+    const onKey = (e) => {
+      if (e.key === 'Escape')     close();
+      if (e.key === 'ArrowRight') show(current + 1);
+      if (e.key === 'ArrowLeft')  show(current - 1);
+    };
+    document.addEventListener('keydown', onKey);
+
+    // Swipe
+    let touchX = 0;
+    lb.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+    lb.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - touchX;
+      if (Math.abs(dx) > 50) show(dx < 0 ? current + 1 : current - 1);
+    });
+
+    show(current);
+  },
+
+  /**
+   * Bind all thumbnail and add-button events on a container.
+   * lbItems: flat ordered lightbox array built during render (may be empty).
+   */
+  _bindThumbnailEvents(container, jobId, categoryKeys, onPhotoAdded, mode, lbItems) {
     const rerender = async (jid) => {
       if (mode === 'filtered') {
         await this.renderFilteredPhotoSection(jid, container, categoryKeys, onPhotoAdded);
@@ -643,16 +802,13 @@ const Photos = {
           const photo = await this.capturePhoto(jid, cat);
           if (!photo) return;
 
-          // Show thumbnail immediately (pending indicator)
           await rerender(jid);
           if (onPhotoAdded) onPhotoAdded();
 
-          // Attempt immediate upload in background while online
           if (navigator.onLine) {
             App.showToast('Photo saved — uploading…', 'info');
             try {
               await this.uploadPhoto(photo);
-              // Re-render to flip pending → synced checkmark
               await rerender(jid);
               App.showToast('Photo uploaded', 'success');
             } catch (err) {
@@ -669,65 +825,17 @@ const Photos = {
       });
     });
 
-    // Drive thumbnails — open in new tab
-    this._bindDriveThumbEvents(container);
-
-    // Local pending thumbnails — show overlay
-    container.querySelectorAll('.photo-thumb-local').forEach(thumb => {
-      thumb.addEventListener('click', () => this._showFullPhoto(thumb.dataset.tempId));
-    });
-  },
-
-  /**
-   * Bind Drive thumbnail click events — opens Drive URL in new tab.
-   */
-  _bindDriveThumbEvents(container) {
-    container.querySelectorAll('.photo-thumb-drive').forEach(thumb => {
-      thumb.addEventListener('click', () => {
-        const url = thumb.dataset.driveUrl;
-        if (url) window.open(url, '_blank');
+    // All thumbnails with data-lb-idx → lightbox
+    if (lbItems && lbItems.length) {
+      container.querySelectorAll('[data-lb-idx]').forEach(thumb => {
+        thumb.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._showLightbox(lbItems, parseInt(thumb.dataset.lbIdx, 10));
+        });
       });
-    });
+    }
   },
 
-  /**
-   * Show a full-size local photo in an overlay with delete option.
-   */
-  async _showFullPhoto(tempId) {
-    const photo = await DB.get('photos', tempId);
-    if (!photo) return;
-
-    const overlay = document.createElement('div');
-    overlay.className = 'photo-overlay';
-    overlay.innerHTML = `
-      <div class="photo-overlay-header">
-        <span>${photo.category} - ${new Date(photo.timestamp).toLocaleString()}</span>
-        <button class="photo-overlay-close">&times;</button>
-      </div>
-      <div class="photo-overlay-body">
-        <img src="${photo.data}" alt="${photo.category}">
-      </div>
-      <div class="photo-overlay-actions">
-        <button class="btn btn-danger btn-sm" id="photoDeleteBtn">Delete Photo</button>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    const close = () => overlay.remove();
-    overlay.querySelector('.photo-overlay-close').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-
-    overlay.querySelector('#photoDeleteBtn').addEventListener('click', async () => {
-      if (confirm('Delete this photo?')) {
-        await this.deletePhoto(tempId);
-        close();
-        const section = document.getElementById('photoSection');
-        if (section) await this.renderPhotoSection(photo.job_id, section);
-        App.showToast('Photo deleted', 'success');
-      }
-    });
-  },
 
   // ------------------------------------------------------------------
   // Image processing helpers
