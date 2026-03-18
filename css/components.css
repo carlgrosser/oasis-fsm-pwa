@@ -1219,14 +1219,14 @@ textarea.form-input {
   display: none;
 }
 
-/* ── List view ── */
-.docs-file-grid.list-view {
+/* ── List view — triggered by parent #documentsBody.list-view ── */
+.list-view .docs-file-grid {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-.docs-file-grid.list-view .docs-file-item {
+.list-view .docs-file-grid .docs-file-item {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -1237,18 +1237,18 @@ textarea.form-input {
   overflow: visible;
 }
 
-.docs-file-grid.list-view .docs-file-item:last-child {
+.list-view .docs-file-grid .docs-file-item:last-child {
   border-bottom: none;
 }
 
-.docs-file-grid.list-view .docs-file-item-thumb {
+.list-view .docs-file-grid .docs-file-item-thumb {
   width: 52px;
   height: 52px;
   aspect-ratio: 1;
   flex-shrink: 0;
 }
 
-.docs-file-grid.list-view .docs-file-item-info {
+.list-view .docs-file-grid .docs-file-item-info {
   display: flex;
   flex-direction: column;
   gap: 2px;

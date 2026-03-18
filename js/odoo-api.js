@@ -1006,6 +1006,14 @@ const OdooAPI = {
   },
 
   /**
+   * Fetch all files from the Drive Project Photos folder for a job.
+   * Returns [{ file_id, name, mime_type, view_url, modified_time }] or [].
+   */
+  async getProjectPhotos(orderId) {
+    return this.callKw('fsm.order', 'worker_get_project_photos', [orderId], {});
+  },
+
+  /**
    * Fetch documents from the Drive Documents folder for a job.
    * Returns [{ file_id, name, mime_type, view_url, modified_time }] or [].
    */
