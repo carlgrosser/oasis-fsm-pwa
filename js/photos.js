@@ -351,14 +351,15 @@ const Photos = {
 
     // Attempt Drive upload (with one retry)
     let driveResult = null;
+    let driveError = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         driveResult = await OdooAPI.uploadPhotoDrive(photo.job_id, photo.category, blob, 'photo.jpg');
         break;
       } catch (err) {
-        if (attempt === 2) {
-          console.warn('Drive upload failed after retry, falling back to attachment:', err);
-        }
+        driveError = err;
+        if (attempt < 2) continue;
+        console.warn('Drive upload failed after retry:', err);
       }
     }
 
@@ -367,18 +368,26 @@ const Photos = {
       photo.gdrive_file_id = driveResult.gdrive_file_id || null;
       photo.gdrive_url = driveResult.gdrive_url || null;
       await DB.put('photos', photo);
-      OdooAPI.postSystemNote(photo.job_id, `Photo uploaded: ${photo.category}`).catch(() => {});
+      OdooAPI.postSystemNote(photo.job_id, `Photo uploaded to Drive: ${photo.category}`).catch(() => {});
       return driveResult.gdrive_file_id;
     }
 
-    // Fallback: store as ir.attachment with a flag for later migration
+    // Drive failed — fall back to ir.attachment so the photo isn't lost,
+    // but log the Drive error clearly so it can be diagnosed and fixed.
+    const driveErrMsg = (driveError && driveError.message) || 'Unknown Drive error';
+    console.error('Drive upload failed, using attachment fallback. Error:', driveErrMsg);
+
     const rawBase64 = photo.data.includes(',') ? photo.data.split(',')[1] : photo.data;
     const attachmentId = await OdooAPI.uploadPhoto(photo.job_id, rawBase64, photo.filename, photo.category);
     photo.synced = 1;
     photo.attachment_id = attachmentId;
     photo.drive_fallback = true;
     await DB.put('photos', photo);
-    OdooAPI.postSystemNote(photo.job_id, `Photo uploaded: ${photo.category}`).catch(() => {});
+    // System note explicitly flags that Drive failed so office staff know
+    OdooAPI.postSystemNote(
+      photo.job_id,
+      `⚠ Photo saved to Odoo (Drive upload failed): ${photo.category}. Error: ${driveErrMsg}`
+    ).catch(() => {});
     return attachmentId;
   },
 
