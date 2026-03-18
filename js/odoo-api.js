@@ -258,17 +258,11 @@ const OdooAPI = {
   },
 
   /**
-   * Upload a photo attachment.
+   * Upload a photo attachment using the FSM naming convention (FSM####_category_n.jpg).
+   * The sequential number is calculated server-side to stay consistent with Drive uploads.
    */
   async uploadPhoto(orderId, base64Data, filename, category) {
-    return this.create('ir.attachment', {
-      name: filename,
-      datas: base64Data,
-      res_model: 'fsm.order',
-      res_id: orderId,
-      description: category,
-      mimetype: 'image/jpeg',
-    });
+    return this.callKw('fsm.order', 'worker_upload_photo_attachment', [orderId, base64Data, category], {});
   },
 
   /**
