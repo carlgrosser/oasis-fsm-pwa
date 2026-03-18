@@ -50,6 +50,7 @@ const Documents = {
             <div class="docs-section-header">
               <span class="docs-section-title">Documents</span>
               <span class="docs-section-count" id="docsDocsCount"></span>
+              <button class="docs-view-toggle" id="docsViewToggle" title="Toggle view">&#9776;</button>
             </div>
             <div class="docs-section-body" id="docsDocsBody">
               <div class="loading"><div class="spinner"></div></div>
@@ -203,19 +204,52 @@ const Documents = {
         type: 'drive',
       }));
 
+      const fmtDate = (dt) => {
+        if (!dt) return '';
+        const d = new Date(dt);
+        return isNaN(d) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      };
+      const typeLabel = (mime) => {
+        if (!mime) return 'File';
+        if (mime.includes('pdf'))                                              return 'PDF';
+        if (mime.includes('spreadsheet') || mime.includes('excel'))           return 'Spreadsheet';
+        if (mime.includes('presentation') || mime.includes('powerpoint'))     return 'Presentation';
+        if (mime.includes('document') || mime.includes('word'))               return 'Document';
+        if (mime.includes('image'))                                            return 'Image';
+        if (mime.includes('video'))                                            return 'Video';
+        if (mime.includes('audio'))                                            return 'Audio';
+        return 'File';
+      };
+      const meta = (f) => {
+        const parts = [typeLabel(f.mime_type)];
+        if (f.modified_time) parts.push(fmtDate(f.modified_time));
+        return parts.join(' · ');
+      };
+
       body.innerHTML = `
-        <div class="docs-file-grid">
+        <div class="docs-file-grid" id="docsFileGrid">
           ${images.map((f, i) => `
-            <div class="docs-file-thumb" data-lb-idx="${i}" title="${this._esc(f.name)}">
-              <img src="https://drive.google.com/thumbnail?id=${f.file_id}&sz=w400"
-                   alt="${this._esc(f.name)}" loading="lazy"
-                   onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-              <div class="docs-file-thumb-fallback" style="display:none">${this._icon(f.mime_type)}</div>
+            <div class="docs-file-item" data-lb-idx="${i}">
+              <div class="docs-file-item-thumb">
+                <img src="https://drive.google.com/thumbnail?id=${f.file_id}&sz=w400"
+                     alt="${this._esc(f.name)}" loading="lazy"
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="docs-file-item-fallback" style="display:none">${this._icon(f.mime_type)}</div>
+              </div>
+              <div class="docs-file-item-info">
+                <span class="docs-file-item-name">${this._esc(f.name)}</span>
+                <span class="docs-file-item-meta">${this._esc(meta(f))}</span>
+              </div>
             </div>`).join('')}
           ${others.map(f => `
-            <a class="docs-file-tile" href="${f.view_url}" target="_blank" rel="noopener" title="${this._esc(f.name)}">
-              <span class="docs-file-tile-icon">${this._icon(f.mime_type)}</span>
-              <span class="docs-file-tile-name">${this._esc(f.name)}</span>
+            <a class="docs-file-item" href="${f.view_url}" target="_blank" rel="noopener">
+              <div class="docs-file-item-thumb docs-file-item-icon-thumb">
+                <span>${this._icon(f.mime_type)}</span>
+              </div>
+              <div class="docs-file-item-info">
+                <span class="docs-file-item-name">${this._esc(f.name)}</span>
+                <span class="docs-file-item-meta">${this._esc(meta(f))}</span>
+              </div>
             </a>`).join('')}
         </div>`;
 
@@ -225,6 +259,15 @@ const Documents = {
             e.stopPropagation();
             Photos._showLightbox(lbItems, parseInt(el.dataset.lbIdx, 10));
           });
+        });
+      }
+
+      const grid = body.querySelector('#docsFileGrid');
+      const toggleBtn = modal.querySelector('#docsViewToggle');
+      if (toggleBtn && grid) {
+        toggleBtn.addEventListener('click', () => {
+          grid.classList.toggle('list-view');
+          toggleBtn.innerHTML = grid.classList.contains('list-view') ? '&#8984;' : '&#9776;';
         });
       }
 
