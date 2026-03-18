@@ -193,12 +193,40 @@ const Documents = {
       }
 
       count.textContent = files.length;
-      body.innerHTML = files.map(f => `
-        <a class="document-item" href="${f.view_url}" target="_blank" rel="noopener">
-          <span class="document-item-icon">${this._icon(f.mime_type)}</span>
-          <span class="document-item-name">${this._esc(f.name)}</span>
-          <span class="document-item-arrow">›</span>
-        </a>`).join('');
+
+      const images = files.filter(f => f.mime_type && f.mime_type.startsWith('image/'));
+      const others = files.filter(f => !f.mime_type || !f.mime_type.startsWith('image/'));
+
+      const lbItems = images.map(f => ({
+        src: `https://drive.google.com/thumbnail?id=${f.file_id}&sz=w1600`,
+        caption: f.name,
+        type: 'drive',
+      }));
+
+      body.innerHTML = `
+        <div class="docs-file-grid">
+          ${images.map((f, i) => `
+            <div class="docs-file-thumb" data-lb-idx="${i}" title="${this._esc(f.name)}">
+              <img src="https://drive.google.com/thumbnail?id=${f.file_id}&sz=w400"
+                   alt="${this._esc(f.name)}" loading="lazy"
+                   onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+              <div class="docs-file-thumb-fallback" style="display:none">${this._icon(f.mime_type)}</div>
+            </div>`).join('')}
+          ${others.map(f => `
+            <a class="docs-file-tile" href="${f.view_url}" target="_blank" rel="noopener" title="${this._esc(f.name)}">
+              <span class="docs-file-tile-icon">${this._icon(f.mime_type)}</span>
+              <span class="docs-file-tile-name">${this._esc(f.name)}</span>
+            </a>`).join('')}
+        </div>`;
+
+      if (images.length) {
+        body.querySelectorAll('[data-lb-idx]').forEach(el => {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            Photos._showLightbox(lbItems, parseInt(el.dataset.lbIdx, 10));
+          });
+        });
+      }
 
     } catch (err) {
       body.innerHTML = `<p class="docs-empty">Could not load documents: ${this._esc(err.message || '')}</p>`;
