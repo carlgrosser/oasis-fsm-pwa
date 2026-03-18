@@ -129,23 +129,18 @@ const Journal = {
         return;
       }
 
-      // Build entries as DOM nodes so HTML bodies (thumbnails) render correctly
-      entriesEl.innerHTML = '';
-      notes.forEach(entry => {
+      entriesEl.innerHTML = notes.map(entry => {
         const date = this._formatDate(entry.create_date);
-        const el = document.createElement('div');
-        el.className = 'journal-entry system-entry';
-        el.innerHTML = `
-          <div class="journal-entry-header">
-            <span class="journal-entry-author system-entry-label">System</span>
-            <span class="journal-entry-date">${this._escapeHtml(date)}</span>
-          </div>
-          <div class="journal-entry-body system-entry-body"></div>`;
-        // Set body HTML directly — Odoo sanitizes chatter bodies server-side,
-        // and our own system notes only contain Drive thumbnail <img> tags + text.
-        el.querySelector('.system-entry-body').innerHTML = entry.body || '';
-        entriesEl.appendChild(el);
-      });
+        const body = this._stripHtml(entry.body || '');
+        return `
+          <div class="journal-entry system-entry">
+            <div class="journal-entry-header">
+              <span class="journal-entry-author system-entry-label">System</span>
+              <span class="journal-entry-date">${date}</span>
+            </div>
+            <div class="journal-entry-body">${this._escapeHtml(body)}</div>
+          </div>`;
+      }).join('');
     } catch (err) {
       console.error('Failed to load system notes:', err);
       entriesEl.innerHTML = `<p class="journal-empty">Could not load system log: ${this._escapeHtml(err.message || '')}</p>`;
