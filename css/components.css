@@ -1121,6 +1121,57 @@ textarea.form-input {
   padding: 0;
 }
 
+.docs-section {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.docs-section:last-child {
+  border-bottom: none;
+}
+
+.docs-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--background-secondary);
+}
+
+.docs-section-title {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+}
+
+.docs-section-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: var(--border-color);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+.docs-section-body {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.docs-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.docs-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-small);
+  padding: var(--spacing-sm) 0;
+  margin: 0;
+}
+
 .documents-list {
   padding: var(--spacing-sm) 0;
 }
