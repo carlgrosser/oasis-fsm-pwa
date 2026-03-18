@@ -1431,11 +1431,17 @@ textarea.form-input {
 
 .photo-lightbox-footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   padding: var(--spacing-sm) var(--spacing-md);
   padding-bottom: calc(var(--safe-bottom) + var(--spacing-sm));
   flex-shrink: 0;
+  gap: 6px;
+}
+
+.photo-lightbox-caption-row {
+  display: flex;
+  align-items: center;
   gap: var(--spacing-sm);
 }
 
@@ -1444,6 +1450,54 @@ textarea.form-input {
   font-size: var(--font-size-small);
   flex: 1;
   text-transform: capitalize;
+}
+
+.photo-lightbox-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.photo-lightbox-note {
+  flex: 1;
+  font-size: var(--font-size-small);
+  color: rgba(255,255,255,0.65);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.photo-lightbox-note-edit {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+  color: rgba(255,255,255,0.5);
+}
+
+.photo-lightbox-note-edit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.photo-lightbox-note-input {
+  width: 100%;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 4px;
+  color: #fff;
+  font-size: var(--font-size-small);
+  padding: 6px 8px;
+  resize: none;
+}
+
+.photo-lightbox-note-input::placeholder { color: rgba(255,255,255,0.4); }
+
+.photo-lightbox-note-actions {
+  display: flex;
+  gap: 6px;
 }
 
 /* Discovery thumbnail badge */

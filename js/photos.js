@@ -518,7 +518,7 @@ const Photos = {
       const localStart = lbItems.length;
       catLocal.forEach(p => lbItems.push({ src: p.data, caption: cat.label, type: 'local', tempId: p.temp_id, synced: p.synced, jobId }));
       const driveStart = lbItems.length;
-      catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive' }));
+      catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive', note: p.note || '', gdriveFileId: p.gdrive_file_id, orderId: jobId }));
 
       html += `
         <div class="photo-category photo-category-readonly">
@@ -596,7 +596,7 @@ const Photos = {
       const localStart = lbItems.length;
       catLocal.forEach(p => lbItems.push({ src: p.data, caption: cat.label, type: 'local', tempId: p.temp_id, synced: p.synced, jobId }));
       const driveStart = lbItems.length;
-      catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive' }));
+      catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive', note: p.note || '', gdriveFileId: p.gdrive_file_id, orderId: jobId }));
 
       html += `
         <div class="photo-category">
@@ -714,16 +714,40 @@ const Photos = {
         <button class="photo-lightbox-nav photo-lightbox-next" ${multi ? '' : 'style="visibility:hidden"'}>&#8250;</button>
       </div>
       <div class="photo-lightbox-footer">
-        <span class="photo-lightbox-caption"></span>
+        <div class="photo-lightbox-caption-row">
+          <span class="photo-lightbox-caption"></span>
+        </div>
+        <div class="photo-lightbox-note-row">
+          <span class="photo-lightbox-note"></span>
+          <button class="photo-lightbox-note-edit" title="Edit note" style="display:none;">✏️</button>
+        </div>
+        <div class="photo-lightbox-note-edit-row" style="display:none;">
+          <textarea class="photo-lightbox-note-input" rows="2" placeholder="Add a note..."></textarea>
+          <div class="photo-lightbox-note-actions">
+            <button class="photo-lightbox-note-save btn btn-primary btn-sm">Save</button>
+            <button class="photo-lightbox-note-cancel btn btn-secondary btn-sm">Cancel</button>
+          </div>
+        </div>
         <button class="photo-lightbox-delete btn btn-danger btn-sm" style="display:none;">Delete</button>
       </div>`;
     document.body.appendChild(lb);
 
-    const img      = lb.querySelector('.photo-lightbox-img');
-    const spinner  = lb.querySelector('.photo-lightbox-spinner');
-    const caption  = lb.querySelector('.photo-lightbox-caption');
-    const counter  = lb.querySelector('.photo-lightbox-counter');
-    const delBtn   = lb.querySelector('.photo-lightbox-delete');
+    const img        = lb.querySelector('.photo-lightbox-img');
+    const spinner    = lb.querySelector('.photo-lightbox-spinner');
+    const caption    = lb.querySelector('.photo-lightbox-caption');
+    const counter    = lb.querySelector('.photo-lightbox-counter');
+    const delBtn     = lb.querySelector('.photo-lightbox-delete');
+    const noteEl     = lb.querySelector('.photo-lightbox-note');
+    const noteEditBtn = lb.querySelector('.photo-lightbox-note-edit');
+    const noteEditRow = lb.querySelector('.photo-lightbox-note-edit-row');
+    const noteInput  = lb.querySelector('.photo-lightbox-note-input');
+    const noteSaveBtn = lb.querySelector('.photo-lightbox-note-save');
+    const noteCancelBtn = lb.querySelector('.photo-lightbox-note-cancel');
+
+    const closeNoteEdit = () => {
+      noteEditRow.style.display = 'none';
+      lb.querySelector('.photo-lightbox-note-row').style.display = '';
+    };
 
     const show = (idx) => {
       current = ((idx % items.length) + items.length) % items.length;
@@ -738,6 +762,22 @@ const Photos = {
       delBtn.style.display = (item.type === 'local' && item.tempId && !item.synced) ? '' : 'none';
       delBtn.dataset.tempId = item.tempId || '';
       delBtn.dataset.jobId  = item.jobId  || '';
+      // Note display (drive photos only)
+      const canNote = item.type === 'drive' && item.gdriveFileId;
+      noteEl.textContent = item.note || (canNote ? '' : '');
+      noteEl.style.display = (item.note || canNote) ? '' : 'none';
+      if (!item.note && canNote) {
+        noteEl.textContent = '';
+        noteEl.style.fontStyle = 'italic';
+        noteEl.style.opacity = '0.45';
+        noteEl.textContent = 'Add a note…';
+      } else if (item.note) {
+        noteEl.style.fontStyle = '';
+        noteEl.style.opacity = '';
+        noteEl.textContent = item.note;
+      }
+      noteEditBtn.style.display = canNote ? '' : 'none';
+      closeNoteEdit();
     };
 
     const close = () => {
@@ -760,6 +800,40 @@ const Photos = {
       const section = document.getElementById('photoSection');
       if (section && jid) await this.renderPhotoSection(jid, section);
       App.showToast('Photo deleted', 'success');
+    });
+
+    noteEditBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      noteInput.value = items[current].note || '';
+      lb.querySelector('.photo-lightbox-note-row').style.display = 'none';
+      noteEditRow.style.display = '';
+      noteInput.focus();
+    });
+
+    noteCancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeNoteEdit();
+    });
+
+    noteSaveBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const item = items[current];
+      if (!item.gdriveFileId || !item.orderId) return;
+      noteSaveBtn.disabled = true;
+      noteSaveBtn.textContent = 'Saving…';
+      try {
+        const note = noteInput.value.trim();
+        await OdooAPI.updatePhotoNote(item.orderId, item.gdriveFileId, note);
+        items[current] = { ...item, note };
+        App.showToast('Note saved', 'success');
+        closeNoteEdit();
+        show(current);
+      } catch (err) {
+        App.showToast('Failed to save note: ' + (err.message || ''), 'error');
+      } finally {
+        noteSaveBtn.disabled = false;
+        noteSaveBtn.textContent = 'Save';
+      }
     });
 
     const onKey = (e) => {

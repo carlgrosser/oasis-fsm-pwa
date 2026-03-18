@@ -1020,9 +1020,17 @@ const OdooAPI = {
     return this.searchRead(
       'gdrive.photo.link',
       [['order_id', '=', orderId]],
-      ['id', 'order_id', 'category', 'filename', 'gdrive_file_id', 'gdrive_url', 'uploaded_at', 'deletion_requested'],
+      ['id', 'order_id', 'category', 'filename', 'gdrive_file_id', 'gdrive_url', 'uploaded_at', 'deletion_requested', 'note'],
       { order: 'uploaded_at asc', limit: 200 }
     );
+  },
+
+  /**
+   * Update the note on a gdrive.photo.link record.
+   */
+  async updatePhotoNote(orderId, gdriveFileId, note) {
+    return this.callKw('fsm.order', 'worker_update_photo_note',
+      [orderId, gdriveFileId, note], {});
   },
 
   /**
