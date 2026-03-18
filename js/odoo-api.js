@@ -1006,6 +1006,14 @@ const OdooAPI = {
   },
 
   /**
+   * Fetch documents from the Drive Documents folder for a job.
+   * Returns [{ file_id, name, mime_type, view_url, modified_time }] or [].
+   */
+  async getJobDocuments(orderId) {
+    return this.callKw('fsm.order', 'worker_get_documents', [orderId], {});
+  },
+
+  /**
    * Fetch all gdrive.photo.link records for an FSM order.
    */
   async getDrivePhotoLinks(orderId) {

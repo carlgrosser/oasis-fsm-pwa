@@ -220,6 +220,15 @@ const App = {
       });
     }
 
+    const footerDocsBtn = document.getElementById('footerDocsBtn');
+    if (footerDocsBtn) {
+      footerDocsBtn.addEventListener('click', () => {
+        if (Jobs._currentJob && typeof Documents !== 'undefined') {
+          Documents.showPanel(Jobs._currentJob);
+        }
+      });
+    }
+
     const footerJournalBtn = document.getElementById('footerJournalBtn');
     if (footerJournalBtn) {
       footerJournalBtn.addEventListener('click', () => {

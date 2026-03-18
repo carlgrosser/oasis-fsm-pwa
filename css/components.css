@@ -1108,6 +1108,65 @@ textarea.form-input {
   color: var(--text-muted);
 }
 
+/* ========== DOCUMENTS PANEL ========== */
+.modal-documents {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-documents .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.documents-list {
+  padding: var(--spacing-sm) 0;
+}
+
+.documents-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--font-size-small);
+  padding: var(--spacing-lg) var(--spacing-md);
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  text-decoration: none;
+  color: var(--text-primary);
+  min-height: 48px;
+}
+
+.document-item:active {
+  background: var(--background-secondary);
+}
+
+.document-item-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.document-item-name {
+  flex: 1;
+  font-size: var(--font-size-small);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.document-item-arrow {
+  color: var(--text-secondary);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
 /* ========== PHOTO LIGHTBOX (Full-size viewer with navigation) ========== */
 .photo-lightbox {
   position: fixed;
