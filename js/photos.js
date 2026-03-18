@@ -368,12 +368,11 @@ const Photos = {
       photo.gdrive_file_id = driveResult.gdrive_file_id || null;
       photo.gdrive_url = driveResult.gdrive_url || null;
       await DB.put('photos', photo);
-      OdooAPI.postSystemNote(photo.job_id, `Photo uploaded to Drive: ${photo.category}`).catch(() => {});
+      // Chatter thumbnail posted server-side by upload_photo.py
       return driveResult.gdrive_file_id;
     }
 
-    // Drive failed — fall back to ir.attachment so the photo isn't lost,
-    // but log the Drive error clearly so it can be diagnosed and fixed.
+    // Drive failed — fall back to ir.attachment so the photo isn't lost.
     const driveErrMsg = (driveError && driveError.message) || 'Unknown Drive error';
     console.error('Drive upload failed, using attachment fallback. Error:', driveErrMsg);
 
@@ -383,11 +382,7 @@ const Photos = {
     photo.attachment_id = attachmentId;
     photo.drive_fallback = true;
     await DB.put('photos', photo);
-    // System note explicitly flags that Drive failed so office staff know
-    OdooAPI.postSystemNote(
-      photo.job_id,
-      `⚠ Photo saved to Odoo (Drive upload failed): ${photo.category}. Error: ${driveErrMsg}`
-    ).catch(() => {});
+    // Chatter note with inline image posted server-side by worker_upload_photo_attachment
     return attachmentId;
   },
 
