@@ -1348,7 +1348,7 @@ textarea.form-input {
   display: flex;
   flex-direction: column;
   animation: fadeIn 0.15s ease;
-  touch-action: pan-y;
+  touch-action: none;
 }
 
 .photo-lightbox-top {

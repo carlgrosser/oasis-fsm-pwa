@@ -769,8 +769,8 @@ const OdooAPI = {
   /**
    * Search products for adding to a sales order.
    */
-  async searchProducts(query, orderId = null) {
-    return this.callKw('fsm.order', 'worker_search_products', [query], { order_id: orderId });
+  async searchProducts(query, companyId = null) {
+    return this.callKw('fsm.order', 'worker_search_products', [query], { company_id: companyId });
   },
 
   /**

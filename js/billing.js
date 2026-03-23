@@ -534,7 +534,8 @@ const Billing = {
       searchTimeout = setTimeout(async () => {
         try {
           resultsDiv.innerHTML = '<div class="billing-hint">Searching...</div>';
-          const products = await OdooAPI.searchProducts(query, job.id);
+          const companyId = Array.isArray(job.company_id) ? job.company_id[0] : (job.company_id || null);
+          const products = await OdooAPI.searchProducts(query, companyId);
           if (products.length === 0) {
             resultsDiv.innerHTML = '<div class="billing-hint">No products found</div>';
             return;
