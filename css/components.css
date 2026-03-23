@@ -3126,3 +3126,33 @@ textarea.form-input {
   background: #fff;
   display: block;
 }
+
+/* Landscape: move controls to the right side so the video fills most of the screen */
+@media (orientation: landscape) {
+  .camera-container {
+    flex-direction: row;
+  }
+  .camera-controls {
+    flex-direction: column;
+    padding: 16px 12px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    width: 96px;
+    min-width: 96px;
+    justify-content: center;
+    gap: 20px;
+  }
+  .camera-btn {
+    min-width: unset;
+  }
+  .camera-btn-icon {
+    font-size: 22px;
+  }
+  .camera-btn-shutter {
+    width: 60px;
+    height: 60px;
+  }
+  .camera-shutter-ring {
+    width: 44px;
+    height: 44px;
+  }
+}

@@ -769,8 +769,8 @@ const OdooAPI = {
   /**
    * Search products for adding to a sales order.
    */
-  async searchProducts(query) {
-    return this.callKw('fsm.order', 'worker_search_products', [query], {});
+  async searchProducts(query, orderId = null) {
+    return this.callKw('fsm.order', 'worker_search_products', [query], { order_id: orderId });
   },
 
   /**
@@ -1105,3 +1105,41 @@ const OdooAPI = {
     return this.callKw('fsm.order', 'reopen_job', [orderId], {});
   },
 };
+
+// ========== SMS MIRROR ==========
+
+/**
+ * Fire-and-forget POST to the n8n SMS mirror endpoint.
+ * Call this after every successful outbound SMS send where a Twilio SID is available.
+ * Mirror failures are logged but never propagate — they must not affect the UX.
+ */
+function mirrorSmsToChatwoot({ to, from, body, messageSid, sentAt }) {
+  const mirrorUrl = CONFIG.SMS_MIRROR_URL;
+  const mirrorSecret = CONFIG.SMS_MIRROR_SECRET;
+
+  if (!mirrorSecret) {
+    console.warn('[SMS Mirror] SMS_MIRROR_SECRET not configured — skipping mirror');
+    return;
+  }
+
+  fetch(mirrorUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${mirrorSecret}`
+    },
+    body: JSON.stringify({
+      to,
+      from: from || '',
+      body,
+      sent_at: sentAt,
+      message_sid: messageSid,
+      source: 'fsm-pwa',
+      bot_agent: 'FSM Bot',
+      is_bulk: false,
+      campaign_label: null
+    })
+  }).catch(err => {
+    console.error('[SMS Mirror] Mirror call failed:', err.message);
+  });
+}

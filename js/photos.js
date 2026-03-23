@@ -843,12 +843,50 @@ const Photos = {
     };
     document.addEventListener('keydown', onKey);
 
-    // Swipe
+    // Swipe + pinch-to-zoom
     let touchX = 0;
-    lb.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+    let zoomScale = 1;
+    let pinchDist0 = 0;
+    const imgWrap = lb.querySelector('.photo-lightbox-img-wrap');
+
+    lb.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        pinchDist0 = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      } else if (e.touches.length === 1) {
+        touchX = e.touches[0].clientX;
+      }
+    }, { passive: true });
+
+    lb.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        if (pinchDist0 > 0) {
+          zoomScale = Math.max(1, Math.min(5, zoomScale * (dist / pinchDist0)));
+          img.style.transform = `scale(${zoomScale})`;
+          img.style.transformOrigin = 'center center';
+        }
+        pinchDist0 = dist;
+      }
+    }, { passive: false });
+
     lb.addEventListener('touchend', (e) => {
-      const dx = e.changedTouches[0].clientX - touchX;
-      if (Math.abs(dx) > 50) show(dx < 0 ? current + 1 : current - 1);
+      pinchDist0 = 0;
+      if (e.touches.length === 0 && zoomScale <= 1.05) {
+        zoomScale = 1;
+        img.style.transform = '';
+      }
+      // Only allow swipe navigation when not zoomed
+      if (zoomScale <= 1.05 && e.changedTouches.length === 1) {
+        const dx = e.changedTouches[0].clientX - touchX;
+        if (Math.abs(dx) > 50) show(dx < 0 ? current + 1 : current - 1);
+      }
     });
 
     show(current);

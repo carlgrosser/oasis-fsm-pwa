@@ -177,6 +177,11 @@ const App = {
       });
     });
 
+    // Feedback buttons
+    ['feedbackBtnList', 'feedbackBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => this._showFeedbackModal());
+    });
+
     // Help button (list footer)
     const footerHelpBtn = document.getElementById('footerHelpBtn');
     if (footerHelpBtn) {
@@ -432,6 +437,70 @@ const App = {
   /**
    * Import PWA settings from a JSON file exported by the office app.
    */
+
+  /**
+   * Show a modal for submitting bug reports / improvement suggestions.
+   */
+  _showFeedbackModal() {
+    const existing = document.getElementById('feedbackModal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'feedbackModal';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Report a Bug / Suggest Improvement</h3>
+          <button class="modal-close" id="feedbackClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group" style="margin-bottom:12px;">
+            <label class="form-label">Type</label>
+            <div class="toggle-group" id="feedbackType" style="margin-top:6px;">
+              <button class="toggle-btn active" data-val="bug">🐛 Bug</button>
+              <button class="toggle-btn" data-val="improvement">💡 Improvement</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea id="feedbackText" class="form-input" rows="5"
+              placeholder="Describe the bug or improvement idea…" style="margin-top:6px;"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="feedbackCancel">Cancel</button>
+          <button class="btn btn-primary" id="feedbackSubmit">Send</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#feedbackClose').addEventListener('click', close);
+    overlay.querySelector('#feedbackCancel').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const typeBtns = overlay.querySelectorAll('#feedbackType .toggle-btn');
+    typeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        typeBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
+    overlay.querySelector('#feedbackSubmit').addEventListener('click', () => {
+      const type = overlay.querySelector('#feedbackType .toggle-btn.active').dataset.val;
+      const text = overlay.querySelector('#feedbackText').value.trim();
+      if (!text) { this.showToast('Please enter a description', 'error'); return; }
+      const user = (typeof Auth !== 'undefined' && Auth.getUser()) ? Auth.getUser().name : 'Unknown';
+      const label = type === 'bug' ? 'Bug Report' : 'Improvement Suggestion';
+      const subject = encodeURIComponent(`[PWA ${label}] from ${user}`);
+      const body = encodeURIComponent(`Type: ${label}\nWorker: ${user}\n\n${text}`);
+      window.location.href = `mailto:carl@oasispooltilecleaning.com?subject=${subject}&body=${body}`;
+      close();
+    });
+  },
+
   _importSettings() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -455,6 +524,7 @@ const App = {
             'SMS_WEBHOOK_URL', 'ENABLE_SMS_NOTIFICATIONS', 'ODOO_URL',
             'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',
             'SHLINK_BASE_URL', 'SHLINK_API_KEY', 'SHLINK_SLUG_PATTERN',
+            'SMS_MIRROR_URL', 'SMS_MIRROR_SECRET',
           ];
           keys.forEach(function(k) {
             if (imported[k] !== undefined) CONFIG[k] = imported[k];

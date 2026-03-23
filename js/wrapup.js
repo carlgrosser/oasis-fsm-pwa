@@ -303,6 +303,11 @@ const WrapUp = {
           App.showToast(`Job already closed by ${result.submitted_by || 'another worker'}.`, 'info');
           this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
         } else {
+          if (!editMode) job.wrapup_submitted = true;
+          if (result.new_stage_id) job.stage_id = [result.new_stage_id, result.new_stage_name];
+          await DB.put('jobs', job);
+          const detailContainer = document.getElementById('jobDetail');
+          if (detailContainer && typeof Jobs !== 'undefined') Jobs.renderJobDetail(job.id, detailContainer);
           if (editMode) {
             App.showToast('Changes saved.', 'success');
           } else {
@@ -325,6 +330,12 @@ const WrapUp = {
         synced: 0,
       });
       overlay.remove();
+      if (!editMode) {
+        job.wrapup_submitted = true;
+        await DB.put('jobs', job);
+        const detailContainer = document.getElementById('jobDetail');
+        if (detailContainer && typeof Jobs !== 'undefined') Jobs.renderJobDetail(job.id, detailContainer);
+      }
       App.showToast(editMode ? 'Changes saved — will sync when online.' : 'Job closed — will sync when online.', 'info');
       if (!editMode) this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
     }

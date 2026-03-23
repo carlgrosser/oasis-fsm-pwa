@@ -18,6 +18,8 @@ const CONFIG = {
   ],
   ENABLE_SMS_NOTIFICATIONS: false,
   SMS_WEBHOOK_URL: '',
+  SMS_MIRROR_URL: 'https://n8n.oasispooltilecleaning.com/webhook/sms-mirror',
+  SMS_MIRROR_SECRET: '',
 
   // TIME TRACKING
   ENABLE_BREAKS: true,
@@ -105,6 +107,7 @@ const CONFIG = {
     const keys = [
       'VENMO_USERNAME', 'CHANGE_ORDER_THRESHOLD',
       'SMS_WEBHOOK_URL', 'ENABLE_SMS_NOTIFICATIONS', 'ODOO_URL',
+      'SMS_MIRROR_URL', 'SMS_MIRROR_SECRET',
       'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',
       'SHLINK_BASE_URL', 'SHLINK_API_KEY', 'SHLINK_SLUG_PATTERN',
     ];

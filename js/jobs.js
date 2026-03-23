@@ -803,7 +803,8 @@ const Jobs = {
     const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
     const fullAddress = addressParts.join(', ') || locationName;
     const addressForMap = encodeURIComponent(fullAddress);
-    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${addressForMap}`;
+    const _isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const mapUrl = _isIOS ? `maps://?q=${addressForMap}` : `geo:0,0?q=${addressForMap}`;
 
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
@@ -1487,9 +1488,13 @@ const Jobs = {
             eta: etaMinutes || '30',
             company_name: companyName,
           });
-          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(() => {
+          const sentAt = new Date().toISOString();
+          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(response => {
             App.showToast('SMS sent to customer', 'success');
             OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
+            if (response?.sid) {
+              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+            }
           }).catch(err => {
             console.warn('En route SMS failed:', err);
             App.showToast('SMS failed to send', 'error');
@@ -1501,7 +1506,8 @@ const Jobs = {
         if (launchNav && launchNav.checked) {
           const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
           const addr = encodeURIComponent(addressParts.join(', '));
-          window.open('https://www.google.com/maps/dir/?api=1&destination=' + addr, '_blank');
+          const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+          window.location.href = isIOS ? `maps://?daddr=${addr}&dirflg=d` : `geo:0,0?q=${addr}`;
         }
 
         App.showToast('Status updated', 'success');
@@ -1606,9 +1612,13 @@ const Jobs = {
             eta: etaMinutes || '30',
             company_name: companyName,
           });
-          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(() => {
+          const sentAt = new Date().toISOString();
+          OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(response => {
             App.showToast('SMS sent to customer', 'success');
             OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
+            if (response?.sid) {
+              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+            }
           }).catch(err => {
             console.warn('En route SMS failed:', err);
             App.showToast('SMS failed to send', 'error');
@@ -1620,7 +1630,8 @@ const Jobs = {
         if (launchNav && launchNav.checked) {
           const addressParts = [job.street, job.city, job.state_name].filter(Boolean);
           const addr = encodeURIComponent(addressParts.join(', '));
-          window.open('https://www.google.com/maps/dir/?api=1&destination=' + addr, '_blank');
+          const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+          window.location.href = isIOS ? `maps://?daddr=${addr}&dirflg=d` : `geo:0,0?q=${addr}`;
         }
 
         App.showToast('Status updated', 'success');
@@ -1669,9 +1680,13 @@ const Jobs = {
           eta: etaMinutes || '30',
           company_name: companyName,
         });
-        await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody);
+        const sentAt = new Date().toISOString();
+        const response = await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody);
         App.showToast('SMS sent to customer', 'success');
         OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
+        if (response?.sid) {
+          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+        }
       } catch (err) {
         console.warn('En route SMS failed:', err);
         App.showToast('SMS failed to send', 'error');
@@ -1921,9 +1936,13 @@ const Jobs = {
       });
 
       try {
-        await OdooAPI.sendEnRouteSms(job.id, phone, eta, smsBody);
+        const sentAt = new Date().toISOString();
+        const response = await OdooAPI.sendEnRouteSms(job.id, phone, eta, smsBody);
         OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
         App.showToast('ETA SMS sent', 'success');
+        if (response?.sid) {
+          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+        }
         this._hideSmsPicker();
       } catch (err) {
         App.showToast('SMS failed to send', 'error');
@@ -1967,9 +1986,13 @@ const Jobs = {
           payment_link: linkData.payment_url,
         });
 
-        await OdooAPI.sendPaymentSms(invoice.id, phone, smsBody);
+        const sentAt = new Date().toISOString();
+        const response = await OdooAPI.sendPaymentSms(invoice.id, phone, smsBody);
         OdooAPI.postJournalEntry(job.id, 'Payment SMS sent to ' + phone);
         App.showToast('Payment link sent', 'success');
+        if (response?.sid) {
+          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+        }
         this._hideSmsPicker();
       } catch (err) {
         App.showToast('Failed to send payment link', 'error');
