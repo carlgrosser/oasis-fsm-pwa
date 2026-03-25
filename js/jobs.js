@@ -1492,8 +1492,8 @@ const Jobs = {
           OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(response => {
             App.showToast('SMS sent to customer', 'success');
             OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-            if (response?.sid) {
-              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+            if (response?.message_sid) {
+              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
             }
           }).catch(err => {
             console.warn('En route SMS failed:', err);
@@ -1616,8 +1616,8 @@ const Jobs = {
           OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(response => {
             App.showToast('SMS sent to customer', 'success');
             OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-            if (response?.sid) {
-              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+            if (response?.message_sid) {
+              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
             }
           }).catch(err => {
             console.warn('En route SMS failed:', err);
@@ -1684,8 +1684,8 @@ const Jobs = {
         const response = await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody);
         App.showToast('SMS sent to customer', 'success');
         OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-        if (response?.sid) {
-          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+        if (response?.message_sid) {
+          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
         }
       } catch (err) {
         console.warn('En route SMS failed:', err);
@@ -1940,8 +1940,8 @@ const Jobs = {
         const response = await OdooAPI.sendEnRouteSms(job.id, phone, eta, smsBody);
         OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
         App.showToast('ETA SMS sent', 'success');
-        if (response?.sid) {
-          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+        if (response?.message_sid) {
+          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
         }
         this._hideSmsPicker();
       } catch (err) {
@@ -1990,8 +1990,8 @@ const Jobs = {
         const response = await OdooAPI.sendPaymentSms(invoice.id, phone, smsBody);
         OdooAPI.postJournalEntry(job.id, 'Payment SMS sent to ' + phone);
         App.showToast('Payment link sent', 'success');
-        if (response?.sid) {
-          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
+        if (response?.message_sid) {
+          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
         }
         this._hideSmsPicker();
       } catch (err) {
