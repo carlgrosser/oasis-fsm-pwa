@@ -4,7 +4,7 @@
   --secondary-color: #00cc66;
   --accent-color: #ff6600;
 
-  /* Status Colors */
+  /* Status Colors — source of truth: /shared/css/variables.css — keep in sync */
   --status-scheduled: #3498db;
   --status-dispatched: #5dade2;
   --status-enroute: #f39c12;
