@@ -47,6 +47,14 @@ const Themes = {
         '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.3)',
         '--shadow-md': '0 2px 8px rgba(0, 0, 0, 0.4)',
         '--shadow-lg': '0 4px 16px rgba(0, 0, 0, 0.5)',
+        // Status colors — darkened for contrast on dark backgrounds
+        '--status-scheduled': '#5ba3d9',
+        '--status-dispatched': '#7dbce8',
+        '--status-enroute': '#d4960f',
+        '--status-arrived': '#c07028',
+        '--status-progress': '#2db85f',
+        '--status-complete': '#239a50',
+        '--status-cancelled': '#dd4444',
       },
     },
 

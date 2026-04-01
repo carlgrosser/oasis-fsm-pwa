@@ -218,6 +218,32 @@ body {
   color: var(--text-primary);
 }
 
+.job-search-wrap {
+  background: var(--card-background);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.job-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 var(--spacing-sm);
+  background: var(--input-background, var(--background-color));
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.job-search-input:focus {
+  border-color: var(--primary-color);
+}
+
 .list-tabs {
   display: flex;
   background: var(--card-background);

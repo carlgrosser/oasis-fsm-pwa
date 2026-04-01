@@ -67,6 +67,30 @@ const Jobs = {
     return 'scheduled'; // default for new/scheduled
   },
 
+  _allJobs: [],       // full unfiltered list (for client-side search)
+  _searchQuery: '',   // current search string
+
+  /**
+   * Apply search filter against _allJobs, update _jobs, re-render current container.
+   */
+  applySearch(query) {
+    this._searchQuery = (query || '').trim().toLowerCase();
+    if (!this._searchQuery) {
+      this._jobs = this._allJobs.slice();
+    } else {
+      this._jobs = this._allJobs.filter(j => {
+        const customer = Array.isArray(j.location_id) ? j.location_id[1] : (j.location_id || '');
+        const address = [j.street, j.city].filter(Boolean).join(' ');
+        const name = j.name || '';
+        const haystack = (customer + ' ' + address + ' ' + name).toLowerCase();
+        return haystack.includes(this._searchQuery);
+      });
+    }
+    const listId = this._currentView === 'today' ? 'jobListToday' : 'jobListHistory';
+    const container = document.getElementById(listId);
+    if (container) this.renderJobList(container);
+  },
+
   _historyCompletedOffset: 0, // Pagination offset for "load more" in history
   _historyHasMore: false, // Whether there are more completed jobs to load
   _upcomingJobs: [], // Jobs on the next scheduled day (shown below today's jobs)
@@ -274,7 +298,13 @@ const Jobs = {
       jobs = this._filterCachedJobs(jobs, this._currentView);
     }
 
-    this._jobs = jobs || [];
+    this._allJobs = jobs || [];
+    // Re-apply any active search filter, otherwise use full list
+    if (this._searchQuery) {
+      this.applySearch(this._searchQuery);
+    } else {
+      this._jobs = this._allJobs.slice();
+    }
     return this._jobs;
   },
 

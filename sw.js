@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v56';
+const CACHE_NAME = 'fsm-pwa-v57';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -54,6 +54,94 @@ self.addEventListener('activate', (event) => {
   );
   self.clients.claim();
 });
+
+// Background Sync — upload queued photos when connectivity is restored
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'photo-upload') {
+    event.waitUntil(_syncPhotos());
+  }
+});
+
+async function _openPhotoDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('fsm_pwa', 4);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _getUnsyncedPhotos(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    const index = store.index('synced');
+    const req = index.getAll(0);
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _markPhotoSynced(db, photo) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readwrite');
+    const store = tx.objectStore('photos');
+    photo.synced = 1;
+    const req = store.put(photo);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function _base64ToBlob(dataUrl) {
+  const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: 'image/jpeg' });
+}
+
+async function _syncPhotos() {
+  let db;
+  try {
+    db = await _openPhotoDB();
+  } catch (e) {
+    console.error('[SW] Could not open IDB for photo sync:', e);
+    return;
+  }
+
+  const photos = await _getUnsyncedPhotos(db);
+  if (!photos.length) return;
+
+  const base = self.location.origin;
+
+  for (const photo of photos) {
+    try {
+      const blob = _base64ToBlob(photo.data);
+      const form = new FormData();
+      form.append('order_id', photo.job_id);
+      form.append('category', photo.category || '');
+      form.append('file', blob, photo.filename || 'photo.jpg');
+
+      const resp = await fetch(base + '/gdrive/upload_photo', {
+        method: 'POST',
+        body: form,
+        credentials: 'include',
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success) {
+          photo.gdrive_file_id = data.gdrive_file_id || null;
+          photo.gdrive_url = data.gdrive_url || null;
+          await _markPhotoSynced(db, photo);
+        }
+      }
+    } catch (e) {
+      console.warn('[SW] Photo sync failed for', photo.temp_id, e);
+      // Leave synced=0 so it retries on next sync event
+    }
+  }
+}
 
 // Fetch — cache-first for static assets, network-first for API calls
 self.addEventListener('fetch', (event) => {

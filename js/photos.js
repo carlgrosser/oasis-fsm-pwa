@@ -300,6 +300,14 @@ const Photos = {
     };
 
     await DB.put('photos', photo);
+
+    // Register background sync so photo uploads when connectivity returns
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.ready
+        .then(sw => sw.sync.register('photo-upload'))
+        .catch(() => {});
+    }
+
     return photo;
   },
 

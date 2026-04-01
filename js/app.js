@@ -250,6 +250,18 @@ const App = {
         if (view) this.switchTab(view);
       });
     });
+
+    // Job search (client-side filter)
+    const jobSearch = document.getElementById('jobSearchPwa');
+    if (jobSearch) {
+      let _searchTimer;
+      jobSearch.addEventListener('input', () => {
+        clearTimeout(_searchTimer);
+        _searchTimer = setTimeout(() => {
+          Jobs.applySearch(jobSearch.value);
+        }, 200);
+      });
+    }
   },
 
   /**
