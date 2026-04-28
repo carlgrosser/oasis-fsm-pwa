@@ -3168,6 +3168,7 @@ textarea.form-input {
   flex-direction: column;
   align-items: center;
   overflow: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 .crop-canvas-wrap {

@@ -184,9 +184,10 @@ const Expenses = {
         const imgW = img.naturalWidth;
         const imgH = img.naturalHeight;
 
-        // Fit image into available screen space (leave 100px for controls)
+        // Fit image into available screen space (leave 100px for controls + safe area top)
+        const safeTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0;
         const maxW = window.innerWidth;
-        const maxH = Math.max(200, window.innerHeight - 100);
+        const maxH = Math.max(200, window.innerHeight - 100 - safeTop);
         const scale = Math.min(maxW / imgW, maxH / imgH);
         const dispW = Math.round(imgW * scale);
         const dispH = Math.round(imgH * scale);
