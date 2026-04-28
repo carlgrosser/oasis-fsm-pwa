@@ -3589,3 +3589,204 @@ textarea.form-input {
 .exp-list-delete:active {
   opacity: 1;
 }
+
+/* Swipe-to-delete: items slide with touch gesture */
+.exp-list-swipeable {
+  position: relative;
+  touch-action: pan-y;
+  will-change: transform;
+}
+.exp-list-info-tap {
+  cursor: pointer;
+  flex: 1;
+}
+
+/* Expense list summary bar */
+.exp-summary-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(0, 102, 204, 0.07);
+  border-bottom: 1px solid rgba(0, 102, 204, 0.14);
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.exp-summary-bar span:last-child {
+  color: var(--primary-color, #0066cc);
+  font-weight: 600;
+}
+
+/* Sync button in list header */
+.exp-sync-btn {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  touch-action: manipulation;
+  min-width: 64px;
+}
+.exp-sync-btn:disabled {
+  opacity: 0.5;
+}
+
+/* Employee / config warning banner */
+.exp-employee-warning {
+  margin: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.exp-employee-warning.exp-warning-amber {
+  background: rgba(255, 165, 0, 0.1);
+  border-color: rgba(255, 165, 0, 0.35);
+}
+
+/* Amount error message */
+.exp-amount-error {
+  font-size: 12px;
+  color: var(--error-color, #e74c3c);
+  margin-top: 4px;
+}
+.input-error {
+  border-color: var(--error-color, #e74c3c) !important;
+  outline-color: var(--error-color, #e74c3c) !important;
+}
+
+/* Category search filter */
+.exp-category-search {
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Multi-receipt strip */
+.exp-receipt-strip {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  min-height: 90px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+}
+.exp-receipt-strip::-webkit-scrollbar { display: none; }
+.exp-receipt-thumb-item {
+  position: relative;
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 2px solid var(--border-color);
+}
+.exp-receipt-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+}
+.exp-receipt-thumb-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  touch-action: manipulation;
+}
+.exp-receipt-add-btn {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  border: 2px dashed var(--border-color);
+  background: var(--surface-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+  color: var(--text-secondary);
+}
+.exp-receipt-add-icon {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+.exp-receipt-add-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* Prominent "Use Crop" primary button */
+.crop-btn-primary {
+  background: linear-gradient(135deg, #0066cc, #0080ff) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  min-width: 96px;
+  box-shadow: 0 2px 8px rgba(0, 102, 204, 0.4) !important;
+}
+
+/* Mileage form: rate + running total row */
+.exp-mi-meta-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+}
+.exp-mi-rate-wrap {
+  flex: 1;
+}
+.exp-mi-rate-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs, 4px);
+}
+.exp-mi-rate-input {
+  max-width: 90px;
+}
+.exp-mi-per-mi {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.exp-mi-total-wrap {
+  text-align: right;
+  flex-shrink: 0;
+  padding-bottom: 2px;
+}
+.exp-mi-total-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.exp-mi-total {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-color, #0066cc);
+}

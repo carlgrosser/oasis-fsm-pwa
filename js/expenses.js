@@ -26,6 +26,9 @@ const Expenses = {
       <button class="expense-action-item" id="expMenuNoReceipt">
         <span class="expense-action-icon">✏️</span>Add Without Receipt
       </button>
+      <button class="expense-action-item" id="expMenuMileage">
+        <span class="expense-action-icon">🚗</span>Log Mileage
+      </button>
       <button class="expense-action-item" id="expMenuView">
         <span class="expense-action-icon">📋</span>View / Edit Expenses
       </button>`;
@@ -37,7 +40,6 @@ const Expenses = {
     const left = Math.round(btnRect.left + btnRect.width / 2 - menu.offsetWidth / 2);
     menu.style.left = Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, left)) + 'px';
 
-    // Dismiss on outside tap/click (deferred so the opening tap doesn't immediately close)
     const dismiss = (e) => {
       if (!menu.contains(e.target) && e.target !== receiptBtn) {
         menu.remove();
@@ -51,16 +53,16 @@ const Expenses = {
     }, 50);
 
     menu.querySelector('#expMenuScan').addEventListener('click', () => {
-      menu.remove();
-      this.startReceiptScan();
+      menu.remove(); this.startReceiptScan();
     });
     menu.querySelector('#expMenuNoReceipt').addEventListener('click', () => {
-      menu.remove();
-      this.startExpenseWithoutReceipt();
+      menu.remove(); this.startExpenseWithoutReceipt();
+    });
+    menu.querySelector('#expMenuMileage').addEventListener('click', () => {
+      menu.remove(); this.startMileageExpense();
     });
     menu.querySelector('#expMenuView').addEventListener('click', () => {
-      menu.remove();
-      this.showExpenseList();
+      menu.remove(); this.showExpenseList();
     });
   },
 
@@ -68,11 +70,9 @@ const Expenses = {
     try {
       const imageDataUrl = await this._captureImage();
       if (!imageDataUrl) return;
-
       const croppedDataUrl = await this._showCropUI(imageDataUrl);
       if (!croppedDataUrl) return;
-
-      await this._showExpenseForm(croppedDataUrl);
+      await this._showExpenseForm([croppedDataUrl]);
     } catch (err) {
       console.error('Receipt scan error:', err);
       App.showToast('Receipt scan failed: ' + err.message, 'error');
@@ -81,9 +81,18 @@ const Expenses = {
 
   async startExpenseWithoutReceipt() {
     try {
-      await this._showExpenseForm(null);
+      await this._showExpenseForm([]);
     } catch (err) {
       console.error('Expense form error:', err);
+      App.showToast('Error: ' + err.message, 'error');
+    }
+  },
+
+  async startMileageExpense() {
+    try {
+      await this._showMileageForm();
+    } catch (err) {
+      console.error('Mileage form error:', err);
       App.showToast('Error: ' + err.message, 'error');
     }
   },
@@ -100,60 +109,95 @@ const Expenses = {
         <div class="expense-form-header">
           <button class="expense-close-btn" id="expListClose" type="button">✕</button>
           <span class="expense-form-title">My Expenses</span>
-          <div style="min-width:44px;"></div>
+          <button class="btn btn-sm exp-sync-btn" id="expSyncNowBtn" type="button">⟳ Sync</button>
         </div>
+        <div id="expSummaryBar"></div>
         <div class="expense-list-body expense-form-body"></div>
       </div>`;
     document.body.appendChild(overlay);
 
+    const renderSummary = () => {
+      const pending = expenses.filter(e => e.synced !== 1);
+      const reimbursable = pending.filter(e => e.payment_mode === 'own_account');
+      const total = reimbursable.reduce((s, e) => {
+        const base = parseFloat(e.price_unit) || 0;
+        const qty = e.expense_type === 'mileage' ? (parseFloat(e.quantity) || 1) : 1;
+        return s + base * qty;
+      }, 0);
+      const bar = overlay.querySelector('#expSummaryBar');
+      if (!pending.length) { bar.innerHTML = ''; return; }
+      bar.innerHTML = `<div class="exp-summary-bar">
+        <span>${pending.length} pending</span>
+        ${total > 0 ? `<span>$${total.toFixed(2)} to be reimbursed</span>` : ''}
+      </div>`;
+    };
+
     const renderList = () => {
+      renderSummary();
       const body = overlay.querySelector('.expense-list-body');
       if (!expenses.length) {
         body.innerHTML = '<p class="expense-hint" style="text-align:center;padding:var(--spacing-xl) var(--spacing-md);">No expenses recorded yet.</p>';
         return;
       }
+
       body.innerHTML = expenses.map((exp, i) => {
         const synced = exp.synced === 1;
-        const amount = exp.price_unit != null ? `$${parseFloat(exp.price_unit).toFixed(2)}` : '';
+        const isMileage = exp.expense_type === 'mileage';
+        let amount = '';
+        if (exp.price_unit != null) {
+          const base = parseFloat(exp.price_unit);
+          const qty = isMileage ? (parseFloat(exp.quantity) || 1) : 1;
+          amount = `$${(base * qty).toFixed(2)}`;
+        }
         const payLabel = exp.payment_mode === 'own_account'
           ? 'Out of Pocket' : (exp.journal_label || 'Company Account');
         const statusHtml = synced
           ? '<span class="exp-list-badge exp-list-synced">✓ Synced</span>'
           : '<span class="exp-list-badge exp-list-pending">⏳ Pending</span>';
-        const thumbHtml = exp.receipt_b64
-          ? `<img class="exp-list-thumb" src="${exp.receipt_b64}" alt="Receipt">`
-          : `<div class="exp-list-thumb exp-list-thumb-none">🧾</div>`;
-        const deleteBtn = !synced
-          ? `<button class="exp-list-delete" data-idx="${i}" type="button" aria-label="Delete">🗑</button>`
-          : '<div style="min-width:36px;"></div>';
+        // Multi-receipt: check receipt_images first, fall back to receipt_b64
+        const thumbSrc = (exp.receipt_images && exp.receipt_images.length)
+          ? exp.receipt_images[0]
+          : (exp.receipt_b64 || null);
+        const thumbHtml = thumbSrc
+          ? `<img class="exp-list-thumb" src="${thumbSrc}" alt="Receipt">`
+          : `<div class="exp-list-thumb exp-list-thumb-none">${isMileage ? '🚗' : '🧾'}</div>`;
         return `
-          <div class="exp-list-item">
+          <div class="exp-list-item${!synced ? ' exp-list-swipeable' : ''}" data-idx="${i}">
             <div class="exp-list-thumb-wrap" data-idx="${i}">${thumbHtml}</div>
-            <div class="exp-list-info">
+            <div class="exp-list-info${!synced ? ' exp-list-info-tap' : ''}" data-idx="${i}">
               <div class="exp-list-name">${this._escHtml(exp.name || 'Expense')}</div>
               <div class="exp-list-meta">${this._escHtml(exp.date || '')}${exp.date ? ' · ' : ''}${this._escHtml(payLabel)}</div>
               <div class="exp-list-row2">${statusHtml}${amount ? `<span class="exp-list-amount">${amount}</span>` : ''}</div>
             </div>
-            ${deleteBtn}
+            ${!synced
+              ? `<button class="exp-list-delete" data-idx="${i}" type="button" aria-label="Delete">🗑</button>`
+              : '<div style="min-width:36px;"></div>'}
           </div>`;
       }).join('');
 
       // Thumbnail tap-to-zoom
       body.querySelectorAll('.exp-list-thumb[src]').forEach(img => {
         img.style.cursor = 'zoom-in';
-        img.addEventListener('click', () => {
-          const lb = document.createElement('div');
-          lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;display:flex;align-items:center;justify-content:center;touch-action:manipulation;padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);';
-          const lbImg = document.createElement('img');
-          lbImg.src = img.src;
-          lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
-          lb.appendChild(lbImg);
-          lb.addEventListener('click', () => lb.remove());
-          document.body.appendChild(lb);
+        img.addEventListener('click', () => this._showLightbox(img.src));
+      });
+
+      // Tap-to-edit pending items (tap the info area)
+      body.querySelectorAll('.exp-list-info-tap').forEach(infoEl => {
+        infoEl.addEventListener('click', async () => {
+          const idx = parseInt(infoEl.dataset.idx, 10);
+          const exp = expenses[idx];
+          if (!exp || exp.synced === 1) return;
+          overlay.remove();
+          if (exp.expense_type === 'mileage') {
+            await this._showMileageForm(exp);
+          } else {
+            const imgs = exp.receipt_images || (exp.receipt_b64 ? [exp.receipt_b64] : []);
+            await this._showExpenseForm(imgs, exp);
+          }
         });
       });
 
-      // Delete buttons
+      // Delete buttons (confirm dialog)
       body.querySelectorAll('.exp-list-delete').forEach(btn => {
         btn.addEventListener('click', async () => {
           const idx = parseInt(btn.dataset.idx, 10);
@@ -169,10 +213,78 @@ const Expenses = {
           }
         });
       });
+
+      // Swipe-to-delete (left swipe past threshold)
+      body.querySelectorAll('.exp-list-swipeable').forEach(itemEl => {
+        let sx = 0, sy = 0, moved = false;
+        itemEl.addEventListener('touchstart', e => {
+          sx = e.touches[0].clientX;
+          sy = e.touches[0].clientY;
+          moved = false;
+          itemEl.style.transition = 'none';
+        }, { passive: true });
+        itemEl.addEventListener('touchmove', e => {
+          const dx = e.touches[0].clientX - sx;
+          const dy = e.touches[0].clientY - sy;
+          if (!moved && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) moved = true;
+          if (moved && dx < 0) {
+            itemEl.style.transform = `translateX(${Math.max(dx, -90)}px)`;
+            e.preventDefault(); // prevent scroll while swiping left
+          }
+        }, { passive: false });
+        itemEl.addEventListener('touchend', async e => {
+          const dx = e.changedTouches[0].clientX - sx;
+          itemEl.style.transition = 'transform 0.2s ease';
+          if (moved) {
+            if (dx < -70) {
+              itemEl.style.transform = 'translateX(-100%)';
+              const idx = parseInt(itemEl.dataset.idx, 10);
+              setTimeout(async () => {
+                const exp = expenses[idx];
+                if (!exp) return;
+                try {
+                  await DB.delete('expensesQueue', exp.temp_id);
+                  expenses.splice(idx, 1);
+                  renderList();
+                  if (typeof Sync !== 'undefined') Sync._updatePendingCount();
+                } catch (err) {
+                  App.showToast('Could not delete: ' + err.message, 'error');
+                }
+              }, 200);
+            } else {
+              itemEl.style.transform = '';
+            }
+            moved = false;
+          }
+        });
+      });
     };
 
     renderList();
+
     overlay.querySelector('#expListClose').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('#expSyncNowBtn').addEventListener('click', async () => {
+      if (!navigator.onLine) { App.showToast('No internet connection', 'error'); return; }
+      const syncBtn = overlay.querySelector('#expSyncNowBtn');
+      syncBtn.disabled = true;
+      syncBtn.textContent = 'Syncing…';
+      try {
+        const { synced, failed } = await this.syncAll();
+        expenses = await DB.getAll('expensesQueue');
+        expenses.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        renderList();
+        if (typeof Sync !== 'undefined') Sync._updatePendingCount();
+        if (failed > 0) App.showToast(`${failed} failed to sync`, 'error');
+        else if (synced > 0) App.showToast(`${synced} synced`, 'success');
+        else App.showToast('Nothing to sync', 'info');
+      } catch (err) {
+        App.showToast('Sync failed: ' + err.message, 'error');
+      } finally {
+        syncBtn.disabled = false;
+        syncBtn.textContent = '⟳ Sync';
+      }
+    });
   },
 
   // ===== CAMERA CAPTURE =====
@@ -221,7 +333,7 @@ const Expenses = {
       };
 
       navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1200 }, height: { ideal: 900 } },
         audio: false,
       }).then(s => {
         stream = s;
@@ -239,14 +351,14 @@ const Expenses = {
       overlay.querySelector('#expCamShutterBtn').addEventListener('click', () => {
         const video = overlay.querySelector('#expCamPreview');
         if (!video.videoWidth) return;
-        const maxW = 1920;
+        const maxW = 1200;
         let w = video.videoWidth, h = video.videoHeight;
         if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
         c.getContext('2d').drawImage(video, 0, 0, w, h);
         cleanup();
-        resolve(c.toDataURL('image/jpeg', 0.88));
+        resolve(c.toDataURL('image/jpeg', 0.72));
       });
 
       overlay.querySelector('#expCamGalleryBtn').addEventListener('click', () => {
@@ -303,7 +415,7 @@ const Expenses = {
     try {
       const objUrl = URL.createObjectURL(file);
       try {
-        const dataUrl = await this._resizeToDataUrl(objUrl, 1920);
+        const dataUrl = await this._resizeToDataUrl(objUrl, 1200);
         pending.resolve(dataUrl);
       } finally {
         URL.revokeObjectURL(objUrl);
@@ -311,7 +423,7 @@ const Expenses = {
     } catch { pending.resolve(null); }
   },
 
-  _resizeToDataUrl(src, maxW) {
+  _resizeToDataUrl(src, maxW = 1200) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -320,7 +432,7 @@ const Expenses = {
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
         c.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(c.toDataURL('image/jpeg', 0.88));
+        resolve(c.toDataURL('image/jpeg', 0.72));
       };
       img.onerror = reject;
       img.src = src;
@@ -344,7 +456,6 @@ const Expenses = {
         const dispW = Math.round(imgW * scale);
         const dispH = Math.round(imgH * scale);
 
-        // Draw image to canvas at display resolution
         const canvas = document.createElement('canvas');
         canvas.width = dispW; canvas.height = dispH;
         canvas.getContext('2d').drawImage(img, 0, 0, dispW, dispH);
@@ -360,7 +471,6 @@ const Expenses = {
         const detected = this._detectEdges(canvas);
         if (detected) corners = detected;
 
-        // Build full-screen overlay
         const overlay = document.createElement('div');
         overlay.className = 'crop-overlay';
 
@@ -392,7 +502,7 @@ const Expenses = {
             <span class="camera-btn-icon">⊡</span>
             <span class="camera-btn-label">Auto</span>
           </button>
-          <button class="camera-btn" id="cropDoneBtn">
+          <button class="camera-btn crop-btn-primary" id="cropDoneBtn">
             <span class="camera-btn-icon">✓</span>
             <span class="camera-btn-label">Use Crop</span>
           </button>`;
@@ -450,11 +560,8 @@ const Expenses = {
 
         render();
 
-        // Pointer Events API with setPointerCapture — the correct cross-platform
-        // approach. Once a pointerdown is captured on the SVG, all subsequent
-        // pointermove events are guaranteed to route to it even if the finger
-        // moves outside the element's bounds, completely eliminating the
-        // "drag drops after a few pixels" problem.
+        // Pointer Events API with setPointerCapture — guarantees all subsequent
+        // pointermove events route to the SVG regardless of finger position.
         let dragging = null;
 
         const getClosestCorner = (tx, ty) => {
@@ -473,7 +580,7 @@ const Expenses = {
           const idx = getClosestCorner(e.clientX - rect.left, e.clientY - rect.top);
           if (idx < 0) return;
           dragging = idx;
-          svg.setPointerCapture(e.pointerId); // lock all events to this element
+          svg.setPointerCapture(e.pointerId);
           e.preventDefault();
         });
 
@@ -506,7 +613,7 @@ const Expenses = {
           // Map display corners → original image coordinates
           const imgCorners = corners.map(c => ({ x: c.x / scale, y: c.y / scale }));
           const result = this._applyPerspectiveTransform(img, imgCorners);
-          resolve(result.toDataURL('image/jpeg', 0.88));
+          resolve(result.toDataURL('image/jpeg', 0.72));
         });
       };
       img.src = imgDataUrl;
@@ -625,8 +732,8 @@ const Expenses = {
     const rawW = Math.max(1, Math.round((topW + botW) / 2));
     const rawH = Math.max(1, Math.round((leftH + rightH) / 2));
 
-    // Cap at 1600px on the longer side to keep pixel loop fast
-    const cap = 1600;
+    // Cap at 1000px on the longer side to keep pixel loop fast
+    const cap = 1000;
     const capScale = Math.min(1, cap / Math.max(rawW, rawH));
     const outW = Math.round(rawW * capScale);
     const outH = Math.round(rawH * capScale);
@@ -673,16 +780,24 @@ const Expenses = {
 
   // ===== EXPENSE FORM =====
 
-  async _showExpenseForm(receiptDataUrl) {
-    // Load categories and payment methods in parallel; employee ID is already cached in Auth
+  // receiptImages: array of data URL strings (may be empty for no-receipt flow)
+  // editingExpense: full DB record to pre-fill (null for new expense)
+  async _showExpenseForm(receiptImages = [], editingExpense = null) {
     const [categories, methods] = await Promise.all([
       this._loadCategories(),
       this._getPaymentMethods(),
     ]);
     const employeeId = Auth.getEmployeeId();
+    const isEditing = !!editingExpense;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Mutable image array for the multi-receipt strip
+    let formImages = receiptImages.slice();
 
     return new Promise((resolve) => {
-      const today = new Date().toISOString().slice(0, 10);
+      const employeeWarning = !employeeId
+        ? `<div class="exp-employee-warning">⚠️ No employee profile linked — expenses will sync without an employee ID.</div>`
+        : '';
 
       const paymentBtns = methods.map((m, i) => `
         <button class="expense-payment-btn${i === 0 ? ' active' : ''}"
@@ -704,19 +819,13 @@ const Expenses = {
         <div class="expense-form">
           <div class="expense-form-header">
             <button class="expense-close-btn" id="expCloseBtn" type="button">✕</button>
-            <span class="expense-form-title">New Expense</span>
-            <button class="btn btn-primary btn-sm" id="expSubmitBtn" type="button">Save</button>
+            <span class="expense-form-title">${isEditing ? 'Edit Expense' : 'New Expense'}</span>
+            <button class="btn btn-primary btn-sm" id="expSubmitBtn" type="button">${isEditing ? 'Update' : 'Save'}</button>
           </div>
+          ${employeeWarning}
           <div class="expense-form-body">
 
-            ${receiptDataUrl
-              ? `<div class="expense-receipt-preview">
-                   <img src="${receiptDataUrl}" class="expense-receipt-img" alt="Receipt">
-                 </div>`
-              : `<div class="expense-receipt-none">
-                   <span class="expense-receipt-none-icon">🧾</span>
-                   <span>No receipt attached</span>
-                 </div>`}
+            <div class="exp-receipt-strip" id="expReceiptStrip"></div>
 
             <div class="form-group">
               <label class="form-label">Amount</label>
@@ -724,23 +833,28 @@ const Expenses = {
                 <span class="expense-amount-symbol">$</span>
                 <input type="number" class="form-input expense-amount-input"
                        id="expAmount" placeholder="0.00" step="0.01" min="0"
-                       inputmode="decimal">
+                       inputmode="decimal"
+                       value="${isEditing && editingExpense.price_unit ? editingExpense.price_unit : ''}">
               </div>
+              <div class="exp-amount-error" id="expAmountError" style="display:none;">Enter a valid amount greater than 0</div>
             </div>
 
             <div class="form-group">
               <label class="form-label">Date</label>
-              <input type="date" class="form-input" id="expDate" value="${today}">
+              <input type="date" class="form-input" id="expDate"
+                     value="${isEditing ? (editingExpense.date || today) : today}">
             </div>
 
             <div class="form-group">
               <label class="form-label">Vendor <span class="expense-optional">(optional)</span></label>
               <div class="expense-vendor-wrap">
                 <input type="text" class="form-input" id="expVendorSearch"
-                       placeholder="Search vendors…" autocomplete="off" autocorrect="off">
+                       placeholder="Search vendors…" autocomplete="off" autocorrect="off"
+                       value="${isEditing ? this._escHtml(editingExpense.partner_name || '') : ''}">
                 <div class="expense-vendor-results" id="expVendorResults" style="display:none;"></div>
               </div>
-              <input type="hidden" id="expVendorId">
+              <input type="hidden" id="expVendorId"
+                     value="${isEditing && editingExpense.partner_id ? editingExpense.partner_id : ''}">
             </div>
 
             <div class="form-group">
@@ -752,6 +866,8 @@ const Expenses = {
 
             <div class="form-group">
               <label class="form-label">Category</label>
+              <input type="text" class="form-input exp-category-search"
+                     id="expCategorySearch" placeholder="Filter categories…">
               <div class="expense-category-list" id="expCategoryList">
                 ${categoryBtns}
               </div>
@@ -760,7 +876,7 @@ const Expenses = {
             <div class="form-group">
               <label class="form-label">Notes <span class="expense-optional">(optional)</span></label>
               <textarea class="form-input" id="expNotes" rows="2"
-                        placeholder="Additional details…"></textarea>
+                        placeholder="Additional details…">${isEditing ? this._escHtml(editingExpense.description || '') : ''}</textarea>
             </div>
 
           </div>
@@ -768,33 +884,56 @@ const Expenses = {
 
       document.body.appendChild(overlay);
 
-      // Receipt tap-to-zoom (only when a receipt image exists)
-      const receiptImg = overlay.querySelector('.expense-receipt-img');
-      if (receiptImg) {
-        receiptImg.addEventListener('click', () => {
-          const lb = document.createElement('div');
-          lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;' +
-            'display:flex;align-items:center;justify-content:center;touch-action:manipulation;' +
-            'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
-            'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
-          const lbImg = document.createElement('img');
-          lbImg.src = receiptDataUrl;
-          lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
-          lb.appendChild(lbImg);
-          lb.addEventListener('click', () => lb.remove());
-          document.body.appendChild(lb);
-        });
-      }
+      // ---- Receipt strip (multi-receipt) ----
+      const renderStrip = () => {
+        const strip = overlay.querySelector('#expReceiptStrip');
+        strip.innerHTML = formImages.map((src, i) => `
+          <div class="exp-receipt-thumb-item" data-idx="${i}">
+            <img src="${src}" class="exp-receipt-thumb-img" alt="Receipt ${i + 1}">
+            <button class="exp-receipt-thumb-del" data-idx="${i}" type="button" aria-label="Remove">✕</button>
+          </div>`).join('') +
+          `<button class="exp-receipt-add-btn" id="expReceiptAddBtn" type="button">
+            <span class="exp-receipt-add-icon">+</span>
+            <span class="exp-receipt-add-label">Add Photo</span>
+          </button>`;
 
-      // --- State ---
+        strip.querySelectorAll('.exp-receipt-thumb-img').forEach(img => {
+          img.addEventListener('click', () => this._showLightbox(img.src));
+        });
+        strip.querySelectorAll('.exp-receipt-thumb-del').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            formImages.splice(parseInt(btn.dataset.idx, 10), 1);
+            renderStrip();
+          });
+        });
+        strip.querySelector('#expReceiptAddBtn').addEventListener('click', async () => {
+          const img = await this._captureImage();
+          if (img) { formImages.push(img); renderStrip(); }
+        });
+      };
+      renderStrip();
+
+      // ---- State ----
       let selectedPaymentIdx = 0;
       let selectedCategoryId = null;
       let selectedCategoryName = '';
-      let selectedVendorId = null;
+      let selectedVendorId = isEditing && editingExpense.partner_id ? editingExpense.partner_id : null;
       let vendorTimer = null;
 
-      // Payment method selection
-      overlay.querySelectorAll('.expense-payment-btn').forEach(btn => {
+      // Pre-fill payment method when editing
+      if (isEditing) {
+        const pmIdx = methods.findIndex(m =>
+          m.payment_mode === editingExpense.payment_mode &&
+          (m.journal_id || false) === (editingExpense.journal_id || false)
+        );
+        if (pmIdx >= 0) selectedPaymentIdx = pmIdx;
+      }
+
+      // Payment button activation
+      overlay.querySelectorAll('.expense-payment-btn').forEach((btn, i) => {
+        if (i === selectedPaymentIdx) btn.classList.add('active');
+        else btn.classList.remove('active');
         btn.addEventListener('click', () => {
           overlay.querySelectorAll('.expense-payment-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
@@ -802,14 +941,51 @@ const Expenses = {
         });
       });
 
-      // Category selection
+      // Category selection + pre-fill when editing
       overlay.querySelectorAll('.expense-category-btn').forEach(btn => {
+        if (isEditing && editingExpense.product_id && parseInt(btn.dataset.id, 10) === editingExpense.product_id) {
+          btn.classList.add('active');
+          selectedCategoryId = editingExpense.product_id;
+          selectedCategoryName = btn.dataset.name;
+        }
         btn.addEventListener('click', () => {
           overlay.querySelectorAll('.expense-category-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           selectedCategoryId = parseInt(btn.dataset.id, 10);
           selectedCategoryName = btn.dataset.name;
         });
+      });
+
+      // Category search filter
+      overlay.querySelector('#expCategorySearch').addEventListener('input', e => {
+        const q = e.target.value.toLowerCase().trim();
+        overlay.querySelectorAll('.expense-category-btn').forEach(btn => {
+          const name = (btn.dataset.name || btn.textContent).toLowerCase();
+          btn.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+      });
+
+      // Amount blur validation
+      const amountInput = overlay.querySelector('#expAmount');
+      const amountError = overlay.querySelector('#expAmountError');
+      amountInput.addEventListener('blur', () => {
+        const v = parseFloat(amountInput.value);
+        if (amountInput.value && (!v || v <= 0)) {
+          amountInput.classList.add('input-error');
+          amountError.style.display = '';
+        } else {
+          amountInput.classList.remove('input-error');
+          amountError.style.display = 'none';
+        }
+      });
+      amountInput.addEventListener('input', () => {
+        if (amountInput.classList.contains('input-error')) {
+          const v = parseFloat(amountInput.value);
+          if (v && v > 0) {
+            amountInput.classList.remove('input-error');
+            amountError.style.display = 'none';
+          }
+        }
       });
 
       // Vendor live search
@@ -821,20 +997,17 @@ const Expenses = {
         const q = vendorInput.value.trim();
         selectedVendorId = null;
         if (q.length < 2) { vendorResults.style.display = 'none'; return; }
-
         vendorTimer = setTimeout(async () => {
           try {
             const partners = await OdooAPI.searchVendors(q);
             const createRow = `<div class="vendor-result-item vendor-result-create"
               data-create="1" data-name="${this._escHtml(q)}">+ Create "${this._escHtml(q)}"</div>`;
-            if (!partners.length) {
-              vendorResults.innerHTML = createRow;
-            } else {
-              vendorResults.innerHTML = partners.map(p =>
-                `<div class="vendor-result-item" data-id="${p.id}"
-                      data-name="${this._escHtml(p.name)}">${this._escHtml(p.name)}</div>`
-              ).join('') + createRow;
-            }
+            vendorResults.innerHTML = (partners.length
+              ? partners.map(p =>
+                  `<div class="vendor-result-item" data-id="${p.id}"
+                        data-name="${this._escHtml(p.name)}">${this._escHtml(p.name)}</div>`
+                ).join('')
+              : '') + createRow;
             vendorResults.style.display = '';
           } catch { vendorResults.style.display = 'none'; }
         }, 320);
@@ -844,7 +1017,6 @@ const Expenses = {
         const item = e.target.closest('.vendor-result-item');
         if (!item) return;
         vendorResults.style.display = 'none';
-
         if (item.dataset.create) {
           const name = item.dataset.name;
           try {
@@ -860,26 +1032,27 @@ const Expenses = {
         }
       });
 
-      // Dismiss vendor results on outside tap
       overlay.querySelector('.expense-form-body').addEventListener('touchstart', e => {
         if (!vendorResults.contains(e.target) && e.target !== vendorInput) {
           vendorResults.style.display = 'none';
         }
       }, { passive: true });
 
-      // Close / cancel
       overlay.querySelector('#expCloseBtn').addEventListener('click', () => {
         overlay.remove(); resolve(null);
       });
 
-      // Save
       overlay.querySelector('#expSubmitBtn').addEventListener('click', async () => {
-        const amount = parseFloat(overlay.querySelector('#expAmount').value);
+        const amount = parseFloat(amountInput.value);
         if (!amount || amount <= 0) {
-          App.showToast('Enter an amount', 'error'); return;
+          amountInput.classList.add('input-error');
+          amountError.style.display = '';
+          App.showToast('Enter an amount', 'error');
+          return;
         }
         if (!selectedCategoryId) {
-          App.showToast('Select a category', 'error'); return;
+          App.showToast('Select a category', 'error');
+          return;
         }
 
         const activeMethod = methods[selectedPaymentIdx] || methods[0];
@@ -887,21 +1060,26 @@ const Expenses = {
         const expenseName = [selectedCategoryName, vendorName].filter(Boolean).join(' – ') || 'Expense';
 
         const expense = {
-          temp_id: 'exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+          temp_id: isEditing
+            ? editingExpense.temp_id
+            : ('exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
           name: expenseName,
           date: overlay.querySelector('#expDate').value || today,
           price_unit: amount,
           quantity: 1,
           product_id: selectedCategoryId,
           partner_id: selectedVendorId || false,
+          partner_name: vendorName || '',
           payment_mode: activeMethod.payment_mode,
           journal_id: activeMethod.journal_id || false,
           journal_label: activeMethod.label || '',
           employee_id: employeeId || false,
           description: overlay.querySelector('#expNotes').value.trim() || false,
-          receipt_b64: receiptDataUrl || false,
+          receipt_images: formImages.length > 0 ? formImages : false,
           receipt_filename: 'receipt_' + Date.now() + '.jpg',
-          created_at: new Date().toISOString(),
+          created_at: isEditing
+            ? (editingExpense.created_at || new Date().toISOString())
+            : new Date().toISOString(),
           synced: 0,
         };
 
@@ -910,8 +1088,9 @@ const Expenses = {
         }
 
         try {
-          overlay.querySelector('#expSubmitBtn').disabled = true;
-          overlay.querySelector('#expSubmitBtn').textContent = 'Saving…';
+          const submitBtn = overlay.querySelector('#expSubmitBtn');
+          submitBtn.disabled = true;
+          submitBtn.textContent = isEditing ? 'Updating…' : 'Saving…';
           await this._saveExpense(expense);
 
           if (navigator.onLine) {
@@ -919,15 +1098,235 @@ const Expenses = {
           }
 
           overlay.remove();
-          App.showToast(navigator.onLine ? 'Expense submitted' : 'Expense saved — will sync when online', 'success');
+          App.showToast(
+            navigator.onLine
+              ? (isEditing ? 'Expense updated' : 'Expense submitted')
+              : (isEditing ? 'Expense updated — will sync when online' : 'Expense saved — will sync when online'),
+            'success'
+          );
           resolve({ submitted: true });
         } catch (err) {
           overlay.querySelector('#expSubmitBtn').disabled = false;
-          overlay.querySelector('#expSubmitBtn').textContent = 'Save';
+          overlay.querySelector('#expSubmitBtn').textContent = isEditing ? 'Update' : 'Save';
           App.showToast('Failed to save: ' + err.message, 'error');
         }
       });
     });
+  },
+
+  // ===== MILEAGE FORM =====
+
+  async _showMileageForm(editingExpense = null) {
+    const methods = await this._getPaymentMethods();
+    const employeeId = Auth.getEmployeeId();
+    const isEditing = !!editingExpense;
+    const defaultRate = (CONFIG.MILEAGE_RATE || 0.67).toFixed(3);
+    const mileageProductId = CONFIG.MILEAGE_PRODUCT_ID || false;
+    const today = new Date().toISOString().slice(0, 10);
+
+    return new Promise((resolve) => {
+      const productWarning = !mileageProductId
+        ? `<div class="exp-employee-warning exp-warning-amber">⚠️ MILEAGE_PRODUCT_ID not set in config — mileage will sync without a product category.</div>`
+        : '';
+
+      const paymentBtns = methods.map((m, i) => `
+        <button class="expense-payment-btn${i === 0 ? ' active' : ''}"
+                data-idx="${i}" type="button">
+          ${this._escHtml(m.label)}
+        </button>`).join('');
+
+      const overlay = document.createElement('div');
+      overlay.className = 'expense-overlay';
+      overlay.innerHTML = `
+        <div class="expense-form">
+          <div class="expense-form-header">
+            <button class="expense-close-btn" id="expMiClose" type="button">✕</button>
+            <span class="expense-form-title">${isEditing ? 'Edit Mileage' : 'Log Mileage'}</span>
+            <button class="btn btn-primary btn-sm" id="expMiSubmitBtn" type="button">${isEditing ? 'Update' : 'Save'}</button>
+          </div>
+          ${productWarning}
+          <div class="expense-form-body">
+
+            <div class="form-group">
+              <label class="form-label">Miles</label>
+              <input type="number" class="form-input" id="expMiMiles"
+                     placeholder="0.0" step="0.1" min="0" inputmode="decimal"
+                     value="${isEditing ? (editingExpense.quantity || '') : ''}">
+            </div>
+
+            <div class="form-group exp-mi-meta-row">
+              <div class="exp-mi-rate-wrap">
+                <span class="exp-mi-rate-label">Rate</span>
+                <div class="expense-amount-wrap">
+                  <span class="expense-amount-symbol">$</span>
+                  <input type="number" class="form-input expense-amount-input exp-mi-rate-input"
+                         id="expMiRate" step="0.001" min="0" inputmode="decimal"
+                         value="${isEditing ? (editingExpense.price_unit || defaultRate) : defaultRate}">
+                  <span class="exp-mi-per-mi">/mi</span>
+                </div>
+              </div>
+              <div class="exp-mi-total-wrap">
+                <span class="exp-mi-total-label">Total</span>
+                <span class="exp-mi-total" id="expMiTotal">$0.00</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">From <span class="expense-optional">(optional)</span></label>
+              <input type="text" class="form-input" id="expMiFrom"
+                     placeholder="Starting location"
+                     value="${isEditing ? this._escHtml(editingExpense.mileage_from || '') : ''}">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">To <span class="expense-optional">(optional)</span></label>
+              <input type="text" class="form-input" id="expMiTo"
+                     placeholder="Destination"
+                     value="${isEditing ? this._escHtml(editingExpense.mileage_to || '') : ''}">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Date</label>
+              <input type="date" class="form-input" id="expMiDate"
+                     value="${isEditing ? (editingExpense.date || today) : today}">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Paid With</label>
+              <div class="expense-payment-list" id="expMiPaymentList">
+                ${paymentBtns}
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Notes <span class="expense-optional">(optional)</span></label>
+              <textarea class="form-input" id="expMiNotes" rows="2"
+                        placeholder="Additional details…">${isEditing ? this._escHtml(editingExpense.description || '') : ''}</textarea>
+            </div>
+
+          </div>
+        </div>`;
+
+      document.body.appendChild(overlay);
+
+      let selectedPaymentIdx = 0;
+      if (isEditing) {
+        const pmIdx = methods.findIndex(m =>
+          m.payment_mode === editingExpense.payment_mode &&
+          (m.journal_id || false) === (editingExpense.journal_id || false)
+        );
+        if (pmIdx >= 0) selectedPaymentIdx = pmIdx;
+      }
+
+      overlay.querySelectorAll('.expense-payment-btn').forEach((btn, i) => {
+        if (i === selectedPaymentIdx) btn.classList.add('active');
+        else btn.classList.remove('active');
+        btn.addEventListener('click', () => {
+          overlay.querySelectorAll('.expense-payment-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          selectedPaymentIdx = parseInt(btn.dataset.idx, 10);
+        });
+      });
+
+      const updateTotal = () => {
+        const miles = parseFloat(overlay.querySelector('#expMiMiles').value) || 0;
+        const rate  = parseFloat(overlay.querySelector('#expMiRate').value) || 0;
+        overlay.querySelector('#expMiTotal').textContent = '$' + (miles * rate).toFixed(2);
+      };
+      overlay.querySelector('#expMiMiles').addEventListener('input', updateTotal);
+      overlay.querySelector('#expMiRate').addEventListener('input', updateTotal);
+      updateTotal();
+
+      overlay.querySelector('#expMiClose').addEventListener('click', () => {
+        overlay.remove(); resolve(null);
+      });
+
+      overlay.querySelector('#expMiSubmitBtn').addEventListener('click', async () => {
+        const miles = parseFloat(overlay.querySelector('#expMiMiles').value);
+        const rate  = parseFloat(overlay.querySelector('#expMiRate').value);
+
+        if (!miles || miles <= 0) {
+          App.showToast('Enter miles driven', 'error'); return;
+        }
+        if (!rate || rate <= 0) {
+          App.showToast('Enter a valid rate', 'error'); return;
+        }
+
+        const activeMethod = methods[selectedPaymentIdx] || methods[0];
+        const fromLoc = overlay.querySelector('#expMiFrom').value.trim();
+        const toLoc   = overlay.querySelector('#expMiTo').value.trim();
+        const route   = [fromLoc, toLoc].filter(Boolean).join(' → ');
+        const expenseName = `Mileage${route ? ' – ' + route : ''} (${miles} mi)`;
+
+        const expense = {
+          temp_id: isEditing
+            ? editingExpense.temp_id
+            : ('exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+          expense_type: 'mileage',
+          name: expenseName,
+          date: overlay.querySelector('#expMiDate').value || today,
+          price_unit: rate,
+          quantity: miles,
+          product_id: mileageProductId || false,
+          payment_mode: activeMethod.payment_mode,
+          journal_id: activeMethod.journal_id || false,
+          journal_label: activeMethod.label || '',
+          employee_id: employeeId || false,
+          description: overlay.querySelector('#expMiNotes').value.trim() || false,
+          mileage_from: fromLoc || false,
+          mileage_to:   toLoc   || false,
+          receipt_images: false,
+          created_at: isEditing
+            ? (editingExpense.created_at || new Date().toISOString())
+            : new Date().toISOString(),
+          synced: 0,
+        };
+
+        if (CONFIG.ALLOWED_COMPANY_IDS && CONFIG.ALLOWED_COMPANY_IDS.length > 0) {
+          expense.company_id = CONFIG.ALLOWED_COMPANY_IDS[0];
+        }
+
+        try {
+          const submitBtn = overlay.querySelector('#expMiSubmitBtn');
+          submitBtn.disabled = true;
+          submitBtn.textContent = isEditing ? 'Updating…' : 'Saving…';
+          await this._saveExpense(expense);
+
+          if (navigator.onLine) {
+            this.syncAll().catch(() => {});
+          }
+
+          overlay.remove();
+          App.showToast(
+            navigator.onLine
+              ? (isEditing ? 'Mileage updated' : 'Mileage logged')
+              : (isEditing ? 'Mileage updated — will sync when online' : 'Mileage saved — will sync when online'),
+            'success'
+          );
+          resolve({ submitted: true });
+        } catch (err) {
+          overlay.querySelector('#expMiSubmitBtn').disabled = false;
+          overlay.querySelector('#expMiSubmitBtn').textContent = isEditing ? 'Update' : 'Save';
+          App.showToast('Failed to save: ' + err.message, 'error');
+        }
+      });
+    });
+  },
+
+  // ===== LIGHTBOX =====
+
+  _showLightbox(src) {
+    const lb = document.createElement('div');
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;' +
+      'display:flex;align-items:center;justify-content:center;touch-action:manipulation;' +
+      'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
+      'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
+    const lbImg = document.createElement('img');
+    lbImg.src = src;
+    lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+    lb.appendChild(lbImg);
+    lb.addEventListener('click', () => lb.remove());
+    document.body.appendChild(lb);
   },
 
   // ===== PAYMENT METHODS =====
@@ -997,12 +1396,22 @@ const Expenses = {
 
         const expenseId = await OdooAPI.createExpense(vals);
 
-        if (expenseId && expense.receipt_b64) {
+        // Attach all receipt images (multi-receipt support, backward-compat with receipt_b64)
+        const images = (expense.receipt_images && expense.receipt_images.length)
+          ? expense.receipt_images
+          : (expense.receipt_b64 ? [expense.receipt_b64] : []);
+
+        for (let i = 0; i < images.length; i++) {
           await OdooAPI.attachReceiptToExpense(
             expenseId,
-            expense.receipt_b64,
-            expense.receipt_filename || 'receipt.jpg'
+            images[i],
+            `receipt_${Date.now() + i}.jpg`
           );
+        }
+
+        // Auto-submit expense sheet if configured
+        if (CONFIG.EXPENSE_AUTO_SUBMIT && expenseId) {
+          await OdooAPI.submitExpense(expenseId);
         }
 
         expense.synced = 1;

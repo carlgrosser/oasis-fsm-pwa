@@ -1153,6 +1153,10 @@ const OdooAPI = {
       mimetype: 'image/jpeg',
     });
   },
+
+  async submitExpense(expenseId) {
+    return this.callKw('hr.expense', 'action_submit_expenses', [[expenseId]], {});
+  },
 };
 
 // ========== SMS MIRROR ==========

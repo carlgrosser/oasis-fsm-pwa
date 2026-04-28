@@ -80,6 +80,10 @@ const CONFIG = {
   SHLINK_SLUG_PATTERN: '{so_number}',
 
   // EXPENSES
+  EXPENSE_AUTO_SUBMIT: false,  // if true, auto-submits each expense to Odoo after sync
+  MILEAGE_RATE: 0.67,          // IRS standard mileage rate ($/mile) — update annually
+  MILEAGE_PRODUCT_ID: false,   // Odoo product.product ID for mileage expenses (can_be_expensed=true)
+
   // mode: 'config' uses the accounts array below.
   // mode: 'odoo'   fetches account.journal (type bank/cash) live from Odoo instead.
   EXPENSE_PAYMENT_METHODS: {
