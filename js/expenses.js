@@ -298,9 +298,11 @@ const Expenses = {
 
         render();
 
-        // Touch / mouse dragging.
-        // move+end are on document so the drag continues even when the finger
-        // leaves the SVG element's bounding box.
+        // Pointer Events API with setPointerCapture — the correct cross-platform
+        // approach. Once a pointerdown is captured on the SVG, all subsequent
+        // pointermove events are guaranteed to route to it even if the finger
+        // moves outside the element's bounds, completely eliminating the
+        // "drag drops after a few pixels" problem.
         let dragging = null;
 
         const getClosestCorner = (tx, ty) => {
@@ -314,35 +316,16 @@ const Expenses = {
 
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-        svg.addEventListener('touchstart', e => {
+        svg.addEventListener('pointerdown', e => {
+          const rect = svg.getBoundingClientRect();
+          const idx = getClosestCorner(e.clientX - rect.left, e.clientY - rect.top);
+          if (idx < 0) return;
+          dragging = idx;
+          svg.setPointerCapture(e.pointerId); // lock all events to this element
           e.preventDefault();
-          const t = e.touches[0];
-          const rect = svg.getBoundingClientRect();
-          dragging = getClosestCorner(t.clientX - rect.left, t.clientY - rect.top);
-        }, { passive: false });
-
-        const onTouchMove = e => {
-          if (dragging === null || dragging < 0) return;
-          e.preventDefault();
-          const t = e.touches[0];
-          const rect = svg.getBoundingClientRect();
-          corners[dragging] = {
-            x: clamp(t.clientX - rect.left, 0, dispW),
-            y: clamp(t.clientY - rect.top, 0, dispH),
-          };
-          render();
-        };
-        const onTouchEnd = () => { dragging = null; };
-
-        document.addEventListener('touchmove', onTouchMove, { passive: false });
-        document.addEventListener('touchend', onTouchEnd);
-
-        // Mouse fallback (desktop testing)
-        svg.addEventListener('mousedown', e => {
-          const rect = svg.getBoundingClientRect();
-          dragging = getClosestCorner(e.clientX - rect.left, e.clientY - rect.top);
         });
-        const onMouseMove = e => {
+
+        svg.addEventListener('pointermove', e => {
           if (dragging === null || dragging < 0) return;
           const rect = svg.getBoundingClientRect();
           corners[dragging] = {
@@ -350,20 +333,12 @@ const Expenses = {
             y: clamp(e.clientY - rect.top, 0, dispH),
           };
           render();
-        };
-        const onMouseUp = () => { dragging = null; };
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
+        });
 
-        const cleanupDrag = () => {
-          document.removeEventListener('touchmove', onTouchMove);
-          document.removeEventListener('touchend', onTouchEnd);
-          document.removeEventListener('mousemove', onMouseMove);
-          document.removeEventListener('mouseup', onMouseUp);
-        };
+        svg.addEventListener('pointerup',     () => { dragging = null; });
+        svg.addEventListener('pointercancel', () => { dragging = null; });
 
         controls.querySelector('#cropCancelBtn').addEventListener('click', () => {
-          cleanupDrag();
           overlay.remove();
           resolve(null);
         });
@@ -375,7 +350,6 @@ const Expenses = {
         });
 
         controls.querySelector('#cropDoneBtn').addEventListener('click', () => {
-          cleanupDrag();
           overlay.remove();
           // Map display corners → original image coordinates
           const imgCorners = corners.map(c => ({ x: c.x / scale, y: c.y / scale }));
@@ -636,6 +610,21 @@ const Expenses = {
         </div>`;
 
       document.body.appendChild(overlay);
+
+      // Receipt tap-to-zoom
+      overlay.querySelector('.expense-receipt-img').addEventListener('click', () => {
+        const lb = document.createElement('div');
+        lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;' +
+          'display:flex;align-items:center;justify-content:center;touch-action:manipulation;' +
+          'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
+          'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
+        const lbImg = document.createElement('img');
+        lbImg.src = receiptDataUrl;
+        lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+        lb.appendChild(lbImg);
+        lb.addEventListener('click', () => lb.remove());
+        document.body.appendChild(lb);
+      });
 
       // --- State ---
       let selectedPaymentIdx = 0;
