@@ -298,7 +298,9 @@ const Expenses = {
 
         render();
 
-        // Touch dragging
+        // Touch / mouse dragging.
+        // move+end are on document so the drag continues even when the finger
+        // leaves the SVG element's bounding box.
         let dragging = null;
 
         const getClosestCorner = (tx, ty) => {
@@ -319,9 +321,9 @@ const Expenses = {
           dragging = getClosestCorner(t.clientX - rect.left, t.clientY - rect.top);
         }, { passive: false });
 
-        svg.addEventListener('touchmove', e => {
+        const onTouchMove = e => {
+          if (dragging === null || dragging < 0) return;
           e.preventDefault();
-          if (dragging < 0) return;
           const t = e.touches[0];
           const rect = svg.getBoundingClientRect();
           corners[dragging] = {
@@ -329,28 +331,41 @@ const Expenses = {
             y: clamp(t.clientY - rect.top, 0, dispH),
           };
           render();
-        }, { passive: false });
+        };
+        const onTouchEnd = () => { dragging = null; };
 
-        svg.addEventListener('touchend', () => { dragging = null; });
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
+        document.addEventListener('touchend', onTouchEnd);
 
         // Mouse fallback (desktop testing)
         svg.addEventListener('mousedown', e => {
           const rect = svg.getBoundingClientRect();
           dragging = getClosestCorner(e.clientX - rect.left, e.clientY - rect.top);
         });
-        svg.addEventListener('mousemove', e => {
-          if (dragging == null || dragging < 0) return;
+        const onMouseMove = e => {
+          if (dragging === null || dragging < 0) return;
           const rect = svg.getBoundingClientRect();
           corners[dragging] = {
             x: clamp(e.clientX - rect.left, 0, dispW),
             y: clamp(e.clientY - rect.top, 0, dispH),
           };
           render();
-        });
-        svg.addEventListener('mouseup', () => { dragging = null; });
+        };
+        const onMouseUp = () => { dragging = null; };
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+
+        const cleanupDrag = () => {
+          document.removeEventListener('touchmove', onTouchMove);
+          document.removeEventListener('touchend', onTouchEnd);
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
 
         controls.querySelector('#cropCancelBtn').addEventListener('click', () => {
-          overlay.remove(); resolve(null);
+          cleanupDrag();
+          overlay.remove();
+          resolve(null);
         });
 
         controls.querySelector('#cropAutoBtn').addEventListener('click', () => {
@@ -360,6 +375,7 @@ const Expenses = {
         });
 
         controls.querySelector('#cropDoneBtn').addEventListener('click', () => {
+          cleanupDrag();
           overlay.remove();
           // Map display corners → original image coordinates
           const imgCorners = corners.map(c => ({ x: c.x / scale, y: c.y / scale }));
