@@ -478,10 +478,13 @@ const Expenses = {
         wrap.className = 'crop-canvas-wrap';
 
         canvas.style.display = 'block';
-        canvas.style.maxWidth = '100%';
-        canvas.style.maxHeight = '100%';
-        canvas.style.objectFit = 'contain';
-        wrap.appendChild(canvas);
+
+        // Inner frame tightly wraps canvas + SVG so the SVG overlay aligns exactly.
+        // Without this the SVG is absolute-positioned to the outer wrap (which is
+        // flex-centered and larger than the canvas), causing a vertical offset.
+        const innerFrame = document.createElement('div');
+        innerFrame.style.cssText = 'position:relative;display:inline-block;line-height:0;flex-shrink:0;';
+        innerFrame.appendChild(canvas);
 
         // SVG for interactive crop handles
         const ns = 'http://www.w3.org/2000/svg';
@@ -489,7 +492,8 @@ const Expenses = {
         svg.setAttribute('width', dispW);
         svg.setAttribute('height', dispH);
         svg.style.cssText = 'position:absolute;top:0;left:0;touch-action:none;overflow:visible;';
-        wrap.appendChild(svg);
+        innerFrame.appendChild(svg);
+        wrap.appendChild(innerFrame);
 
         const controls = document.createElement('div');
         controls.className = 'crop-controls';
@@ -894,7 +898,7 @@ const Expenses = {
           </div>`).join('') +
           `<button class="exp-receipt-add-btn" id="expReceiptAddBtn" type="button">
             <span class="exp-receipt-add-icon">+</span>
-            <span class="exp-receipt-add-label">Add Photo</span>
+            <span class="exp-receipt-add-label">Add Receipt</span>
           </button>`;
 
         strip.querySelectorAll('.exp-receipt-thumb-img').forEach(img => {

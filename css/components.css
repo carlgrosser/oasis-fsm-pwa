@@ -3178,8 +3178,21 @@ textarea.form-input {
   align-items: center;
   justify-content: center;
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
+}
+
+.crop-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+  padding: 16px 24px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.75);
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 /* ========== EXPENSE FORM OVERLAY ========== */
@@ -3742,11 +3755,17 @@ textarea.form-input {
 
 /* Prominent "Use Crop" primary button */
 .crop-btn-primary {
-  background: linear-gradient(135deg, #0066cc, #0080ff) !important;
-  color: #fff !important;
-  font-weight: 600 !important;
+  background: linear-gradient(135deg, #0066cc, #0080ff);
+  border-radius: 24px;
+  padding: 10px 20px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(0, 102, 204, 0.5);
   min-width: 96px;
-  box-shadow: 0 2px 8px rgba(0, 102, 204, 0.4) !important;
+}
+.crop-btn-primary .camera-btn-label {
+  opacity: 1;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* Mileage form: rate + running total row */
