@@ -202,7 +202,7 @@ const App = {
     const receiptBtn = document.getElementById('receiptBtn');
     if (receiptBtn) {
       receiptBtn.addEventListener('click', () => {
-        if (typeof Expenses !== 'undefined') Expenses.startReceiptScan();
+        if (typeof Expenses !== 'undefined') Expenses.showReceiptMenu();
       });
     }
 

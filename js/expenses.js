@@ -6,7 +6,63 @@ const Expenses = {
   _pendingCapture: null,
   _categories: null, // null = not yet fetched
 
-  // ===== ENTRY POINT =====
+  // ===== ENTRY POINTS =====
+
+  showReceiptMenu() {
+    // Toggle: second tap closes the menu
+    const existing = document.getElementById('expenseActionMenu');
+    if (existing) { existing.remove(); return; }
+
+    const receiptBtn = document.getElementById('receiptBtn');
+    if (!receiptBtn) return;
+
+    const menu = document.createElement('div');
+    menu.id = 'expenseActionMenu';
+    menu.className = 'expense-action-menu';
+    menu.innerHTML = `
+      <button class="expense-action-item" id="expMenuScan">
+        <span class="expense-action-icon">📷</span>Scan Receipt
+      </button>
+      <button class="expense-action-item" id="expMenuNoReceipt">
+        <span class="expense-action-icon">✏️</span>Add Without Receipt
+      </button>
+      <button class="expense-action-item" id="expMenuView">
+        <span class="expense-action-icon">📋</span>View / Edit Expenses
+      </button>`;
+    document.body.appendChild(menu);
+
+    // Position above the receipt button
+    const btnRect = receiptBtn.getBoundingClientRect();
+    menu.style.bottom = (window.innerHeight - btnRect.top + 10) + 'px';
+    const left = Math.round(btnRect.left + btnRect.width / 2 - menu.offsetWidth / 2);
+    menu.style.left = Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, left)) + 'px';
+
+    // Dismiss on outside tap/click (deferred so the opening tap doesn't immediately close)
+    const dismiss = (e) => {
+      if (!menu.contains(e.target) && e.target !== receiptBtn) {
+        menu.remove();
+        document.removeEventListener('touchstart', dismiss, true);
+        document.removeEventListener('click', dismiss, true);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('touchstart', dismiss, { capture: true, passive: true });
+      document.addEventListener('click', dismiss, true);
+    }, 50);
+
+    menu.querySelector('#expMenuScan').addEventListener('click', () => {
+      menu.remove();
+      this.startReceiptScan();
+    });
+    menu.querySelector('#expMenuNoReceipt').addEventListener('click', () => {
+      menu.remove();
+      this.startExpenseWithoutReceipt();
+    });
+    menu.querySelector('#expMenuView').addEventListener('click', () => {
+      menu.remove();
+      this.showExpenseList();
+    });
+  },
 
   async startReceiptScan() {
     try {
@@ -21,6 +77,102 @@ const Expenses = {
       console.error('Receipt scan error:', err);
       App.showToast('Receipt scan failed: ' + err.message, 'error');
     }
+  },
+
+  async startExpenseWithoutReceipt() {
+    try {
+      await this._showExpenseForm(null);
+    } catch (err) {
+      console.error('Expense form error:', err);
+      App.showToast('Error: ' + err.message, 'error');
+    }
+  },
+
+  async showExpenseList() {
+    let expenses = [];
+    try { expenses = await DB.getAll('expensesQueue'); } catch { expenses = []; }
+    expenses.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
+    const overlay = document.createElement('div');
+    overlay.className = 'expense-overlay';
+    overlay.innerHTML = `
+      <div class="expense-form">
+        <div class="expense-form-header">
+          <button class="expense-close-btn" id="expListClose" type="button">✕</button>
+          <span class="expense-form-title">My Expenses</span>
+          <div style="min-width:44px;"></div>
+        </div>
+        <div class="expense-list-body expense-form-body"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const renderList = () => {
+      const body = overlay.querySelector('.expense-list-body');
+      if (!expenses.length) {
+        body.innerHTML = '<p class="expense-hint" style="text-align:center;padding:var(--spacing-xl) var(--spacing-md);">No expenses recorded yet.</p>';
+        return;
+      }
+      body.innerHTML = expenses.map((exp, i) => {
+        const synced = exp.synced === 1;
+        const amount = exp.price_unit != null ? `$${parseFloat(exp.price_unit).toFixed(2)}` : '';
+        const payLabel = exp.payment_mode === 'own_account'
+          ? 'Out of Pocket' : (exp.journal_label || 'Company Account');
+        const statusHtml = synced
+          ? '<span class="exp-list-badge exp-list-synced">✓ Synced</span>'
+          : '<span class="exp-list-badge exp-list-pending">⏳ Pending</span>';
+        const thumbHtml = exp.receipt_b64
+          ? `<img class="exp-list-thumb" src="${exp.receipt_b64}" alt="Receipt">`
+          : `<div class="exp-list-thumb exp-list-thumb-none">🧾</div>`;
+        const deleteBtn = !synced
+          ? `<button class="exp-list-delete" data-idx="${i}" type="button" aria-label="Delete">🗑</button>`
+          : '<div style="min-width:36px;"></div>';
+        return `
+          <div class="exp-list-item">
+            <div class="exp-list-thumb-wrap" data-idx="${i}">${thumbHtml}</div>
+            <div class="exp-list-info">
+              <div class="exp-list-name">${this._escHtml(exp.name || 'Expense')}</div>
+              <div class="exp-list-meta">${this._escHtml(exp.date || '')}${exp.date ? ' · ' : ''}${this._escHtml(payLabel)}</div>
+              <div class="exp-list-row2">${statusHtml}${amount ? `<span class="exp-list-amount">${amount}</span>` : ''}</div>
+            </div>
+            ${deleteBtn}
+          </div>`;
+      }).join('');
+
+      // Thumbnail tap-to-zoom
+      body.querySelectorAll('.exp-list-thumb[src]').forEach(img => {
+        img.style.cursor = 'zoom-in';
+        img.addEventListener('click', () => {
+          const lb = document.createElement('div');
+          lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;display:flex;align-items:center;justify-content:center;touch-action:manipulation;padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);';
+          const lbImg = document.createElement('img');
+          lbImg.src = img.src;
+          lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+          lb.appendChild(lbImg);
+          lb.addEventListener('click', () => lb.remove());
+          document.body.appendChild(lb);
+        });
+      });
+
+      // Delete buttons
+      body.querySelectorAll('.exp-list-delete').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          const exp = expenses[idx];
+          if (!exp || !confirm(`Delete "${exp.name || 'expense'}"?`)) return;
+          try {
+            await DB.delete('expensesQueue', exp.temp_id);
+            expenses.splice(idx, 1);
+            renderList();
+            if (typeof Sync !== 'undefined') Sync._updatePendingCount();
+          } catch (err) {
+            App.showToast('Could not delete: ' + err.message, 'error');
+          }
+        });
+      });
+    };
+
+    renderList();
+    overlay.querySelector('#expListClose').addEventListener('click', () => overlay.remove());
   },
 
   // ===== CAMERA CAPTURE =====
@@ -557,9 +709,14 @@ const Expenses = {
           </div>
           <div class="expense-form-body">
 
-            <div class="expense-receipt-preview">
-              <img src="${receiptDataUrl}" class="expense-receipt-img" alt="Receipt">
-            </div>
+            ${receiptDataUrl
+              ? `<div class="expense-receipt-preview">
+                   <img src="${receiptDataUrl}" class="expense-receipt-img" alt="Receipt">
+                 </div>`
+              : `<div class="expense-receipt-none">
+                   <span class="expense-receipt-none-icon">🧾</span>
+                   <span>No receipt attached</span>
+                 </div>`}
 
             <div class="form-group">
               <label class="form-label">Amount</label>
@@ -611,20 +768,23 @@ const Expenses = {
 
       document.body.appendChild(overlay);
 
-      // Receipt tap-to-zoom
-      overlay.querySelector('.expense-receipt-img').addEventListener('click', () => {
-        const lb = document.createElement('div');
-        lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;' +
-          'display:flex;align-items:center;justify-content:center;touch-action:manipulation;' +
-          'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
-          'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
-        const lbImg = document.createElement('img');
-        lbImg.src = receiptDataUrl;
-        lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
-        lb.appendChild(lbImg);
-        lb.addEventListener('click', () => lb.remove());
-        document.body.appendChild(lb);
-      });
+      // Receipt tap-to-zoom (only when a receipt image exists)
+      const receiptImg = overlay.querySelector('.expense-receipt-img');
+      if (receiptImg) {
+        receiptImg.addEventListener('click', () => {
+          const lb = document.createElement('div');
+          lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:10000;' +
+            'display:flex;align-items:center;justify-content:center;touch-action:manipulation;' +
+            'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
+            'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
+          const lbImg = document.createElement('img');
+          lbImg.src = receiptDataUrl;
+          lbImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+          lb.appendChild(lbImg);
+          lb.addEventListener('click', () => lb.remove());
+          document.body.appendChild(lb);
+        });
+      }
 
       // --- State ---
       let selectedPaymentIdx = 0;
@@ -736,9 +896,10 @@ const Expenses = {
           partner_id: selectedVendorId || false,
           payment_mode: activeMethod.payment_mode,
           journal_id: activeMethod.journal_id || false,
+          journal_label: activeMethod.label || '',
           employee_id: employeeId || false,
           description: overlay.querySelector('#expNotes').value.trim() || false,
-          receipt_b64: receiptDataUrl,
+          receipt_b64: receiptDataUrl || false,
           receipt_filename: 'receipt_' + Date.now() + '.jpg',
           created_at: new Date().toISOString(),
           synced: 0,
