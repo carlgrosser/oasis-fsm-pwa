@@ -39,7 +39,7 @@ const CONFIG = {
 
   // INDEXEDDB
   DB_NAME: 'fsm_pwa',
-  DB_VERSION: 4,
+  DB_VERSION: 5,
 
   // MULTI-COMPANY: list all company IDs this user should see orders from
   ALLOWED_COMPANY_IDS: [1, 2],  // 1=Oasis Pool Tile Cleaning, 2=Oasis Holiday Lighting
@@ -78,6 +78,18 @@ const CONFIG = {
   SHLINK_BASE_URL: '',
   SHLINK_API_KEY: '',
   SHLINK_SLUG_PATTERN: '{so_number}',
+
+  // EXPENSES
+  // mode: 'config' uses the accounts array below.
+  // mode: 'odoo'   fetches account.journal (type bank/cash) live from Odoo instead.
+  EXPENSE_PAYMENT_METHODS: {
+    mode: 'config',
+    accounts: [
+      { label: 'Out of Pocket (Reimbursable)', payment_mode: 'own_account',    journal_id: false },
+      { label: 'Company Visa (Chase)',          payment_mode: 'company_account', journal_id: false },
+      { label: 'Company Checking (Chase)',      payment_mode: 'company_account', journal_id: false },
+    ],
+  },
 
   // BILLING
   VENMO_USERNAME: '@OasisPoolTile',

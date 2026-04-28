@@ -62,6 +62,7 @@ const Sync = {
       await this._syncMaterials();
       await this._syncTimeEntries();
       await this._syncOfficeNotes();
+      await this._syncExpenses();
       await this._updatePendingCount();
       App.showToast('Sync complete', 'success');
     } catch (err) {
@@ -163,6 +164,18 @@ const Sync = {
     }
   },
 
+  async _syncExpenses() {
+    if (typeof Expenses !== 'undefined') {
+      const result = await Expenses.syncAll();
+      if (result.synced > 0) {
+        console.log(`Synced ${result.synced} expenses, ${result.failed} failed`);
+      }
+      if (result.failed > 0) {
+        App.showToast(`${result.failed} expense(s) failed to sync — will retry`, 'error');
+      }
+    }
+  },
+
   /**
    * Count pending sync items.
    */
@@ -186,7 +199,12 @@ const Sync = {
         const officeNotes = await DB.getUnsyncedItems('officeNotes');
         officeNotesCount = officeNotes.length;
       } catch { /* store may not exist yet */ }
-      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount;
+      let expensesCount = 0;
+      try {
+        const expenseItems = await DB.getUnsyncedItems('expensesQueue');
+        expensesCount = expenseItems.length;
+      } catch { /* store may not exist yet */ }
+      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount + expensesCount;
     } catch {
       this._pendingCount = 0;
     }

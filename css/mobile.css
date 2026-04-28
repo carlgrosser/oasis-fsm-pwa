@@ -381,6 +381,11 @@ body {
   box-shadow: 0 2px 8px rgba(142, 68, 173, 0.3);
 }
 
+.footer-btn-receipt {
+  background: linear-gradient(135deg, #16a085, #1abc9c);
+  box-shadow: 0 2px 8px rgba(22, 160, 133, 0.35);
+}
+
 .footer-btn-menu {
   background: linear-gradient(135deg, #4a5568, #718096);
   box-shadow: 0 2px 8px rgba(74, 85, 104, 0.3);

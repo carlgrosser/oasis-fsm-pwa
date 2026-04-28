@@ -79,6 +79,13 @@ const DB = {
           const onStore = db.createObjectStore('officeNotes', { keyPath: 'temp_id' });
           onStore.createIndex('synced', 'synced', { unique: false });
         }
+
+        // Expenses queue (offline expense entries with receipt images)
+        if (!db.objectStoreNames.contains('expensesQueue')) {
+          const eqStore = db.createObjectStore('expensesQueue', { keyPath: 'temp_id' });
+          eqStore.createIndex('synced', 'synced', { unique: false });
+          eqStore.createIndex('created_at', 'created_at', { unique: false });
+        }
       };
 
       request.onsuccess = (event) => {

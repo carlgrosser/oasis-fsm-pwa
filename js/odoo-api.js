@@ -1104,6 +1104,55 @@ const OdooAPI = {
   async reopenJob(orderId) {
     return this.callKw('fsm.order', 'reopen_job', [orderId], {});
   },
+
+  // ========== EXPENSES ==========
+
+  async searchVendors(query) {
+    return this.searchRead(
+      'res.partner',
+      [['active', '=', true], ['name', 'ilike', query]],
+      ['id', 'name'],
+      { limit: 10, order: 'name asc' }
+    );
+  },
+
+  async createVendor(name) {
+    return this.create('res.partner', { name, supplier_rank: 1 });
+  },
+
+  async getExpenseCategories() {
+    return this.searchRead(
+      'product.product',
+      [['can_be_expensed', '=', true], ['active', '=', true]],
+      ['id', 'name', 'display_name'],
+      { order: 'name asc', limit: 200 }
+    );
+  },
+
+  async getExpenseJournals() {
+    return this.searchRead(
+      'account.journal',
+      [['type', 'in', ['bank', 'cash']]],
+      ['id', 'name'],
+      { order: 'name asc', limit: 50 }
+    );
+  },
+
+  async createExpense(values) {
+    return this.create('hr.expense', values);
+  },
+
+  async attachReceiptToExpense(expenseId, b64Data, filename) {
+    const base64 = b64Data.includes(',') ? b64Data.split(',')[1] : b64Data;
+    return this.create('ir.attachment', {
+      name: filename,
+      type: 'binary',
+      datas: base64,
+      res_model: 'hr.expense',
+      res_id: expenseId,
+      mimetype: 'image/jpeg',
+    });
+  },
 };
 
 // ========== SMS MIRROR ==========
