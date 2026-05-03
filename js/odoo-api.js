@@ -1157,6 +1157,32 @@ const OdooAPI = {
   async submitExpense(expenseId) {
     return this.callKw('hr.expense', 'action_submit_expenses', [[expenseId]], {});
   },
+
+  // ── Visit Planning (fieldservice_visit_planning) ─────────────────────────
+  async getVisitPlanningSummary(orderId) {
+    return this.callKw('fsm.order', 'get_visit_planning_summary', [orderId], {});
+  },
+
+  async workerRescheduleOrder(orderId, newStart, newEnd, reason, resetStage) {
+    return this.callKw(
+      'fsm.order',
+      'worker_reschedule_order',
+      [orderId, newStart, newEnd, reason || ''],
+      { reset_stage: resetStage !== false },
+    );
+  },
+
+  async workerCreateNextVisit(orderId, scheduledStart, durationHours, reason) {
+    return this.callKw(
+      'fsm.order',
+      'worker_create_next_visit',
+      [orderId, scheduledStart],
+      {
+        duration_hours: durationHours || 0,
+        reason: reason || '',
+      },
+    );
+  },
 };
 
 // ========== SMS MIRROR ==========

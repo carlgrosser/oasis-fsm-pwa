@@ -48,7 +48,7 @@ const CONFIG = {
   // Base fields that exist in standard OCA fieldservice
   FSM_ORDER_FIELDS: [
     'name', 'location_id', 'stage_id',
-    'scheduled_date_start', 'scheduled_date_end',
+    'scheduled_date_start', 'scheduled_date_end', 'scheduled_duration',
     'person_id', 'person_ids', 'sale_id', 'category_ids',
     'description', 'todo', 'request_early',
     'date_start', 'date_end',

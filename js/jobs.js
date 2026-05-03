@@ -646,6 +646,11 @@ const Jobs = {
         <button class="btn btn-close-job btn-block btn-xl" id="closeJobBtn">Close Job</button>
       </div>`) : ''}
 
+      <div class="visit-planning-actions" style="display:flex;gap:8px;padding:8px 12px;">
+        <button class="btn btn-sm" id="rescheduleVisitBtn" style="flex:1;">Reschedule</button>
+        <button class="btn btn-sm" id="continueAnotherDayBtn" style="flex:1;">Continue Another Day</button>
+      </div>
+
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
@@ -692,6 +697,16 @@ const Jobs = {
     const earlyWrapupBtn = document.getElementById('earlyWrapupBtn');
     if (earlyWrapupBtn && typeof WrapUp !== 'undefined') {
       earlyWrapupBtn.addEventListener('click', () => WrapUp.showEarly(job));
+    }
+
+    // Bind visit-planning action buttons
+    const rescheduleBtn = document.getElementById('rescheduleVisitBtn');
+    if (rescheduleBtn) {
+      rescheduleBtn.addEventListener('click', () => this._showRescheduleModal(job));
+    }
+    const continueBtn = document.getElementById('continueAnotherDayBtn');
+    if (continueBtn) {
+      continueBtn.addEventListener('click', () => this._showContinueAnotherDayModal(job));
     }
 
     // Init tab swiping
@@ -2194,6 +2209,207 @@ const Jobs = {
 
     // Load journal content immediately (default tab)
     loadTab('journal');
+  },
+
+  // ── Visit Planning modals ─────────────────────────────────────────────────
+
+  _formatDateTimeLocal(odooDateStr) {
+    if (!odooDateStr) return '';
+    // Odoo gives 'YYYY-MM-DD HH:MM:SS' UTC. Convert to local datetime-local input.
+    const utcStr = odooDateStr.replace(' ', 'T') + 'Z';
+    const d = new Date(utcStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
+           `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  },
+
+  _localToOdooDateTime(localStr) {
+    if (!localStr) return '';
+    // 'YYYY-MM-DDTHH:MM' (local) → 'YYYY-MM-DD HH:MM:SS' (UTC for Odoo).
+    const d = new Date(localStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ` +
+           `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
+  },
+
+  _showRescheduleModal(job) {
+    const currentStart = this._formatDateTimeLocal(job.scheduled_date_start);
+    const duration = job.scheduled_duration || 0;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <h3>Reschedule Visit</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <label style="display:block;margin-bottom:8px;">
+            <span style="font-weight:600;">New Start</span>
+            <input type="datetime-local" id="rescheduleStart" value="${currentStart}"
+                   style="width:100%;padding:8px;font-size:16px;" />
+          </label>
+          <label style="display:block;margin-bottom:8px;">
+            <span style="font-weight:600;">Duration (hours)</span>
+            <input type="number" step="0.25" min="0" id="rescheduleDuration"
+                   value="${duration}"
+                   style="width:100%;padding:8px;font-size:16px;" />
+          </label>
+          <label style="display:block;margin-bottom:8px;">
+            <input type="checkbox" id="rescheduleResetStage" checked />
+            Reset stage to Scheduled (uncheck if work has already started)
+          </label>
+          <label style="display:block;margin-bottom:12px;">
+            <span style="font-weight:600;">Reason</span>
+            <textarea id="rescheduleReason" rows="3"
+                      style="width:100%;padding:8px;font-size:16px;"
+                      placeholder="Why are we rescheduling?"></textarea>
+          </label>
+          <div id="rescheduleConflicts" style="display:none;color:#a00;
+               background:#fee;padding:8px;border-radius:4px;margin-bottom:8px;
+               white-space:pre-wrap;font-size:14px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-block" id="rescheduleCancelBtn"
+                    style="flex:1;">Cancel</button>
+            <button class="btn btn-block btn-primary" id="rescheduleApplyBtn"
+                    style="flex:1;">Apply</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.querySelector('#rescheduleCancelBtn').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#rescheduleApplyBtn').addEventListener('click', async () => {
+      const startLocal = overlay.querySelector('#rescheduleStart').value;
+      const durHrs = parseFloat(overlay.querySelector('#rescheduleDuration').value) || 0;
+      const reason = overlay.querySelector('#rescheduleReason').value || '';
+      const resetStage = overlay.querySelector('#rescheduleResetStage').checked;
+      if (!startLocal || durHrs <= 0) {
+        alert('Pick a start time and a duration greater than zero.');
+        return;
+      }
+      const newStartOdoo = this._localToOdooDateTime(startLocal);
+      const startD = new Date(startLocal);
+      const endD = new Date(startD.getTime() + durHrs * 3600 * 1000);
+      const pad = (n) => String(n).padStart(2, '0');
+      const newEndOdoo = `${endD.getUTCFullYear()}-${pad(endD.getUTCMonth()+1)}` +
+        `-${pad(endD.getUTCDate())} ${pad(endD.getUTCHours())}:` +
+        `${pad(endD.getUTCMinutes())}:00`;
+      try {
+        const res = await OdooAPI.workerRescheduleOrder(
+          job.id, newStartOdoo, newEndOdoo, reason, resetStage,
+        );
+        if (!res || !res.ok) {
+          if (res && res.error === 'conflict') {
+            const lines = (res.conflicts || []).map(c =>
+              `• ${c.name} — ${c.scheduled_date_start} → ${c.scheduled_date_end}` +
+              ` (${c.person_name || 'unassigned'})`
+            ).join('\n');
+            const cd = overlay.querySelector('#rescheduleConflicts');
+            cd.textContent = `Schedule conflict — the assigned crew has overlapping job(s):\n\n${lines}\n\nPick a different time, or contact the office.`;
+            cd.style.display = 'block';
+            return;
+          }
+          alert('Reschedule failed: ' + (res && res.error || 'unknown error'));
+          return;
+        }
+        close();
+        if (typeof Toast !== 'undefined') Toast.success('Visit rescheduled');
+        await Jobs.loadJobs(Jobs._currentView || 'today');
+      } catch (err) {
+        alert('Reschedule failed: ' + (err.message || err));
+      }
+    });
+  },
+
+  _showContinueAnotherDayModal(job) {
+    // Default to tomorrow at the same start time.
+    const baseStart = job.scheduled_date_start
+      ? new Date(job.scheduled_date_start.replace(' ', 'T') + 'Z')
+      : new Date();
+    const tomorrow = new Date(baseStart.getTime() + 24 * 3600 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const defaultLocal = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-` +
+      `${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`;
+    const duration = job.scheduled_duration || 4;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <h3>Continue on Another Day</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin:0 0 12px 0;color:#666;">
+            Creates a new visit for the next day. This visit stays as-is —
+            you can still close it out for today's work.
+          </p>
+          <label style="display:block;margin-bottom:8px;">
+            <span style="font-weight:600;">Next Visit Start</span>
+            <input type="datetime-local" id="continueStart" value="${defaultLocal}"
+                   style="width:100%;padding:8px;font-size:16px;" />
+          </label>
+          <label style="display:block;margin-bottom:8px;">
+            <span style="font-weight:600;">Duration (hours)</span>
+            <input type="number" step="0.25" min="0" id="continueDuration"
+                   value="${duration}"
+                   style="width:100%;padding:8px;font-size:16px;" />
+          </label>
+          <label style="display:block;margin-bottom:12px;">
+            <span style="font-weight:600;">Reason / Note</span>
+            <textarea id="continueReason" rows="3"
+                      style="width:100%;padding:8px;font-size:16px;"
+                      placeholder="What's left to finish?"></textarea>
+          </label>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-block" id="continueCancelBtn"
+                    style="flex:1;">Cancel</button>
+            <button class="btn btn-block btn-primary" id="continueApplyBtn"
+                    style="flex:1;">Create Next Visit</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.querySelector('#continueCancelBtn').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#continueApplyBtn').addEventListener('click', async () => {
+      const startLocal = overlay.querySelector('#continueStart').value;
+      const durHrs = parseFloat(overlay.querySelector('#continueDuration').value) || 0;
+      const reason = overlay.querySelector('#continueReason').value || '';
+      if (!startLocal || durHrs <= 0) {
+        alert('Pick a start time and a duration greater than zero.');
+        return;
+      }
+      const startOdoo = this._localToOdooDateTime(startLocal);
+      try {
+        const res = await OdooAPI.workerCreateNextVisit(
+          job.id, startOdoo, durHrs, reason,
+        );
+        if (!res || !res.ok) {
+          alert('Failed to create next visit: ' + (res && res.error || 'unknown'));
+          return;
+        }
+        close();
+        if (typeof Toast !== 'undefined') {
+          Toast.success(`Next visit created: ${res.new_order_name}`);
+        }
+        await Jobs.loadJobs(Jobs._currentView || 'today');
+      } catch (err) {
+        alert('Failed: ' + (err.message || err));
+      }
+    });
   },
 
   /**
