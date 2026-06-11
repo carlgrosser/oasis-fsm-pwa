@@ -304,6 +304,7 @@ const WrapUp = {
           this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
         } else {
           if (!editMode) job.wrapup_submitted = true;
+          if (typeof Jobs !== 'undefined') Jobs._historyFetchCache = null;
           if (result.new_stage_id) job.stage_id = [result.new_stage_id, result.new_stage_name];
           await DB.put('jobs', job);
           const detailContainer = document.getElementById('jobDetail');
@@ -332,6 +333,7 @@ const WrapUp = {
       overlay.remove();
       if (!editMode) {
         job.wrapup_submitted = true;
+        if (typeof Jobs !== 'undefined') Jobs._historyFetchCache = null;
         await DB.put('jobs', job);
         const detailContainer = document.getElementById('jobDetail');
         if (detailContainer && typeof Jobs !== 'undefined') Jobs.renderJobDetail(job.id, detailContainer);
@@ -443,6 +445,7 @@ const WrapUp = {
             job.stage_id = [result.new_stage_id, result.new_stage_name];
           }
           job.wrapup_submitted = true;
+          if (typeof Jobs !== 'undefined') Jobs._historyFetchCache = null;
           // Refresh the job detail in the background (behind the clock-off prompt)
           const detailContainer = document.getElementById('jobDetail');
           if (detailContainer && typeof Jobs !== 'undefined') {
@@ -466,6 +469,7 @@ const WrapUp = {
         overlay.remove();
         // Optimistically mark as closed so the UI reflects it offline too
         job.wrapup_submitted = true;
+        if (typeof Jobs !== 'undefined') Jobs._historyFetchCache = null;
         const detailContainer = document.getElementById('jobDetail');
         if (detailContainer && typeof Jobs !== 'undefined') {
           Jobs.renderJobDetail(job.id, detailContainer);

@@ -7,6 +7,49 @@ const App = {
   _viewsLoaded: { today: false, history: false },
 
   /**
+   * Footer menu definition — both the list and detail dropdowns are generated
+   * from this single list (IDs get a List/Detail suffix), so items can't
+   * drift apart. Labels for the toggle items (placement, camera mode) are
+   * placeholders; their modules update them on init.
+   */
+  _menuItems: [
+    { id: 'themeBtn', label: '🎨 Themes' },
+    { id: 'noteBtn', label: '📋 Note to Office' },
+    { id: 'timeOffBtn', label: '🗓️ My Time Off' },
+    { id: 'syncBtn', label: '&#10227; Sync Now' },
+    { id: 'fixShiftBtn', label: '⏱️ Adjust Shift' },
+    { id: 'clearCacheBtn', label: '🗑️ Clear Cache' },
+    { id: 'importSettingsBtn', label: '⚙️ Import Settings' },
+    { id: 'viewAsBtn', label: '👁️ View As Worker', hidden: true },
+    { divider: true },
+    { id: 'wrapupPlacementBtn', label: '📌 Close Job Btn: Above Tabs' },
+    { id: 'cameraModeBtn', label: '📷 Camera: In-App' },
+    { divider: true },
+    { id: 'feedbackBtn', label: '💬 Report a Bug / Suggest Improvement' },
+    { divider: true },
+    { id: 'logoutBtn', label: '&#9211; Log Out', danger: true },
+  ],
+
+  /**
+   * Render both footer menu dropdowns from _menuItems. Must run at script
+   * load (before DOMContentLoaded) — other modules (WrapUp, Photos) bind to
+   * the generated buttons in their own DOMContentLoaded handlers, which fire
+   * before App.init().
+   */
+  _renderMenus() {
+    const html = (suffix) => this._menuItems.map(item => {
+      if (item.divider) return '<div class="menu-divider"></div>';
+      const cls = 'menu-item' + (item.danger ? ' menu-item-danger' : '');
+      const style = item.hidden ? ' style="display:none;"' : '';
+      return `<button id="${item.id}${suffix}" class="${cls}"${style}>${item.label}</button>`;
+    }).join('');
+    const list = document.getElementById('menuDropdownList');
+    const detail = document.getElementById('menuDropdownDetail');
+    if (list) list.innerHTML = html('List');
+    if (detail) detail.innerHTML = html('Detail');
+  },
+
+  /**
    * Initialize the app after login.
    */
   async init() {
@@ -431,6 +474,7 @@ const App = {
    */
   async refreshAllViews() {
     this._viewsLoaded = { today: false, history: false };
+    Jobs._historyFetchCache = null; // force fresh overdue/not-closed counts
     await this._loadViewJobs(this._currentView);
   },
 
@@ -750,6 +794,11 @@ const App = {
     }, 3000);
   },
 };
+
+// Generate footer menus immediately — scripts sit at the end of <body>, so
+// the dropdown containers exist, and modules that bind menu buttons on
+// DOMContentLoaded (wrapup.js, photos.js) need the buttons to exist first.
+App._renderMenus();
 
 // Handle back button on mobile
 window.addEventListener('popstate', () => {

@@ -277,14 +277,14 @@ const Photos = {
             sy = Math.round((vh - sh) / 2);
           }
 
-          // Full-size (max 1920px wide)
+          // Full-size (max 1920px wide) — stored as a Blob
           const maxW = 1920;
           let w = sw, h = sh;
           if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-          const resized = canvas.toDataURL('image/jpeg', 0.85);
+          const resized = await this._canvasToBlob(canvas, 0.85);
 
           // Thumbnail (max 300px wide)
           const thumbW = 300;
@@ -404,14 +404,17 @@ const Photos = {
 
   /**
    * Save a photo to IndexedDB.
+   * `data` is the full-size image as a Blob (preferred — ~25% smaller in
+   * storage and no giant strings in memory) or a base64 data URL (legacy).
+   * `thumbnail` stays a data URL so it can go straight into <img src>.
    */
-  async savePhoto(jobId, base64Data, thumbnail, category, filename) {
+  async savePhoto(jobId, data, thumbnail, category, filename) {
     const photo = {
       temp_id: 'photo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       job_id: jobId,
       category: category,
       filename: filename,
-      data: base64Data,
+      data: data,
       thumbnail: thumbnail,
       timestamp: new Date().toISOString(),
       synced: 0,
@@ -443,16 +446,40 @@ const Photos = {
     await DB.delete('photos', tempId);
   },
 
+  // Short-lived per-job cache for Drive photo links. A single photo add
+  // triggers two re-renders plus a gate check — without this, each one
+  // re-hits the server.
+  _driveCache: {},          // jobId -> { ts, data }
+  _DRIVE_CACHE_TTL: 30000,  // ms
+
   /**
-   * Fetch Drive photo link records for a job (online only).
+   * Fetch Drive photo link records for a job (online only, 30s cache).
    * Returns [] on any error so callers don't need to handle it.
    */
   async _loadDrivePhotos(jobId) {
+    const cached = this._driveCache[jobId];
+    if (cached && Date.now() - cached.ts < this._DRIVE_CACHE_TTL) {
+      return cached.data;
+    }
     try {
-      return await OdooAPI.getDrivePhotoLinks(jobId);
+      const data = await OdooAPI.getDrivePhotoLinks(jobId);
+      this._driveCache[jobId] = { ts: Date.now(), data };
+      return data;
     } catch (e) {
       return [];
     }
+  },
+
+  /**
+   * Convert a Blob to raw base64 (no data: prefix).
+   */
+  _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
   },
 
   /**
@@ -473,7 +500,9 @@ const Photos = {
    * On failure retries once, then falls back to ir.attachment.
    */
   async uploadPhoto(photo) {
-    const blob = this._base64ToBlob(photo.data, 'image/jpeg');
+    const blob = photo.data instanceof Blob
+      ? photo.data
+      : this._base64ToBlob(photo.data, 'image/jpeg');
 
     // Attempt Drive upload (with one retry)
     let driveResult = null;
@@ -494,6 +523,7 @@ const Photos = {
       photo.gdrive_file_id = driveResult.gdrive_file_id || null;
       photo.gdrive_url = driveResult.gdrive_url || null;
       await DB.put('photos', photo);
+      delete this._driveCache[photo.job_id]; // server list changed
       // Chatter thumbnail posted server-side by upload_photo.py
       return driveResult.gdrive_file_id;
     }
@@ -502,7 +532,9 @@ const Photos = {
     const driveErrMsg = (driveError && driveError.message) || 'Unknown Drive error';
     console.error('Drive upload failed, using attachment fallback. Error:', driveErrMsg);
 
-    const rawBase64 = photo.data.includes(',') ? photo.data.split(',')[1] : photo.data;
+    const rawBase64 = photo.data instanceof Blob
+      ? await this._blobToBase64(photo.data)
+      : (photo.data.includes(',') ? photo.data.split(',')[1] : photo.data);
     const attachmentId = await OdooAPI.uploadPhoto(photo.job_id, rawBase64, photo.filename, photo.category);
     photo.synced = 1;
     photo.attachment_id = attachmentId;
@@ -538,14 +570,24 @@ const Photos = {
   // ------------------------------------------------------------------
 
   /**
-   * Get photo counts by category for a job (local pending only).
-   * Used for stage gate checks — Drive photos are already synced.
+   * Get photo counts by category for a job — local photos merged with
+   * Drive photos from other devices (deduped by gdrive_file_id).
+   * Used for stage gate checks: on multi-worker jobs a crew-mate's photos
+   * count toward the requirement. Offline, Drive returns [] and the gate
+   * degrades to local-only.
    */
   async getPhotoCountsByCategory(jobId) {
-    const photos = await this.getPhotosForJob(jobId);
+    const [photos, drivePhotos] = await Promise.all([
+      this.getPhotosForJob(jobId),
+      this._loadDrivePhotos(jobId),
+    ]);
+    const localDriveIds = new Set(photos.filter(p => p.gdrive_file_id).map(p => p.gdrive_file_id));
+    const driveOnly = drivePhotos.filter(p => !localDriveIds.has(p.gdrive_file_id));
+
     const counts = {};
     for (const cat of (CONFIG.PHOTO_CATEGORIES || [])) {
-      counts[cat.key] = photos.filter(p => p.category === cat.key).length;
+      counts[cat.key] = photos.filter(p => p.category === cat.key).length
+                      + driveOnly.filter(p => p.category === cat.key).length;
     }
     return counts;
   },
@@ -642,7 +684,7 @@ const Photos = {
       if (catLocal.length === 0 && catDrive.length === 0) continue;
 
       const localStart = lbItems.length;
-      catLocal.forEach(p => lbItems.push({ src: p.data, caption: cat.label, type: 'local', tempId: p.temp_id, synced: p.synced, jobId }));
+      catLocal.forEach(p => lbItems.push(this._localLbItem(p, cat.label, jobId)));
       const driveStart = lbItems.length;
       catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive', note: p.note || '', gdriveFileId: p.gdrive_file_id, orderId: jobId }));
 
@@ -720,7 +762,7 @@ const Photos = {
       const isComplete = cat.required ? totalCount >= cat.required : totalCount > 0;
 
       const localStart = lbItems.length;
-      catLocal.forEach(p => lbItems.push({ src: p.data, caption: cat.label, type: 'local', tempId: p.temp_id, synced: p.synced, jobId }));
+      catLocal.forEach(p => lbItems.push(this._localLbItem(p, cat.label, jobId)));
       const driveStart = lbItems.length;
       catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive', note: p.note || '', gdriveFileId: p.gdrive_file_id, orderId: jobId }));
 
@@ -808,6 +850,20 @@ const Photos = {
   },
 
   /**
+   * Build a lightbox item for a local photo. Blob data gets an object URL
+   * created lazily when the item is first shown (see _showLightbox).
+   */
+  _localLbItem(p, caption, jobId) {
+    const item = { caption, type: 'local', tempId: p.temp_id, synced: p.synced, jobId };
+    if (p.data instanceof Blob) {
+      item.blob = p.data;
+    } else {
+      item.src = p.data;
+    }
+    return item;
+  },
+
+  /**
    * Show a full-screen in-app lightbox for a list of photos.
    * items: [{ src, caption, type, tempId? }]
    *   src      — full-res URL or base64
@@ -882,7 +938,12 @@ const Photos = {
       spinner.style.display = 'block';
       img.onload  = () => { spinner.style.display = 'none'; img.style.opacity = '1'; };
       img.onerror = () => { spinner.textContent = 'Image unavailable — may require Google sign-in'; };
-      img.src = item.src;
+      if (!item.src && item.blob) {
+        // Blob-stored local photo — object URL created on first view,
+        // revoked when the lightbox closes
+        item._url = item._url || URL.createObjectURL(item.blob);
+      }
+      img.src = item.src || item._url || '';
       caption.textContent = item.caption || '';
       counter.textContent = multi ? `${current + 1} / ${items.length}` : '';
       delBtn.style.display = (item.type === 'local' && item.tempId && !item.synced) ? '' : 'none';
@@ -907,6 +968,12 @@ const Photos = {
     };
 
     const close = () => {
+      items.forEach(it => {
+        if (it._url) {
+          URL.revokeObjectURL(it._url);
+          delete it._url;
+        }
+      });
       lb.remove();
       document.removeEventListener('keydown', onKey);
     };
@@ -1103,41 +1170,57 @@ const Photos = {
   },
 
   /**
-   * Decode an image once and produce both the full-size and thumbnail JPEGs.
-   * The thumbnail is drawn from the already-resized canvas, so the original
-   * (potentially huge) bitmap is only decoded a single time.
+   * Decode an image once and produce the full-size JPEG (as a Blob) and the
+   * thumbnail (as a data URL). The thumbnail is drawn from the already-resized
+   * canvas, so the original (potentially huge) bitmap is only decoded once.
    */
   _resizeImageWithThumb(dataUrl, maxWidth, thumbWidth) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => {
-        let w = img.width;
-        let h = img.height;
-        if (w > maxWidth) {
-          h = Math.round(h * (maxWidth / w));
-          w = maxWidth;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        const resized = canvas.toDataURL('image/jpeg', 0.85);
+      img.onload = async () => {
+        try {
+          let w = img.width;
+          let h = img.height;
+          if (w > maxWidth) {
+            h = Math.round(h * (maxWidth / w));
+            w = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const resized = await this._canvasToBlob(canvas, 0.85);
 
-        let tw = w, th = h;
-        if (tw > thumbWidth) {
-          th = Math.round(th * (thumbWidth / tw));
-          tw = thumbWidth;
-        }
-        const thumbCanvas = document.createElement('canvas');
-        thumbCanvas.width = tw;
-        thumbCanvas.height = th;
-        thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
-        const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
+          let tw = w, th = h;
+          if (tw > thumbWidth) {
+            th = Math.round(th * (thumbWidth / tw));
+            tw = thumbWidth;
+          }
+          const thumbCanvas = document.createElement('canvas');
+          thumbCanvas.width = tw;
+          thumbCanvas.height = th;
+          thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+          const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-        resolve({ resized, thumbnail });
+          resolve({ resized, thumbnail });
+        } catch (err) {
+          reject(err);
+        }
       };
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = dataUrl;
+    });
+  },
+
+  /**
+   * Promisified canvas.toBlob (JPEG).
+   */
+  _canvasToBlob(canvas, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => {
+        if (blob) resolve(blob);
+        else reject(new Error('Failed to encode image'));
+      }, 'image/jpeg', quality);
     });
   },
 };

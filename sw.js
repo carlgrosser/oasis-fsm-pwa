@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v61';
+const CACHE_NAME = 'fsm-pwa-v62';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -121,7 +121,8 @@ async function _syncPhotos() {
 
   for (const photo of photos) {
     try {
-      const blob = _base64ToBlob(photo.data);
+      // Newer records store data as a Blob; older ones as a base64 data URL
+      const blob = photo.data instanceof Blob ? photo.data : _base64ToBlob(photo.data);
       const form = new FormData();
       form.append('order_id', photo.job_id);
       form.append('category', photo.category || '');

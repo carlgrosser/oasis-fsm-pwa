@@ -152,13 +152,25 @@ const Jobs = {
     });
   },
 
+  // Cache for the overdue/completed base fetch — the today banner counts and
+  // the History tab need the same two lists, and workers typically open
+  // History right after seeing the banner.
+  _historyFetchCache: null,        // { ts, overdueJobs, completedJobs }
+  _HISTORY_CACHE_TTL: 60000,       // ms
+
   /**
-   * Fetch counts of overdue and not-closed jobs for the today banner.
-   * Overdue = uncompleted jobs scheduled before today.
-   * Not closed = completed-stage jobs where wrapup_submitted is false (excludes overdue).
+   * Fetch the overdue (uncompleted past) and completed (last 30 days) job
+   * lists, with a short cache shared by fetchHistoryCounts and
+   * _fetchHistoryJobs. Invalidated on stage changes and job reopen.
    */
-  async fetchHistoryCounts(personId) {
+  async _fetchHistoryBase(personId) {
+    const cached = this._historyFetchCache;
+    if (cached && Date.now() - cached.ts < this._HISTORY_CACHE_TTL) {
+      return cached;
+    }
+
     const now = new Date();
+    // Use local midnight so today's jobs don't bleed into overdue
     const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayStr = todayMidnight.toISOString().replace('T', ' ').slice(0, 19);
 
@@ -170,6 +182,18 @@ const Jobs = {
       OdooAPI.getOverdueOrders(personId, todayStr),
       OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, 0),
     ]);
+
+    this._historyFetchCache = { ts: Date.now(), overdueJobs, completedJobs };
+    return this._historyFetchCache;
+  },
+
+  /**
+   * Fetch counts of overdue and not-closed jobs for the today banner.
+   * Overdue = uncompleted jobs scheduled before today.
+   * Not closed = completed-stage jobs where wrapup_submitted is false (excludes overdue).
+   */
+  async fetchHistoryCounts(personId) {
+    const { overdueJobs, completedJobs } = await this._fetchHistoryBase(personId);
 
     // getBillingStates requires a module upgrade — catch independently so
     // overdue/not-closed counts still work if the method isn't installed yet.
@@ -189,24 +213,10 @@ const Jobs = {
    * Fetch history jobs: overdue (uncompleted past) + completed (last 30 days).
    */
   async _fetchHistoryJobs(personId) {
-    const now = new Date();
-    // Use local midnight so today's jobs don't bleed into overdue
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayStr = todayMidnight.toISOString().replace('T', ' ').slice(0, 19);
-
-    // 30 days ago for completed jobs
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().replace('T', ' ').slice(0, 19);
-
     // Reset pagination
     this._historyCompletedOffset = 0;
 
-    // Fetch both in parallel
-    const [overdueJobs, completedJobs] = await Promise.all([
-      OdooAPI.getOverdueOrders(personId, todayStr),
-      OdooAPI.getCompletedOrders(personId, thirtyDaysAgoStr, 0),
-    ]);
+    const { overdueJobs, completedJobs } = await this._fetchHistoryBase(personId);
 
     // Mark overdue jobs
     overdueJobs.forEach(job => { job._isOverdue = true; });
@@ -646,10 +656,11 @@ const Jobs = {
         <button class="btn btn-close-job btn-block btn-xl" id="closeJobBtn">Close Job</button>
       </div>`) : ''}
 
+      ${(isComplete || statusClass === 'cancelled' || job.wrapup_submitted) ? '' : `
       <div class="visit-planning-actions" style="display:flex;gap:8px;padding:8px 12px;">
         <button class="btn btn-sm" id="rescheduleVisitBtn" style="flex:1;">Reschedule</button>
         <button class="btn btn-sm" id="continueAnotherDayBtn" style="flex:1;">Continue Another Day</button>
-      </div>
+      </div>`}
 
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
@@ -1345,7 +1356,13 @@ const Jobs = {
         }
       }
 
-      await this.changeJobStatus(job, nextStageName);
+      const changed = await this.changeJobStatus(job, nextStageName);
+      if (!changed) {
+        // Worker declined the clock-in prompt — nothing happened
+        nextBtn.disabled = false;
+        nextBtn.textContent = '→ ' + nextStageName;
+        return;
+      }
       App.showToast('Status updated', 'success');
 
       // Determine which tab to switch to after re-render
@@ -1549,7 +1566,13 @@ const Jobs = {
 
       try {
         const targetStage = goingDirect ? 'En Route' : 'Dispatched';
-        await this.changeJobStatus(job, targetStage);
+        const changed = await this.changeJobStatus(job, targetStage);
+        if (!changed) {
+          // Worker declined the clock-in prompt — don't SMS or navigate
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Go';
+          return;
+        }
 
         // Send SMS in background (don't block)
         if (sendSms && hasPhone) {
@@ -1674,7 +1697,13 @@ const Jobs = {
       confirmBtn.textContent = 'Updating...';
 
       try {
-        await this.changeJobStatus(job, 'En Route');
+        const changed = await this.changeJobStatus(job, 'En Route');
+        if (!changed) {
+          // Worker declined the clock-in prompt — don't SMS or navigate
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'En Route';
+          return;
+        }
 
         if (sendSms && hasPhone) {
           const techName = Array.isArray(job.person_id) ? job.person_id[1] : '';
@@ -1831,6 +1860,7 @@ const Jobs = {
     if (!confirm('Remove the Closed status from this job?')) return;
     try {
       await OdooAPI.reopenJob(job.id);
+      this._historyFetchCache = null;
       // Update local state so the banner re-renders without a full sync
       job.wrapup_submitted = false;
       const idx = this._jobs.findIndex(j => j.id === job.id);
@@ -2322,7 +2352,7 @@ const Jobs = {
       const reason = overlay.querySelector('#rescheduleReason').value || '';
       const resetStage = overlay.querySelector('#rescheduleResetStage').checked;
       if (!startLocal || durHrs <= 0) {
-        alert('Pick a start time and a duration greater than zero.');
+        App.showToast('Pick a start time and a duration greater than zero.', 'error');
         return;
       }
       const newStartOdoo = this._localToOdooDateTime(startLocal);
@@ -2347,14 +2377,14 @@ const Jobs = {
             cd.style.display = 'block';
             return;
           }
-          alert('Reschedule failed: ' + (res && res.error || 'unknown error'));
+          App.showToast('Reschedule failed: ' + (res && res.error || 'unknown error'), 'error');
           return;
         }
         close();
         App.showToast('Visit rescheduled', 'success');
         await Jobs.loadJobs(Jobs._currentView || 'today');
       } catch (err) {
-        alert('Reschedule failed: ' + (err.message || err));
+        App.showToast('Reschedule failed: ' + (err.message || err), 'error');
       }
     });
   },
@@ -2420,7 +2450,7 @@ const Jobs = {
       const durHrs = parseFloat(overlay.querySelector('#continueDuration').value) || 0;
       const reason = overlay.querySelector('#continueReason').value || '';
       if (!startLocal || durHrs <= 0) {
-        alert('Pick a start time and a duration greater than zero.');
+        App.showToast('Pick a start time and a duration greater than zero.', 'error');
         return;
       }
       const startOdoo = this._localToOdooDateTime(startLocal);
@@ -2429,14 +2459,14 @@ const Jobs = {
           job.id, startOdoo, durHrs, reason,
         );
         if (!res || !res.ok) {
-          alert('Failed to create next visit: ' + (res && res.error || 'unknown'));
+          App.showToast('Failed to create next visit: ' + (res && res.error || 'unknown'), 'error');
           return;
         }
         close();
         App.showToast(`Next visit created: ${res.new_order_name}`, 'success');
         await Jobs.loadJobs(Jobs._currentView || 'today');
       } catch (err) {
-        alert('Failed: ' + (err.message || err));
+        App.showToast('Failed: ' + (err.message || err), 'error');
       }
     });
   },
@@ -2445,13 +2475,15 @@ const Jobs = {
    * Change a job's status to the named stage.
    * Stage changes are pushed to Odoo immediately (triggers backend automations).
    * GPS is captured for En Route/Arrived and sent as a follow-up if needed.
+   * @returns {boolean} false if the worker declined the clock-in prompt
+   *                    (no change was made), true otherwise.
    */
   async changeJobStatus(job, stageName) {
     // En Route gate: must be clocked in
     const name = stageName.toLowerCase();
     if (name.includes('route') && typeof TimeTracking !== 'undefined') {
       const ok = await TimeTracking.ensureClockedIn();
-      if (!ok) return; // user declined
+      if (!ok) return false; // user declined
     }
 
     // Find the stage ID for this name, preferring the job's company
@@ -2495,6 +2527,9 @@ const Jobs = {
         }
       }
     }
+
+    // Stage changes affect overdue/not-closed lists
+    this._historyFetchCache = null;
 
     if (navigator.onLine) {
       // Push stage change immediately — backend automations depend on this
@@ -2547,6 +2582,8 @@ const Jobs = {
         }, 500);
       }
     }
+
+    return true;
   },
 
   /**
