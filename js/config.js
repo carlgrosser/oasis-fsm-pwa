@@ -97,6 +97,7 @@ const CONFIG = {
 
   // BILLING
   VENMO_USERNAME: '@OasisPoolTile',
+  ZELLE_USERNAME: '',
   CHANGE_ORDER_THRESHOLD: 300,
 
   // STAGE NAME MAPPING (update if your Odoo uses different stage names)
@@ -121,7 +122,7 @@ const CONFIG = {
     if (!raw) return;
     const saved = JSON.parse(raw);
     const keys = [
-      'VENMO_USERNAME', 'CHANGE_ORDER_THRESHOLD',
+      'VENMO_USERNAME', 'ZELLE_USERNAME', 'CHANGE_ORDER_THRESHOLD',
       'SMS_WEBHOOK_URL', 'ENABLE_SMS_NOTIFICATIONS', 'ODOO_URL',
       'SMS_MIRROR_URL', 'SMS_MIRROR_SECRET',
       'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',

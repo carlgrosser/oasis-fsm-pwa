@@ -65,8 +65,44 @@ const App = {
     // Init list tab swiping
     this._initListTabs();
 
+    // Re-snap swipeable panels after rotation/resize
+    this._initOrientationHandler();
+
     // Load today's jobs initially
     await this._loadViewJobs('today');
+  },
+
+  // Set while handling a rotation so scroll-sync handlers don't mistake the
+  // browser's scroll-position clamping for a user swipe.
+  _suppressScrollSync: false,
+
+  /**
+   * On rotation the panel widths change but scrollLeft is preserved in pixels,
+   * leaving the scroll-snap panels stuck between two tabs. Re-snap to the
+   * active tab once the new layout has settled.
+   */
+  _initOrientationHandler() {
+    let timer = null;
+    const resnap = () => {
+      const listPanels = document.getElementById('listPanels');
+      if (listPanels && listPanels.offsetWidth > 0) {
+        const idx = this._viewIndices[this._currentView] || 0;
+        listPanels.scrollTo({ left: idx * listPanels.offsetWidth, behavior: 'auto' });
+      }
+      const detailPanels = document.getElementById('detailPanels');
+      if (detailPanels && detailPanels.offsetWidth > 0) {
+        const activeTab = document.querySelector('.detail-tab.active');
+        const idx = activeTab ? parseInt(activeTab.dataset.tab, 10) || 0 : 0;
+        detailPanels.scrollTo({ left: idx * detailPanels.offsetWidth, behavior: 'auto' });
+      }
+      // Let any clamping scroll events flush before re-enabling sync
+      setTimeout(() => { this._suppressScrollSync = false; }, 150);
+    };
+    window.addEventListener('resize', () => {
+      this._suppressScrollSync = true;
+      clearTimeout(timer);
+      timer = setTimeout(resnap, 200);
+    });
   },
 
   /** Map view keys to page titles. */
@@ -304,11 +340,11 @@ const App = {
 
     let ticking = false;
     panels.addEventListener('scroll', () => {
-      if (ticking) return;
+      if (ticking || this._suppressScrollSync) return;
       ticking = true;
       requestAnimationFrame(() => {
         const panelWidth = panels.offsetWidth;
-        if (panelWidth > 0) {
+        if (panelWidth > 0 && !this._suppressScrollSync) {
           const idx = Math.round(panels.scrollLeft / panelWidth);
           const view = this._indexViews[idx];
           if (view && view !== this._currentView) {
@@ -532,15 +568,19 @@ const App = {
       reader.onload = () => {
         try {
           const imported = JSON.parse(reader.result);
-          // Store QR code separately if included
+          // Store QR codes separately if included
           if (imported._venmo_qr_base64) {
             localStorage.setItem('pwa_venmo_qr', imported._venmo_qr_base64);
             delete imported._venmo_qr_base64;
           }
+          if (imported._zelle_qr_base64) {
+            localStorage.setItem('pwa_zelle_qr', imported._zelle_qr_base64);
+            delete imported._zelle_qr_base64;
+          }
           localStorage.setItem('pwa_settings', JSON.stringify(imported));
           // Apply to live CONFIG
           const keys = [
-            'VENMO_USERNAME', 'CHANGE_ORDER_THRESHOLD',
+            'VENMO_USERNAME', 'ZELLE_USERNAME', 'CHANGE_ORDER_THRESHOLD',
             'SMS_WEBHOOK_URL', 'ENABLE_SMS_NOTIFICATIONS', 'ODOO_URL',
             'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',
             'SHLINK_BASE_URL', 'SHLINK_API_KEY', 'SHLINK_SLUG_PATTERN',

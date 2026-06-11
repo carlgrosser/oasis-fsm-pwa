@@ -2496,8 +2496,15 @@ textarea.form-input {
   background: rgba(0, 102, 204, 0.05);
 }
 
-/* Venmo */
-.billing-venmo-qr {
+/* Venmo / Zelle */
+.billing-pay-method-label {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.billing-pay-qr {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2507,10 +2514,9 @@ textarea.form-input {
   background: var(--card-background);
 }
 
-.billing-venmo-username {
+.billing-pay-username {
   font-size: var(--font-size-large);
   font-weight: 700;
-  color: #3d95ce;
   margin-bottom: var(--spacing-xs);
 }
 
@@ -3026,6 +3032,39 @@ textarea.form-input {
   font-size: var(--font-size-base);
 }
 
+/* ========== EARLIER STEPS (collapsed photo section on Work tab) ========== */
+
+.earlier-steps-section > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.earlier-steps-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.earlier-steps-chevron {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.earlier-steps-section[open] .earlier-steps-chevron {
+  transform: rotate(90deg);
+}
+
+.earlier-steps-section[open] > summary {
+  margin-bottom: var(--spacing-sm);
+}
+
 /* ========== IN-APP CAMERA OVERLAY ========== */
 
 .camera-overlay {
@@ -3045,12 +3084,69 @@ textarea.form-input {
   overflow: hidden;
 }
 
+.camera-preview-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
 .camera-preview {
   flex: 1;
   width: 100%;
   height: 100%;
   object-fit: cover;
   background: #000;
+  transform-origin: center center;
+}
+
+/* Zoom level chips (1× / 2× / 3×) over the bottom of the preview */
+.camera-zoom-chips {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 2;
+}
+
+.camera-zoom-chip {
+  min-width: 40px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.4);
+  background: rgba(0,0,0,0.45);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.camera-zoom-chip.active {
+  background: rgba(255,255,255,0.9);
+  color: #000;
+  border-color: #fff;
+}
+
+/* Transient zoom value indicator shown while pinching */
+.camera-zoom-label {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .camera-hint {

@@ -740,6 +740,21 @@ const Jobs = {
       }
     }
 
+    // Earlier-steps photos (collapsed) — load on first expand
+    const earlierSteps = document.getElementById('earlierStepsSection');
+    if (earlierSteps) {
+      let earlierLoaded = false;
+      earlierSteps.addEventListener('toggle', () => {
+        if (!earlierSteps.open || earlierLoaded) return;
+        earlierLoaded = true;
+        const target = document.getElementById('earlierPhotoSection');
+        const earlierCats = (earlierSteps.dataset.cats || '').split(',').filter(Boolean);
+        if (target && earlierCats.length) {
+          Photos.renderFilteredPhotoSection(job.id, target, earlierCats);
+        }
+      });
+    }
+
     // Render materials section
     const materialsSection = document.getElementById('materialsSection');
     if (materialsSection && typeof Materials !== 'undefined') {
@@ -1023,6 +1038,12 @@ const Jobs = {
         </div>
       </div>` : '';
 
+    // Earlier-step photos (equipment/before) stay reachable after moving to
+    // In Progress — collapsed by default so the current step stays the focus.
+    const earlierCats = (!this._showAllSteps && stageName.toLowerCase().includes('progress'))
+      ? ['equipment', 'before']
+      : [];
+
     return `
       <div class="detail-section">
         ${toggleHtml}
@@ -1040,6 +1061,16 @@ const Jobs = {
           <div class="loading"><div class="spinner"></div></div>
         </div>
       </div>` : ''}
+      ${earlierCats.length > 0 ? `
+      <details class="detail-section earlier-steps-section" id="earlierStepsSection" data-cats="${earlierCats.join(',')}">
+        <summary class="earlier-steps-summary">
+          <span class="earlier-steps-title">📷 Earlier Steps — Equipment &amp; Before Photos</span>
+          <span class="earlier-steps-chevron">›</span>
+        </summary>
+        <div id="earlierPhotoSection">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </details>` : ''}
       <div id="stageGateStatus"></div>
       <div class="stage-gate-bypass" id="stageGateBypass" style="display:none;">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
@@ -1109,11 +1140,11 @@ const Jobs = {
     // Scroll sync → update active tab
     let ticking = false;
     panels.addEventListener('scroll', () => {
-      if (ticking) return;
+      if (ticking || (typeof App !== 'undefined' && App._suppressScrollSync)) return;
       ticking = true;
       requestAnimationFrame(() => {
         const panelWidth = panels.offsetWidth;
-        if (panelWidth > 0) {
+        if (panelWidth > 0 && !(typeof App !== 'undefined' && App._suppressScrollSync)) {
           const idx = Math.round(panels.scrollLeft / panelWidth);
           this._setActiveTab(idx);
         }
@@ -2320,7 +2351,7 @@ const Jobs = {
           return;
         }
         close();
-        if (typeof Toast !== 'undefined') Toast.success('Visit rescheduled');
+        App.showToast('Visit rescheduled', 'success');
         await Jobs.loadJobs(Jobs._currentView || 'today');
       } catch (err) {
         alert('Reschedule failed: ' + (err.message || err));
@@ -2402,9 +2433,7 @@ const Jobs = {
           return;
         }
         close();
-        if (typeof Toast !== 'undefined') {
-          Toast.success(`Next visit created: ${res.new_order_name}`);
-        }
+        App.showToast(`Next visit created: ${res.new_order_name}`, 'success');
         await Jobs.loadJobs(Jobs._currentView || 'today');
       } catch (err) {
         alert('Failed: ' + (err.message || err));

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v60';
+const CACHE_NAME = 'fsm-pwa-v61';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -24,6 +24,8 @@ const STATIC_ASSETS = [
   'js/sync.js',
   'js/helpdesk.js',
   'js/wrapup.js',
+  'js/options.js',
+  'js/documents.js',
   'js/app.js',
   'manifest.json',
   'favicon.ico',
@@ -65,7 +67,9 @@ self.addEventListener('sync', (event) => {
 
 async function _openPhotoDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('fsm_pwa', 4);
+    // Open without a version — always attaches to the current DB version,
+    // avoiding VersionError when the app upgrades the schema.
+    const req = indexedDB.open('fsm_pwa');
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });

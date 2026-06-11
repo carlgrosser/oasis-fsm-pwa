@@ -702,7 +702,7 @@ const Billing = {
           </button>
           <button class="billing-payment-method-btn" data-method="venmo">
             <div style="font-size:24px;">&#128178;</div>
-            <div>Venmo</div>
+            <div>Venmo/Zelle</div>
           </button>
           <button class="billing-payment-method-btn" data-method="card">
             <div style="font-size:24px;">&#128179;</div>
@@ -798,7 +798,7 @@ const Billing = {
             this._showCheckPaymentView(invoice, contentArea, job, container);
             break;
           case 'venmo':
-            this._showVenmoPaymentView(invoice, contentArea, job, container);
+            this._showVenmoZellePaymentView(invoice, contentArea, job, container);
             break;
           case 'card':
             this._showCardPaymentView(invoice, phone, contentArea, job, container);
@@ -870,49 +870,73 @@ const Billing = {
     });
   },
 
-  // ---------- Venmo Payment ----------
+  // ---------- Venmo / Zelle Payment ----------
 
-  _showVenmoPaymentView(invoice, contentArea, job, parentContainer) {
+  _showVenmoZellePaymentView(invoice, contentArea, job, parentContainer) {
     const venmoUser = CONFIG.VENMO_USERNAME || '@OasisPoolTile';
-    const qrData = localStorage.getItem('pwa_venmo_qr');
-    const qrHtml = qrData
-      ? `<img src="${qrData}" alt="${this._esc(venmoUser)}" style="width:100%;border-radius:8px;">`
-      : `<div style="font-size:64px;">&#128178;</div>
-         <div class="billing-venmo-username">${this._esc(venmoUser)}</div>`;
+    const zelleUser = CONFIG.ZELLE_USERNAME || '';
+    const venmoQr = localStorage.getItem('pwa_venmo_qr');
+    const zelleQr = localStorage.getItem('pwa_zelle_qr');
+
     contentArea.innerHTML = `
-      <div style="margin-top:var(--spacing-md);text-align:center;">
-        <div style="margin:var(--spacing-md) 0;">
-          <div class="billing-venmo-qr">
-            ${qrHtml}
-          </div>
-        </div>
-        <div style="font-size:var(--font-size-base);font-weight:600;margin-bottom:var(--spacing-md);">
+      <div style="margin-top:var(--spacing-md);">
+        <div style="font-size:var(--font-size-base);font-weight:600;text-align:center;margin-bottom:var(--spacing-md);">
           Amount Due: $${this._money(invoice.amount_residual)}
         </div>
-        <button class="btn btn-success btn-block" id="confirmVenmoBtn">
-          Payment Received - Confirm
-        </button>
+
+        ${this._payQrSection('Venmo', venmoUser, venmoQr, 'venmo', '#3d95ce', 'confirmVenmoBtn')}
+
+        ${this._payQrSection('Zelle', zelleUser, zelleQr, 'zelle', '#6d1ed4', 'confirmZelleBtn')}
       </div>
     `;
 
-    document.getElementById('confirmVenmoBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('confirmVenmoBtn');
+    this._bindManualPayConfirm('confirmVenmoBtn', 'Venmo', venmoUser, invoice, job, parentContainer);
+    this._bindManualPayConfirm('confirmZelleBtn', 'Zelle', zelleUser, invoice, job, parentContainer);
+  },
+
+  /** Build one QR/username card for a Venmo or Zelle payment method. */
+  _payQrSection(label, username, qrData, key, color, btnId) {
+    const qrHtml = qrData
+      ? `<img src="${qrData}" alt="${this._esc(label)}" style="width:100%;border-radius:8px;">`
+      : `<div style="font-size:64px;">&#128178;</div>
+         ${username ? `<div class="billing-pay-username" style="color:${color};">${this._esc(username)}</div>` : ''}`;
+    return `
+      <div class="billing-pay-method" style="text-align:center;margin-bottom:var(--spacing-lg);">
+        <div class="billing-pay-method-label" style="color:${color};">${this._esc(label)}</div>
+        <div style="margin:var(--spacing-sm) 0;">
+          <div class="billing-pay-qr">
+            ${qrHtml}
+          </div>
+        </div>
+        <button class="btn btn-success btn-block" id="${btnId}">
+          ${this._esc(label)} Received - Confirm
+        </button>
+      </div>
+    `;
+  },
+
+  /** Wire a confirm button that registers a manual Venmo/Zelle payment. */
+  _bindManualPayConfirm(btnId, method, username, invoice, job, parentContainer) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const label = `${method} Received - Confirm`;
+    btn.addEventListener('click', async () => {
       btn.disabled = true;
       btn.textContent = 'Confirming...';
 
       try {
         const result = await OdooAPI.registerManualPayment(
-          invoice.id, 'Venmo', venmoUser, invoice.amount_residual
+          invoice.id, method, username, invoice.amount_residual
         );
         if (result.success) {
-          App.showToast('Venmo payment confirmed', 'success');
-          OdooAPI.postJournalEntry(job.id, `Payment collected: Venmo (${venmoUser}), $${parseFloat(invoice.amount_residual).toFixed(2)}`).catch(() => {});
+          App.showToast(`${method} payment confirmed`, 'success');
+          OdooAPI.postJournalEntry(job.id, `Payment collected: ${method}${username ? ` (${username})` : ''}, $${parseFloat(invoice.amount_residual).toFixed(2)}`).catch(() => {});
           await this.renderSalesTab(job, parentContainer);
         }
       } catch (err) {
         App.showToast('Failed: ' + err.message, 'error');
         btn.disabled = false;
-        btn.textContent = 'Payment Received - Confirm';
+        btn.textContent = label;
       }
     });
   },

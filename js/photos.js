@@ -104,8 +104,12 @@ const Photos = {
       overlay.className = 'camera-overlay';
       overlay.innerHTML = `
         <div class="camera-container">
-          <video class="camera-preview" id="cameraPreview" autoplay playsinline muted></video>
-          <div class="camera-hint" id="cameraHint">Starting camera…</div>
+          <div class="camera-preview-wrap" id="cameraPreviewWrap">
+            <video class="camera-preview" id="cameraPreview" autoplay playsinline muted></video>
+            <div class="camera-hint" id="cameraHint">Starting camera…</div>
+            <div class="camera-zoom-label" id="cameraZoomLabel" style="display:none;"></div>
+            <div class="camera-zoom-chips" id="cameraZoomChips" style="display:none;"></div>
+          </div>
           <div class="camera-controls">
             <button class="camera-btn camera-btn-secondary" id="cameraGalleryBtn" title="Choose from gallery">
               <span class="camera-btn-icon">🖼️</span>
@@ -123,6 +127,20 @@ const Photos = {
       document.body.appendChild(overlay);
 
       let stream = null;
+      const video = overlay.querySelector('#cameraPreview');
+
+      // ── Zoom state ──
+      // Native zoom uses the camera hardware via applyConstraints (Android
+      // Chrome). When unavailable (iOS Safari), fall back to digital zoom:
+      // CSS-scale the preview and crop the same region at capture time.
+      const zoomState = {
+        value: 1,
+        min: 1,
+        max: 5,
+        step: 0.1,
+        native: false,
+        track: null,
+      };
 
       const cleanup = () => {
         if (stream) {
@@ -131,6 +149,95 @@ const Photos = {
         }
         overlay.remove();
       };
+
+      const zoomLabel = overlay.querySelector('#cameraZoomLabel');
+      let zoomLabelTimer = null;
+      const flashZoomLabel = () => {
+        zoomLabel.textContent = zoomState.value.toFixed(1).replace(/\.0$/, '') + '×';
+        zoomLabel.style.display = '';
+        clearTimeout(zoomLabelTimer);
+        zoomLabelTimer = setTimeout(() => { zoomLabel.style.display = 'none'; }, 1200);
+      };
+
+      const chipsEl = overlay.querySelector('#cameraZoomChips');
+      const updateChips = () => {
+        chipsEl.querySelectorAll('.camera-zoom-chip').forEach(chip => {
+          const z = parseFloat(chip.dataset.zoom);
+          chip.classList.toggle('active', Math.abs(zoomState.value - z) < 0.25);
+        });
+      };
+
+      const setZoom = (z) => {
+        zoomState.value = Math.max(zoomState.min, Math.min(zoomState.max, z));
+        if (zoomState.native && zoomState.track) {
+          zoomState.track.applyConstraints({ advanced: [{ zoom: zoomState.value }] }).catch(() => {});
+          video.style.transform = '';
+        } else {
+          // Digital: scale the preview; capture crops the matching region
+          video.style.transform = `scale(${zoomState.value})`;
+        }
+        updateChips();
+        flashZoomLabel();
+      };
+
+      const initZoomControls = () => {
+        const track = stream && stream.getVideoTracks()[0];
+        if (track && typeof track.getCapabilities === 'function') {
+          const caps = track.getCapabilities();
+          if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+            zoomState.native = true;
+            zoomState.track = track;
+            zoomState.min = Math.max(1, caps.zoom.min);
+            zoomState.max = caps.zoom.max;
+            zoomState.step = caps.zoom.step || 0.1;
+            const settings = track.getSettings();
+            if (settings.zoom) zoomState.value = settings.zoom;
+          }
+        }
+        // Digital fallback caps at 3× — beyond that the cropped 1080p frame
+        // gets too soft to be useful for documentation photos.
+        if (!zoomState.native) zoomState.max = 3;
+
+        const levels = [1, 2, Math.min(zoomState.max, zoomState.native ? 4 : 3)]
+          .filter((z, i, arr) => z <= zoomState.max && arr.indexOf(z) === i);
+        chipsEl.innerHTML = levels.map(z =>
+          `<button class="camera-zoom-chip" data-zoom="${z}">${z}×</button>`
+        ).join('');
+        chipsEl.style.display = '';
+        chipsEl.querySelectorAll('.camera-zoom-chip').forEach(chip => {
+          chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setZoom(parseFloat(chip.dataset.zoom));
+          });
+        });
+        updateChips();
+      };
+
+      // Pinch-to-zoom on the preview area
+      const previewWrap = overlay.querySelector('#cameraPreviewWrap');
+      let pinchDist0 = 0;
+      let pinchZoom0 = 1;
+      previewWrap.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          pinchDist0 = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          pinchZoom0 = zoomState.value;
+        }
+      }, { passive: false });
+      previewWrap.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2 && pinchDist0 > 0) {
+          e.preventDefault();
+          const dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          setZoom(pinchZoom0 * (dist / pinchDist0));
+        }
+      }, { passive: false });
+      previewWrap.addEventListener('touchend', () => { pinchDist0 = 0; });
 
       // Start rear camera
       navigator.mediaDevices.getUserMedia({
@@ -142,11 +249,11 @@ const Photos = {
         audio: false,
       }).then(s => {
         stream = s;
-        const video = overlay.querySelector('#cameraPreview');
         video.srcObject = stream;
         video.addEventListener('playing', () => {
           overlay.querySelector('#cameraHint').style.display = 'none';
           overlay.querySelector('#cameraShutterBtn').disabled = false;
+          initZoomControls();
         });
       }).catch(() => {
         // Permission denied or unsupported — fall back to file picker silently
@@ -156,17 +263,27 @@ const Photos = {
 
       // Take photo — draw directly to scaled canvases from the live video frame
       overlay.querySelector('#cameraShutterBtn').addEventListener('click', async () => {
-        const video = overlay.querySelector('#cameraPreview');
         if (!video.videoWidth) return; // not ready yet
 
         try {
+          // Source region: full frame for native zoom (hardware already
+          // zoomed), centered crop for digital zoom to match the preview.
+          const vw = video.videoWidth, vh = video.videoHeight;
+          let sx = 0, sy = 0, sw = vw, sh = vh;
+          if (!zoomState.native && zoomState.value > 1.01) {
+            sw = Math.round(vw / zoomState.value);
+            sh = Math.round(vh / zoomState.value);
+            sx = Math.round((vw - sw) / 2);
+            sy = Math.round((vh - sh) / 2);
+          }
+
           // Full-size (max 1920px wide)
           const maxW = 1920;
-          let w = video.videoWidth, h = video.videoHeight;
+          let w = sw, h = sh;
           if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
-          canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+          canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
           const resized = canvas.toDataURL('image/jpeg', 0.85);
 
           // Thumbnail (max 300px wide)
@@ -175,7 +292,7 @@ const Photos = {
           if (tw > thumbW) { th = Math.round(th * thumbW / tw); tw = thumbW; }
           const thumbCanvas = document.createElement('canvas');
           thumbCanvas.width = tw; thumbCanvas.height = th;
-          thumbCanvas.getContext('2d').drawImage(video, 0, 0, tw, th);
+          thumbCanvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, tw, th);
           const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
           cleanup();
@@ -264,8 +381,9 @@ const Photos = {
       // in base64) — the canvas only ever holds the resized output.
       const objectUrl = URL.createObjectURL(file);
       try {
-        const resized   = await this._resizeImage(objectUrl, 1920);
-        const thumbnail = await this._resizeImage(objectUrl, 300);
+        // Decode once, derive both sizes — decoding a 15-25 MB photo twice
+        // doubles the peak memory use.
+        const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, 1920, 300);
 
         const photo = await this.savePhoto(
           pending.jobId,
@@ -978,6 +1096,45 @@ const Photos = {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = dataUrl;
+    });
+  },
+
+  /**
+   * Decode an image once and produce both the full-size and thumbnail JPEGs.
+   * The thumbnail is drawn from the already-resized canvas, so the original
+   * (potentially huge) bitmap is only decoded a single time.
+   */
+  _resizeImageWithThumb(dataUrl, maxWidth, thumbWidth) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w));
+          w = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const resized = canvas.toDataURL('image/jpeg', 0.85);
+
+        let tw = w, th = h;
+        if (tw > thumbWidth) {
+          th = Math.round(th * (thumbWidth / tw));
+          tw = thumbWidth;
+        }
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = tw;
+        thumbCanvas.height = th;
+        thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+        const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+        resolve({ resized, thumbnail });
       };
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = dataUrl;
