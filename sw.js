@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v62';
+const CACHE_NAME = 'fsm-pwa-v63';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -36,11 +36,16 @@ const STATIC_ASSETS = [
   'icon-512.png',
 ];
 
-// Install — cache static assets
+// Install — cache static assets.
+// cache: 'reload' bypasses the browser HTTP cache so a new SW version can't
+// precache a stale file (e.g. old app.js next to new app.html — that mix
+// produced an empty, seemingly dead menu dropdown).
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(
+        STATIC_ASSETS.map((url) => new Request(url, { cache: 'reload' }))
+      );
     })
   );
   self.skipWaiting();
