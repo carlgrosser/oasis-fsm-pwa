@@ -7,7 +7,9 @@ const TimeTracking = {
   _attendanceId: null,
   _clockInTime: null,
   _lunchStartTime: null,
+  _lunchDeductMs: 0,     // completed (unpaid) lunch time to subtract from worked time
   _timerInterval: null,
+  _workTimerInterval: null,
   _autoClockOutPromptActive: false,
   _payType: '',          // employee's default pay type: 'hourly' | 'production' | ''
   _payCategory: '',      // current shift pay category: 'hourly_pay' | 'production' | ''
@@ -32,6 +34,8 @@ const TimeTracking = {
           this._clockInTime = att.check_in ? this._parseOdooDatetime(att.check_in) : new Date();
           this._payType = att.pay_type || '';
           this._payCategory = att.pay_category || '';
+          this._lunchDeductMs = (att.lunch_end && att.lunch_duration)
+            ? att.lunch_duration * 3600000 : 0;
 
           if (att.lunch_start && !att.lunch_end) {
             this._status = 'break';
@@ -87,6 +91,7 @@ const TimeTracking = {
         if (result && result.success) {
           this._attendanceId = result.attendance_id;
           this._clockInTime = new Date();
+          this._lunchDeductMs = 0;
           this._payCategory = result.pay_category || payCategory || '';
           this._status = 'in';
           await this._saveState();
@@ -142,7 +147,9 @@ const TimeTracking = {
 
     if (navigator.onLine && this._attendanceId) {
       try {
-        const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy);
+        // append_eta: server adds drive-home ETA only when the global office
+        // setting AND the employee's flag are both enabled
+        const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy, true);
         if (result && result.success) {
           this._stopLunchTimer();
           this._status = 'out';
@@ -151,7 +158,16 @@ const TimeTracking = {
           this._lunchStartTime = null;
           await this._saveState();
           this._renderHeaderButton();
-          App.showToast('Clocked off', 'success');
+          if (result.eta_minutes) {
+            const end = this._parseOdooDatetime(result.check_out);
+            const endStr = end
+              ? end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+            App.showToast(
+              `Clocked off — +${result.eta_minutes} min drive home added` +
+              (endStr ? ` (shift ends ${endStr})` : ''), 'success');
+          } else {
+            App.showToast('Clocked off', 'success');
+          }
           await this._maybePromptAutoClockOut();
           return true;
         } else {
@@ -261,6 +277,9 @@ const TimeTracking = {
         if (result && result.success) {
           this._status = 'in';
           this._stopLunchTimer();
+          if (this._lunchStartTime) {
+            this._lunchDeductMs += Date.now() - this._lunchStartTime.getTime();
+          }
           this._lunchStartTime = null;
           await this._saveState();
           this._renderHeaderButton();
@@ -286,6 +305,9 @@ const TimeTracking = {
       });
       this._status = 'in';
       this._stopLunchTimer();
+      if (this._lunchStartTime) {
+        this._lunchDeductMs += Date.now() - this._lunchStartTime.getTime();
+      }
       this._lunchStartTime = null;
       await this._saveState();
       this._renderHeaderButton();
@@ -410,6 +432,8 @@ const TimeTracking = {
 
   /**
    * Render the header clock button based on current status.
+   * Clocked in: shows the worked-time chip (clock-in time · elapsed).
+   * On break:   shows the break timer (existing behavior).
    */
   _renderHeaderButton() {
     const btn = document.getElementById('clockBtn');
@@ -422,15 +446,54 @@ const TimeTracking = {
       btn.className = 'clock-btn state-out';
       btn.textContent = 'Clock On';
       if (timer) timer.style.display = 'none';
+      this._stopWorkTimer();
     } else if (this._status === 'in') {
       btn.className = 'clock-btn state-in';
       btn.textContent = 'Clock Off';
       if (timer) timer.style.display = 'none';
+      this._startWorkTimer();
     } else if (this._status === 'break') {
       btn.className = 'clock-btn state-break';
       btn.textContent = 'End Break';
       if (timer) timer.style.display = '';
+      this._stopWorkTimer();
     }
+  },
+
+  // ========== WORKED-TIME TIMER ==========
+
+  _startWorkTimer() {
+    this._stopWorkTimer();
+    this._updateWorkTimer();
+    this._workTimerInterval = setInterval(() => this._updateWorkTimer(), 30000);
+  },
+
+  _stopWorkTimer() {
+    if (this._workTimerInterval) {
+      clearInterval(this._workTimerInterval);
+      this._workTimerInterval = null;
+    }
+    const el = document.getElementById('workTimer');
+    if (el) el.style.display = 'none';
+  },
+
+  _updateWorkTimer() {
+    const el = document.getElementById('workTimer');
+    if (!el || !this._clockInTime) return;
+
+    const workedMs = Math.max(0,
+      Date.now() - this._clockInTime.getTime() - this._lunchDeductMs);
+    const totalMins = Math.floor(workedMs / 60000);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    const since = this._clockInTime.toLocaleTimeString([], {
+      hour: 'numeric', minute: '2-digit',
+    });
+
+    el.textContent = `${since} · ${h}h ${String(m).padStart(2, '0')}m`;
+    el.title = `Clocked on at ${since} — ${h}h ${m}m worked` +
+      (this._lunchDeductMs ? ' (lunch deducted)' : '');
+    el.style.display = '';
   },
 
   // ========== LUNCH TIMER ==========
@@ -469,6 +532,7 @@ const TimeTracking = {
       attendanceId: this._attendanceId,
       clockInTime: this._clockInTime ? this._clockInTime.toISOString() : null,
       lunchStartTime: this._lunchStartTime ? this._lunchStartTime.toISOString() : null,
+      lunchDeductMs: this._lunchDeductMs || 0,
       payType: this._payType,
       payCategory: this._payCategory,
     });
@@ -481,6 +545,7 @@ const TimeTracking = {
       this._attendanceId = state.attendanceId || null;
       this._clockInTime = state.clockInTime ? new Date(state.clockInTime) : null;
       this._lunchStartTime = state.lunchStartTime ? new Date(state.lunchStartTime) : null;
+      this._lunchDeductMs = state.lunchDeductMs || 0;
       this._payType = state.payType || '';
       this._payCategory = state.payCategory || '';
       if (this._status === 'break' && this._lunchStartTime) {
@@ -1122,7 +1187,10 @@ const TimeTracking = {
             }
           } else if (item.action === 'clock_out') {
             if (item.attendance_id) {
-              await OdooAPI.clockOut(item.attendance_id, item.gps || '', item.gps_accuracy || 0);
+              // Pass the original timestamp so a late-synced clock-out keeps
+              // the actual time; no ETA — the queued GPS position is stale.
+              await OdooAPI.clockOut(item.attendance_id, item.gps || '', item.gps_accuracy || 0,
+                false, item.timestamp);
             }
           } else if (item.action === 'start_lunch') {
             if (item.attendance_id) {

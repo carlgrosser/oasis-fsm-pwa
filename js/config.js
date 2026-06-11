@@ -24,7 +24,6 @@ const CONFIG = {
   // TIME TRACKING
   ENABLE_BREAKS: true,
   AUTO_CLOCK_IN_ON_START: true,
-  AUTO_CLOCK_OUT_ON_COMPLETE: true,
 
   // MATERIALS — configured in Odoo via Field Service > Configuration > Material Config
 

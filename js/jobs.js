@@ -2566,22 +2566,8 @@ const Jobs = {
       await DB.put('jobs', job);
     }
 
-    // Auto clock-out prompt when completing a job
-    if (CONFIG.AUTO_CLOCK_OUT_ON_COMPLETE && name.includes('complete') &&
-        typeof TimeTracking !== 'undefined' && TimeTracking.isClockedIn()) {
-      // Check if all today's jobs are now complete
-      const allDone = this._jobs.every(j => {
-        const sn = this.getStageName(j.stage_id);
-        return this.getStatusClass(sn) === 'complete' || this.getStatusClass(sn) === 'cancelled';
-      });
-      if (allDone) {
-        setTimeout(() => {
-          if (confirm('All jobs complete. Clock off?')) {
-            TimeTracking.clockOut();
-          }
-        }, 500);
-      }
-    }
+    // Note: the clock-off prompt happens at Close Job (WrapUp._showClockOffPrompt),
+    // not here — completing the stage is when invoicing starts, too early to ask.
 
     return true;
   },

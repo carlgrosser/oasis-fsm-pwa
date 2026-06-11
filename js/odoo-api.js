@@ -638,9 +638,13 @@ const OdooAPI = {
 
   /**
    * Clock out — close attendance record with GPS.
+   * appendEta: request drive-home ETA added to the clock-off time
+   *            (server enforces the global + per-employee toggles).
+   * atTime:    ISO datetime of the actual clock-off moment (offline sync).
    */
-  async clockOut(attendanceId, gpsCoords, gpsAccuracy) {
-    return this.callKw('hr.attendance', 'mobile_clock_out', [attendanceId, gpsCoords || '', gpsAccuracy || 0], {});
+  async clockOut(attendanceId, gpsCoords, gpsAccuracy, appendEta, atTime) {
+    return this.callKw('hr.attendance', 'mobile_clock_out',
+      [attendanceId, gpsCoords || '', gpsAccuracy || 0, !!appendEta, atTime || null], {});
   },
 
   /**
