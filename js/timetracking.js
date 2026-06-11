@@ -11,6 +11,15 @@ const TimeTracking = {
   _timerInterval: null,
   _workTimerInterval: null,
   _autoClockOutPromptActive: false,
+  // Shop geofence / drive-home ETA state
+  _clockedInAtShop: false,   // clock-on GPS was inside the shop geofence
+  _etaEligible: false,       // server says drive-home ETA applies to this worker
+  _hasLeftShop: false,       // worker has been outside the geofence this shift
+  _shopPromptShown: false,   // "back at shop" prompt already shown this visit
+  _geofenceTimer: null,
+  _geofenceBound: false,
+  _GEOFENCE_ARRIVE_M: 300,   // inside this → "back at shop"
+  _GEOFENCE_LEAVE_M: 500,    // outside this → mark as having left (hysteresis)
   _payType: '',          // employee's default pay type: 'hourly' | 'production' | ''
   _payCategory: '',      // current shift pay category: 'hourly_pay' | 'production' | ''
 
@@ -36,6 +45,8 @@ const TimeTracking = {
           this._payCategory = att.pay_category || '';
           this._lunchDeductMs = (att.lunch_end && att.lunch_duration)
             ? att.lunch_duration * 3600000 : 0;
+          this._clockedInAtShop = !!att.clocked_in_at_shop;
+          this._etaEligible = !!att.clockoff_eta_eligible;
 
           if (att.lunch_start && !att.lunch_end) {
             this._status = 'break';
@@ -57,6 +68,17 @@ const TimeTracking = {
       }
     } else {
       await this._restoreState();
+    }
+
+    // Re-check the shop geofence whenever the app comes back to the
+    // foreground — the most reliable moment a PWA gets a GPS reading.
+    if (!this._geofenceBound) {
+      this._geofenceBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this._checkShopGeofence();
+        }
+      });
     }
 
     this._renderHeaderButton();
@@ -92,6 +114,10 @@ const TimeTracking = {
           this._attendanceId = result.attendance_id;
           this._clockInTime = new Date();
           this._lunchDeductMs = 0;
+          this._clockedInAtShop = !!result.clocked_in_at_shop;
+          this._etaEligible = !!result.clockoff_eta_eligible;
+          this._hasLeftShop = false;
+          this._shopPromptShown = false;
           this._payCategory = result.pay_category || payCategory || '';
           this._status = 'in';
           await this._saveState();
@@ -121,6 +147,14 @@ const TimeTracking = {
         synced: 0,
       });
       this._clockInTime = new Date();
+      this._lunchDeductMs = 0;
+      // Offline: judge the shop geofence locally; ETA eligibility stays
+      // unknown (false) so the heading-back question is skipped
+      const dist = this._distanceToShopM(gpsCoords);
+      this._clockedInAtShop = dist != null && dist <= this._GEOFENCE_ARRIVE_M;
+      this._etaEligible = false;
+      this._hasLeftShop = false;
+      this._shopPromptShown = false;
       this._payCategory = payCategory || '';
       this._status = 'in';
       await this._saveState();
@@ -133,8 +167,21 @@ const TimeTracking = {
 
   /**
    * Clock out — capture GPS and close attendance.
+   *
+   * options.appendEta        — explicit answer to "heading back to shop?"
+   *                            (skips asking; used by WrapUp which asks first)
+   * options.skipEtaQuestion  — clock off without asking or appending
+   *                            (used by the back-at-shop geofence prompt)
    */
-  async clockOut() {
+  async clockOut(options = {}) {
+    // Resolve the drive-home ETA answer before anything else
+    let appendEta = false;
+    if (options.appendEta !== undefined) {
+      appendEta = !!options.appendEta;
+    } else if (!options.skipEtaQuestion) {
+      appendEta = await this.askHeadingBackToShop();
+    }
+
     let gpsCoords = '';
     let gpsAccuracy = 0;
     if (typeof GPS !== 'undefined') {
@@ -147,9 +194,13 @@ const TimeTracking = {
 
     if (navigator.onLine && this._attendanceId) {
       try {
-        // append_eta: server adds drive-home ETA only when the global office
-        // setting AND the employee's flag are both enabled
-        const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy, true);
+        const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy, appendEta);
+        // Tolerate "already clocked out" (e.g. crew clock-off raced us) —
+        // the attendance is closed either way, so reset local state.
+        if (result && !result.success && /already clocked out/i.test(result.error || '')) {
+          result.success = true;
+          result.eta_minutes = 0;
+        }
         if (result && result.success) {
           this._stopLunchTimer();
           this._status = 'out';
@@ -447,17 +498,179 @@ const TimeTracking = {
       btn.textContent = 'Clock On';
       if (timer) timer.style.display = 'none';
       this._stopWorkTimer();
+      this._stopGeofenceMonitor();
     } else if (this._status === 'in') {
       btn.className = 'clock-btn state-in';
       btn.textContent = 'Clock Off';
       if (timer) timer.style.display = 'none';
       this._startWorkTimer();
+      this._startGeofenceMonitor();
     } else if (this._status === 'break') {
       btn.className = 'clock-btn state-break';
       btn.textContent = 'End Break';
       if (timer) timer.style.display = '';
       this._stopWorkTimer();
+      this._stopGeofenceMonitor();
     }
+  },
+
+  // ========== HEADING BACK TO SHOP (drive-home ETA confirmation) ==========
+
+  /**
+   * Ask "Heading back to the shop?" before clocking off.
+   * The default answer follows where the shift started: clocked on at the
+   * shop → vehicle is there → defaults Yes; otherwise defaults No (likely
+   * their own vehicle). Resolves false without UI when the worker isn't
+   * eligible for drive-home ETA or is offline.
+   */
+  askHeadingBackToShop() {
+    if (!this._etaEligible || !navigator.onLine || this._status === 'out') {
+      return Promise.resolve(false);
+    }
+
+    const defaultYes = !!this._clockedInAtShop;
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const yesBtn = `<button class="btn ${defaultYes ? 'btn-success' : 'btn-secondary'} btn-block btn-lg" id="headBackYes">
+            Yes — Add Drive Time to Shift
+          </button>`;
+      const noBtn = `<button class="btn ${defaultYes ? 'btn-secondary' : 'btn-primary'} btn-block btn-lg" id="headBackNo">
+            No — End Shift Here
+          </button>`;
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Heading Back to the Shop?</h3>
+          </div>
+          <div class="modal-body">
+            <p style="margin-bottom:var(--spacing-sm);">
+              Driving a company vehicle back? Your estimated drive time will be
+              added to your shift.
+            </p>
+            <div style="display:flex; flex-direction:column; gap:var(--spacing-sm);">
+              ${defaultYes ? yesBtn + noBtn : noBtn + yesBtn}
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = (answer) => {
+        overlay.remove();
+        resolve(answer);
+      };
+      overlay.querySelector('#headBackYes').addEventListener('click', () => close(true));
+      overlay.querySelector('#headBackNo').addEventListener('click', () => close(false));
+    });
+  },
+
+  // ========== SHOP GEOFENCE (back-at-shop prompt) ==========
+
+  /**
+   * Distance in meters from a "lat,lon" string (or {lat,lon} object) to the
+   * shop (CONFIG.SHOP_GPS). null when either side is missing/unparsable.
+   */
+  _distanceToShopM(pos) {
+    const shop = (CONFIG.SHOP_GPS || '').trim();
+    if (!shop || !pos) return null;
+    let lat1, lon1;
+    if (typeof pos === 'string') {
+      const parts = pos.split(',').map(parseFloat);
+      if (parts.length !== 2 || parts.some(isNaN)) return null;
+      [lat1, lon1] = parts;
+    } else {
+      lat1 = pos.lat; lon1 = pos.lon;
+    }
+    const sp = shop.split(',').map(parseFloat);
+    if (sp.length !== 2 || sp.some(isNaN)) return null;
+    const [lat2, lon2] = sp;
+
+    const rad = Math.PI / 180;
+    const r = 6371000;
+    const dp = (lat2 - lat1) * rad;
+    const dl = (lon2 - lon1) * rad;
+    const a = Math.sin(dp / 2) ** 2 +
+      Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dl / 2) ** 2;
+    return 2 * r * Math.asin(Math.sqrt(a));
+  },
+
+  _startGeofenceMonitor() {
+    if (this._geofenceTimer) return;
+    if (!(CONFIG.SHOP_GPS || '').trim()) return;
+    this._checkShopGeofence();
+    this._geofenceTimer = setInterval(() => this._checkShopGeofence(), 4 * 60000);
+  },
+
+  _stopGeofenceMonitor() {
+    if (this._geofenceTimer) {
+      clearInterval(this._geofenceTimer);
+      this._geofenceTimer = null;
+    }
+  },
+
+  /**
+   * Foreground-only geofence check: once the worker has left the shop during
+   * the shift, returning inside the arrive radius triggers a one-time
+   * "done for the day?" prompt. Re-arms if they leave again.
+   */
+  async _checkShopGeofence() {
+    if (this._status !== 'in') return;
+    if (document.visibilityState !== 'visible') return;
+    if (typeof GPS === 'undefined') return;
+
+    const pos = await GPS.getQuickPosition();
+    const dist = this._distanceToShopM(pos);
+    if (dist == null) return;
+
+    if (dist > this._GEOFENCE_LEAVE_M) {
+      if (!this._hasLeftShop || this._shopPromptShown) {
+        this._hasLeftShop = true;
+        this._shopPromptShown = false; // re-arm for the next return
+        await this._saveState();
+      }
+      return;
+    }
+
+    if (dist <= this._GEOFENCE_ARRIVE_M && this._hasLeftShop && !this._shopPromptShown) {
+      this._shopPromptShown = true;
+      await this._saveState();
+      this._showBackAtShopPrompt();
+    }
+  },
+
+  _showBackAtShopPrompt() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Back at the Shop?</h3>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom:var(--spacing-sm);">
+            Looks like you're back at the shop. Done for the day?
+          </p>
+          <div style="display:flex; flex-direction:column; gap:var(--spacing-sm);">
+            <button class="btn btn-danger btn-block btn-lg" id="backAtShopClockOff">Clock Off</button>
+            <button class="btn btn-secondary btn-block" id="backAtShopDismiss">Still Working</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#backAtShopClockOff').addEventListener('click', async () => {
+      const btn = overlay.querySelector('#backAtShopClockOff');
+      btn.disabled = true;
+      btn.textContent = 'Clocking off...';
+      // Already at the shop — no drive time to append, no question to ask
+      await this.clockOut({ skipEtaQuestion: true });
+      overlay.remove();
+    });
+    overlay.querySelector('#backAtShopDismiss').addEventListener('click', () => {
+      overlay.remove();
+    });
   },
 
   // ========== WORKED-TIME TIMER ==========
@@ -535,6 +748,10 @@ const TimeTracking = {
       lunchDeductMs: this._lunchDeductMs || 0,
       payType: this._payType,
       payCategory: this._payCategory,
+      clockedInAtShop: this._clockedInAtShop,
+      etaEligible: this._etaEligible,
+      hasLeftShop: this._hasLeftShop,
+      shopPromptShown: this._shopPromptShown,
     });
   },
 
@@ -548,6 +765,10 @@ const TimeTracking = {
       this._lunchDeductMs = state.lunchDeductMs || 0;
       this._payType = state.payType || '';
       this._payCategory = state.payCategory || '';
+      this._clockedInAtShop = !!state.clockedInAtShop;
+      this._etaEligible = !!state.etaEligible;
+      this._hasLeftShop = !!state.hasLeftShop;
+      this._shopPromptShown = !!state.shopPromptShown;
       if (this._status === 'break' && this._lunchStartTime) {
         this._startLunchTimer();
       }

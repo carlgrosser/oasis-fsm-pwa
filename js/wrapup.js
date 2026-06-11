@@ -542,7 +542,16 @@ const WrapUp = {
   },
 
   async _handleClockOff(job, clockAll, gps, gpsAccuracy) {
-    // Clock out all workers on the job via a dedicated server call
+    // Ask the submitter "heading back to shop?" first (no-op resolves false
+    // when drive-home ETA doesn't apply). Their answer covers themselves;
+    // crew members are defaulted server-side by where they clocked on.
+    let headingBack = false;
+    if (typeof TimeTracking !== 'undefined') {
+      headingBack = await TimeTracking.askHeadingBackToShop();
+    }
+
+    // Clock out the other workers on the job via a dedicated server call
+    // (the server excludes the submitter, who is clocked out below)
     if (clockAll && navigator.onLine) {
       try {
         await OdooAPI.clockOutJobWorkers(job.id, gps, gpsAccuracy);
@@ -554,7 +563,7 @@ const WrapUp = {
     // Clock out the submitting worker via the standard TimeTracking flow
     // (handles online/offline, updates client state)
     if (typeof TimeTracking !== 'undefined') {
-      await TimeTracking.clockOut();
+      await TimeTracking.clockOut({ appendEta: headingBack });
     }
   },
 

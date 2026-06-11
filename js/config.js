@@ -36,6 +36,10 @@ const CONFIG = {
   GPS_ACCURACY_THRESHOLD: 100,  // meters
   GPS_TIMEOUT: 30000,           // milliseconds
 
+  // SHOP LOCATION ("lat,lon") — synced from office app settings via Odoo;
+  // used for the back-at-shop geofence prompt
+  SHOP_GPS: '',
+
   // INDEXEDDB
   DB_NAME: 'fsm_pwa',
   DB_VERSION: 5,
@@ -126,6 +130,7 @@ const CONFIG = {
       'SMS_MIRROR_URL', 'SMS_MIRROR_SECRET',
       'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',
       'SHLINK_BASE_URL', 'SHLINK_API_KEY', 'SHLINK_SLUG_PATTERN',
+      'SHOP_GPS',
     ];
     keys.forEach(function(k) {
       if (saved[k] !== undefined && saved[k] !== '') CONFIG[k] = saved[k];

@@ -629,6 +629,7 @@ const App = {
             'SMS_TEMPLATE_ENROUTE', 'SMS_TEMPLATE_PAYMENT', 'SMS_TEMPLATE_RECEIPT',
             'SHLINK_BASE_URL', 'SHLINK_API_KEY', 'SHLINK_SLUG_PATTERN',
             'SMS_MIRROR_URL', 'SMS_MIRROR_SECRET',
+            'SHOP_GPS',
           ];
           keys.forEach(function(k) {
             if (imported[k] !== undefined) CONFIG[k] = imported[k];
