@@ -3917,3 +3917,76 @@ textarea.form-input {
   font-weight: 700;
   color: var(--primary-color, #0066cc);
 }
+
+/* ── Drive-time info box + job badge bar (DriveInfo) ─────────────────────── */
+.drive-info-box {
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+.drive-info-box--compact { padding: 7px 12px; font-size: 13px; }
+
+.drive-info-origin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.drive-info-origin-label { font-weight: 600; }
+
+.drive-origin-select {
+  flex: 1;
+  max-width: 200px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card-background);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.drive-info-address {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+.drive-origin-change {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 0 0 4px;
+}
+
+.drive-info-stats { color: var(--text-primary); }
+.drive-info-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.job-badge-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.drive-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: #fff;
+  white-space: nowrap;
+}
+.drive-badge--leg   { background: rgba(52, 73, 94, 0.85); }
+.drive-badge--total { background: rgba(142, 68, 173, 0.85); }

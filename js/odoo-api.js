@@ -1010,6 +1010,35 @@ const OdooAPI = {
   },
 
   /**
+   * Shared office/PWA app config (badge visibility, clock-on policy) plus
+   * shop coordinates. Returns { config: {...}, shop_lat, shop_lng }.
+   */
+  async getAppConfig() {
+    return this.callKw('fsm.order', 'office_get_app_config', [], {});
+  },
+
+  /** Location coords for a set of orders: { orderId: [lat, lng] }. */
+  async getJobCoords(orderIds) {
+    return this.callKw('fsm.order', 'worker_get_job_coords', [orderIds], {});
+  },
+
+  /** Worker's saved travel origin override: { address, lat, lng }. */
+  async getTravelOrigin(personId) {
+    return this.callKw('fsm.person', 'worker_get_travel_origin', [personId], {});
+  },
+
+  /** Save (or clear, with empty address) the worker's travel origin. */
+  async setTravelOrigin(personId, address, lat, lng) {
+    return this.callKw('fsm.person', 'worker_set_travel_origin',
+      [personId, address || '', lat || 0, lng || 0], {});
+  },
+
+  /** Geocode a free-text address via Odoo's Google key. {ok, lat, lng, formatted} */
+  async geocodeAddress(query) {
+    return this.callKw('fsm.order', 'office_place_geocode', [false, query], {});
+  },
+
+  /**
    * Fetch all files from the Drive Project Photos folder for a job.
    * Returns [{ file_id, name, mime_type, view_url, modified_time }] or [].
    */

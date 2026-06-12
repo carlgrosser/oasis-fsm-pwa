@@ -401,6 +401,11 @@ const Jobs = {
         container.appendChild(this._createJobCard(job));
       }
     }
+
+    // Drive-time info boxes + badge bars (async fill once config loads)
+    if (typeof DriveInfo !== 'undefined') {
+      DriveInfo.apply(container, this._jobs, this._upcomingJobs).catch(() => {});
+    }
   },
 
   /**
@@ -463,6 +468,7 @@ const Jobs = {
    */
   _createJobCard(job) {
     const card = document.createElement('div');
+    card.dataset.jobId = job.id;
     const stageName = this.getStageName(job.stage_id);
     const statusClass = this.getStatusClass(stageName);
     const isHistoryComplete = this._currentView === 'history' && this._isCompletedJob(job) && !job._isOverdue && job.wrapup_submitted;
@@ -2473,11 +2479,22 @@ const Jobs = {
    *                    (no change was made), true otherwise.
    */
   async changeJobStatus(job, stageName) {
-    // En Route gate: must be clocked in
     const name = stageName.toLowerCase();
-    if (name.includes('route') && typeof TimeTracking !== 'undefined') {
+
+    // Clock-on gate. Normally at En Route; when the worker leaves from a
+    // custom origin (not the shop) and the office setting allows it, the
+    // gate moves to Arrived instead.
+    if (typeof DriveInfo !== 'undefined') {
+      try { await DriveInfo.ensureReady(); } catch (e) { /* default gating */ }
+    }
+    const remoteStart = typeof DriveInfo !== 'undefined' && DriveInfo.isRemoteStart();
+    if (name.includes('route') && !remoteStart && typeof TimeTracking !== 'undefined') {
       const ok = await TimeTracking.ensureClockedIn();
       if (!ok) return false; // user declined
+    }
+    if (name.includes('arrived') && remoteStart && typeof TimeTracking !== 'undefined') {
+      const ok = await TimeTracking.ensureClockedIn(); // no-op if already clocked in
+      if (!ok) return false;
     }
 
     // Find the stage ID for this name, preferring the job's company
