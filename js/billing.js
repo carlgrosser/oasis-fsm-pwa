@@ -719,7 +719,7 @@ const Billing = {
       <div class="billing-actions">
         <button class="btn btn-outline btn-block btn-sm" id="emailInvoiceBtn"
                 ${!contact.email ? 'disabled title="No email on file"' : ''}>
-          Email Invoice PDF
+          Email Invoice
         </button>
         <a href="${CONFIG.ODOO_URL}/report/pdf/account.report_invoice/${invoice.id}"
            target="_blank" rel="noopener" class="btn btn-outline btn-block btn-sm">
@@ -772,10 +772,10 @@ const Billing = {
           await OdooAPI.sendDocument(invoice.id, 'invoice', 'email', contact.email);
           App.showToast('Invoice emailed to ' + contact.email, 'success');
           OdooAPI.postJournalEntry(job.id, `Invoice emailed to ${contact.email}`).catch(() => {});
-          emailInvoiceBtn.textContent = 'Email Invoice PDF';
+          emailInvoiceBtn.textContent = 'Email Invoice';
         } catch (err) {
           App.showToast('Failed to send email', 'error');
-          emailInvoiceBtn.textContent = 'Email Invoice PDF';
+          emailInvoiceBtn.textContent = 'Email Invoice';
         }
         emailInvoiceBtn.disabled = false;
       });

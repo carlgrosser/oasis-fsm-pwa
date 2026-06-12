@@ -46,7 +46,7 @@ const TimeTracking = {
           this._lunchDeductMs = (att.lunch_end && att.lunch_duration)
             ? att.lunch_duration * 3600000 : 0;
           this._clockedInAtShop = !!att.clocked_in_at_shop;
-          this._etaEligible = !!att.clockoff_eta_eligible;
+          await this._setEtaEligibleSticky(att.clockoff_eta_eligible);
 
           if (att.lunch_start && !att.lunch_end) {
             this._status = 'break';
@@ -60,6 +60,9 @@ const TimeTracking = {
           this._payType = (att && att.pay_type) || '';
           this._status = 'out';
           this._attendanceId = null;
+          if (att && att.clockoff_eta_eligible !== undefined) {
+            await this._setEtaEligibleSticky(att.clockoff_eta_eligible);
+          }
           await this._saveState();
         }
       } catch (err) {
@@ -115,7 +118,7 @@ const TimeTracking = {
           this._clockInTime = new Date();
           this._lunchDeductMs = 0;
           this._clockedInAtShop = !!result.clocked_in_at_shop;
-          this._etaEligible = !!result.clockoff_eta_eligible;
+          await this._setEtaEligibleSticky(result.clockoff_eta_eligible);
           this._hasLeftShop = false;
           this._shopPromptShown = false;
           this._payCategory = result.pay_category || payCategory || '';
@@ -148,11 +151,11 @@ const TimeTracking = {
       });
       this._clockInTime = new Date();
       this._lunchDeductMs = 0;
-      // Offline: judge the shop geofence locally; ETA eligibility stays
-      // unknown (false) so the heading-back question is skipped
+      // Offline: judge the shop geofence locally; ETA eligibility falls back
+      // to the sticky per-employee cache (last explicit server answer)
       const dist = this._distanceToShopM(gpsCoords);
       this._clockedInAtShop = dist != null && dist <= this._GEOFENCE_ARRIVE_M;
-      this._etaEligible = false;
+      this._etaEligible = await this._getEtaEligibleSticky();
       this._hasLeftShop = false;
       this._shopPromptShown = false;
       this._payCategory = payCategory || '';
@@ -250,6 +253,7 @@ const TimeTracking = {
         employee_id: Auth.getEmployeeId(),
         gps: gpsCoords,
         gps_accuracy: gpsAccuracy,
+        append_eta: appendEta ? 1 : 0,
         timestamp: new Date().toISOString(),
         synced: 0,
       });
@@ -517,16 +521,62 @@ const TimeTracking = {
   // ========== HEADING BACK TO SHOP (drive-home ETA confirmation) ==========
 
   /**
+   * Sticky per-employee eligibility cache. Once the server reports a worker
+   * eligible for drive-home ETA, they're assumed to stay eligible (across
+   * shifts, app reloads, and offline stretches) until the server explicitly
+   * reports otherwise. Only an explicit server answer updates the cache.
+   */
+  async _setEtaEligibleSticky(eligible) {
+    this._etaEligible = !!eligible;
+    const employeeId = Auth.getEmployeeId();
+    if (!employeeId) return;
+    try {
+      await DB.setState('etaEligible_' + employeeId, !!eligible);
+    } catch { /* non-fatal */ }
+  },
+
+  async _getEtaEligibleSticky() {
+    const employeeId = Auth.getEmployeeId();
+    if (!employeeId) return false;
+    try {
+      return !!(await DB.getState('etaEligible_' + employeeId));
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Resolve eligibility at the moment it matters (clock-off): ask the server
+   * live — so a setting flipped mid-shift or an offline clock-on can't leave
+   * a stale snapshot — and fall back to the sticky cache when offline or the
+   * call fails.
+   */
+  async _resolveEtaEligible() {
+    if (navigator.onLine) {
+      try {
+        const att = await OdooAPI.getCurrentAttendance(Auth.getEmployeeId());
+        if (att && att.clockoff_eta_eligible !== undefined) {
+          if (att.attendance_id) {
+            this._clockedInAtShop = !!att.clocked_in_at_shop;
+          }
+          await this._setEtaEligibleSticky(att.clockoff_eta_eligible);
+          return !!att.clockoff_eta_eligible;
+        }
+      } catch { /* fall through to sticky cache */ }
+    }
+    return this._getEtaEligibleSticky();
+  },
+
+  /**
    * Ask "Heading back to the shop?" before clocking off.
    * The default answer follows where the shift started: clocked on at the
    * shop → vehicle is there → defaults Yes; otherwise defaults No (likely
    * their own vehicle). Resolves false without UI when the worker isn't
-   * eligible for drive-home ETA or is offline.
+   * eligible for drive-home ETA.
    */
-  askHeadingBackToShop() {
-    if (!this._etaEligible || !navigator.onLine || this._status === 'out') {
-      return Promise.resolve(false);
-    }
+  async askHeadingBackToShop() {
+    if (this._status === 'out') return false;
+    if (!(await this._resolveEtaEligible())) return false;
 
     const defaultYes = !!this._clockedInAtShop;
     return new Promise((resolve) => {
@@ -1409,9 +1459,10 @@ const TimeTracking = {
           } else if (item.action === 'clock_out') {
             if (item.attendance_id) {
               // Pass the original timestamp so a late-synced clock-out keeps
-              // the actual time; no ETA — the queued GPS position is stale.
+              // the actual time. The queued GPS is the clock-off spot, so the
+              // drive-home ETA computed from it at sync time is still valid.
               await OdooAPI.clockOut(item.attendance_id, item.gps || '', item.gps_accuracy || 0,
-                false, item.timestamp);
+                !!item.append_eta, item.timestamp);
             }
           } else if (item.action === 'start_lunch') {
             if (item.attendance_id) {

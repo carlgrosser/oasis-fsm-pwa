@@ -2076,20 +2076,14 @@ const Jobs = {
           return;
         }
 
-        const linkData = await OdooAPI.getPaymentLink(invoice.id);
-        if (!linkData || !linkData.payment_url) {
-          App.showToast('Could not generate payment link', 'error');
-          btn.disabled = false;
-          btn.querySelector('span:last-child').textContent = 'Payment Link';
-          return;
-        }
-
+        // {payment_link} is substituted server-side with the invoice's
+        // portal link (view + pay online)
         const customerName = Array.isArray(job.location_id) ? job.location_id[1] : '';
         const smsBody = renderSmsTemplate('SMS_TEMPLATE_PAYMENT', {
           customer_name: customerName,
           customer_first_name: customerName.split(' ')[0],
           amount: (invoice.amount_residual || 0).toFixed(2),
-          payment_link: linkData.payment_url,
+          payment_link: '{payment_link}',
         });
 
         const sentAt = new Date().toISOString();
