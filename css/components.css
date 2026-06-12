@@ -3994,6 +3994,7 @@ textarea.form-input {
   white-space: nowrap;
 }
 .drive-badge--leg   { background: rgba(52, 73, 94, 0.85); }
+.drive-badge--return { background: rgba(44, 131, 151, 0.9); }
 .drive-badge--total { background: rgba(142, 68, 173, 0.85); }
 
 /* Service-tag chips + sale total bar at the bottom of job cards */

@@ -115,6 +115,7 @@ const DriveInfo = {
       list.forEach((j, i) => {
         this._dayIndex[j.id] = {
           prevMins:      Math.round(j.travel_minutes_from_prev || 0),
+          toShopMins:    Math.round(j.travel_minutes_to_shop || 0),
           dayTotalMins:  Math.round(j.travel_day_total_minutes || 0),
           dayTotalMiles: j.travel_day_total_miles || 0,
           isFirst:       i === 0,
@@ -125,19 +126,23 @@ const DriveInfo = {
   },
 
   _applyBadgeBars(container, jobs) {
-    const showLeg   = this._showBadge('drive_leg');
-    const showTotal = this._showBadge('drive_total');
+    const showLeg    = this._showBadge('drive_leg');
+    const showReturn = this._showBadge('drive_return');
+    const showTotal  = this._showBadge('drive_total');
     for (const j of jobs) {
       const card = container.querySelector(`.job-card[data-job-id="${j.id}"]`);
       if (!card) continue;
       card.querySelector('.job-badge-bar')?.remove();
-      if (!showLeg && !showTotal) continue;
+      if (!showLeg && !showReturn && !showTotal) continue;
 
       const e = this._dayIndex[j.id];
       if (!e) continue;
       const chips = [];
       if (showLeg && e.prevMins > 0) {
         chips.push(`<span class="drive-badge drive-badge--leg">&#8672; ${this._fmtMins(e.prevMins)}</span>`);
+      }
+      if (showReturn && e.isLast && e.toShopMins > 0) {
+        chips.push(`<span class="drive-badge drive-badge--return" title="Drive back to shop">&#8674; ${this._fmtMins(e.toShopMins)}</span>`);
       }
       if (showTotal && e.isLast && e.dayTotalMins > 0) {
         chips.push(`<span class="drive-badge drive-badge--total">&Sigma; ${this._fmtMins(e.dayTotalMins)}</span>`);
