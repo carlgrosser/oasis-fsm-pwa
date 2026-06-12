@@ -196,10 +196,11 @@ const DriveInfo = {
       if (!stats) { target.textContent = 'Drive times unavailable for this day.'; return; }
       const fromLabel = this._origin.mode === 'custom' ? 'you' : 'shop';
       target.innerHTML =
-        `First job: <b>~${this._fmtMins(stats.firstMins)}</b> from ${fromLabel}` +
-        ` &nbsp;&middot;&nbsp; Day total: <b>~${this._fmtMins(stats.totalMins)}</b>` +
+        `<div>Drive time to first job: <b>~${this._fmtMins(stats.firstMins)}</b> from ${fromLabel}</div>` +
+        `<div>Day total: <b>~${this._fmtMins(stats.totalMins)}</b>` +
         (stats.totalMiles ? ` (${stats.totalMiles.toFixed(0)} mi)` : '') +
-        (stats.estimated ? '' : ' <span class="drive-info-note">saved estimate</span>');
+        (stats.estimated ? '' : ' <span class="drive-info-note">saved estimate</span>') +
+        `</div>`;
     } catch (e) {
       const target = el();
       if (target) target.textContent = 'Could not compute drive times.';
