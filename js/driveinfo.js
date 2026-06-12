@@ -185,24 +185,24 @@ const DriveInfo = {
       const info = this._serviceInfo[j.id];
       if (!info) continue;
 
-      // Sale total: footer chip between the travel badges and the status badge
+      // Bottom bar: sale total on the left, service tags right-aligned
+      const parts = [];
       if (showTotal && info.sale_total > 0) {
         const txt = '$' + Number(info.sale_total).toLocaleString('en-US', { maximumFractionDigits: 0 });
-        const totalEl = document.createElement('span');
-        totalEl.className = 'service-badge service-badge--total job-total-badge';
-        totalEl.textContent = txt;
-        const statusBadge = card.querySelector('.job-card-footer .status-badge');
-        if (statusBadge) statusBadge.insertAdjacentElement('beforebegin', totalEl);
+        parts.push(`<span class="service-badge service-badge--total">${txt}</span>`);
       }
+      if (showSvc && (info.services || []).length) {
+        const chips = info.services.map(s => {
+          const color = this.ODOO_TAG_COLORS[(s.color || 0) % this.ODOO_TAG_COLORS.length];
+          return `<span class="service-badge" style="background:${color}">${this._esc(s.name)}</span>`;
+        }).join('');
+        parts.push(`<span class="job-service-tags">${chips}</span>`);
+      }
+      if (!parts.length) continue;
 
-      // Service tags: bottom bar
-      if (!showSvc || !(info.services || []).length) continue;
       const bar = document.createElement('div');
       bar.className = 'job-service-bar';
-      bar.innerHTML = info.services.map(s => {
-        const color = this.ODOO_TAG_COLORS[(s.color || 0) % this.ODOO_TAG_COLORS.length];
-        return `<span class="service-badge" style="background:${color}">${this._esc(s.name)}</span>`;
-      }).join('');
+      bar.innerHTML = parts.join('');
       card.appendChild(bar);
     }
   },

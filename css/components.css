@@ -4000,10 +4000,20 @@ textarea.form-input {
 .job-service-bar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--border-color);
+}
+
+/* Service tags right-aligned, after the left-aligned sale total */
+.job-service-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: auto;
 }
 .service-badge {
   display: inline-block;
