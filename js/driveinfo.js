@@ -195,12 +195,13 @@ const DriveInfo = {
       if (!target) return; // re-rendered meanwhile
       if (!stats) { target.textContent = 'Drive times unavailable for this day.'; return; }
       const fromLabel = this._origin.mode === 'custom' ? 'you' : 'shop';
-      target.innerHTML =
-        `<div>Drive time to first job: <b>~${this._fmtMins(stats.firstMins)}</b> from ${fromLabel}</div>` +
-        `<div>Day total: <b>~${this._fmtMins(stats.totalMins)}</b>` +
-        (stats.totalMiles ? ` (${stats.totalMiles.toFixed(0)} mi)` : '') +
-        (stats.estimated ? '' : ' <span class="drive-info-note">saved estimate</span>') +
-        `</div>`;
+      const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth',
+                        'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+      const lines = stats.legMins.slice(0, ORDINALS.length).map((mins, i) => i === 0
+        ? `<div>Drive time to first job: <b>~${this._fmtMins(mins)}</b> from ${fromLabel}` +
+          (stats.estimated ? '' : ' <span class="drive-info-note">saved estimate</span>') + `</div>`
+        : `<div>Time to ${ORDINALS[i]} job: <b>~${this._fmtMins(mins)}</b></div>`);
+      target.innerHTML = lines.join('');
     } catch (e) {
       const target = el();
       if (target) target.textContent = 'Could not compute drive times.';
@@ -217,17 +218,12 @@ const DriveInfo = {
     const sorted = [...jobs].sort((a, b) =>
       (a.scheduled_date_start || '').localeCompare(b.scheduled_date_start || ''));
 
-    // Saved estimates path (shop origin only — that's what they were computed from)
+    // Saved estimates path (shop origin only — that's what they were computed
+    // from). Each job's travel_minutes_from_prev is the leg that ends at it.
     if (this._origin.mode === 'shop') {
-      const first = this._dayIndex[sorted[0]?.id];
-      const anyTotal = sorted.map(j => this._dayIndex[j.id]).find(e => e && e.dayTotalMins > 0);
-      if (first && first.prevMins > 0 && anyTotal) {
-        return {
-          firstMins: first.prevMins,
-          totalMins: anyTotal.dayTotalMins,
-          totalMiles: anyTotal.dayTotalMiles,
-          estimated: false,
-        };
+      const legMins = sorted.map(j => this._dayIndex[j.id]?.prevMins || 0);
+      if (legMins.length && legMins.every(m => m > 0)) {
+        return { legMins, estimated: false };
       }
     }
 
@@ -250,11 +246,10 @@ const DriveInfo = {
     const json = await resp.json();
     if (json.code !== 'Ok' || !json.routes?.[0]) return null;
 
+    // legs[i] ends at stop i; the last leg (back to origin) isn't shown
     const legs = json.routes[0].legs || [];
     const stats = {
-      firstMins:  Math.round((legs[0]?.duration || 0) / 60),
-      totalMins:  Math.round(legs.reduce((s, l) => s + l.duration, 0) / 60),
-      totalMiles: legs.reduce((s, l) => s + l.distance, 0) / 1609.34,
+      legMins: legs.slice(0, stops.length).map(l => Math.round(l.duration / 60)),
       estimated: true,
     };
     this._calcCache[cacheKey] = stats;
