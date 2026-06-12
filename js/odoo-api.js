@@ -1039,6 +1039,14 @@ const OdooAPI = {
   },
 
   /**
+   * Service badges (flagged product tags from the sale order) + sale total.
+   * Returns { orderId: { services: [{name, color}], sale_total } }.
+   */
+  async getServiceInfo(orderIds) {
+    return this.callKw('fsm.order', 'office_get_service_info', [orderIds], {});
+  },
+
+  /**
    * Fetch all files from the Drive Project Photos folder for a job.
    * Returns [{ file_id, name, mime_type, view_url, modified_time }] or [].
    */

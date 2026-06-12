@@ -3995,3 +3995,25 @@ textarea.form-input {
 }
 .drive-badge--leg   { background: rgba(52, 73, 94, 0.85); }
 .drive-badge--total { background: rgba(142, 68, 173, 0.85); }
+
+/* Service-tag chips + sale total bar at the bottom of job cards */
+.job-service-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+}
+.service-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  color: #fff;
+  background: #888;
+  white-space: nowrap;
+}
+.service-badge--total { background: #2c3e50; }

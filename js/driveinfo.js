@@ -19,6 +19,12 @@ const DriveInfo = {
 
   OSRM_BASE: 'https://router.project-osrm.org',
 
+  // Odoo tag color indexes → hex (standard Odoo palette)
+  ODOO_TAG_COLORS: [
+    '#888888', '#F06050', '#F4A460', '#F7CD1F', '#6CC1ED', '#814968',
+    '#EB7E7F', '#2C8397', '#475577', '#D6145F', '#30C381', '#9365B8',
+  ],
+
   _config:    null,  // shared app config (badges, clock-on policy)
   _shop:      null,  // [lat, lng]
   _origin:    null,  // { mode: 'shop'|'custom', address, ll }
@@ -77,8 +83,10 @@ const DriveInfo = {
     await this.ensureReady();
     if (!container.isConnected) return; // view changed while loading
 
-    this._indexJobs([...(todayJobs || []), ...(upcomingJobs || [])]);
-    this._applyBadgeBars(container, [...(todayJobs || []), ...(upcomingJobs || [])]);
+    const allJobs = [...(todayJobs || []), ...(upcomingJobs || [])];
+    this._indexJobs(allJobs);
+    this._applyBadgeBars(container, allJobs);
+    this._applyServiceBars(container, allJobs);
 
     if ((todayJobs || []).length)    this._renderInfoBox(container, todayJobs, 'today');
     if ((upcomingJobs || []).length) this._renderInfoBox(container, upcomingJobs, 'upcoming');
@@ -148,6 +156,51 @@ const DriveInfo = {
         if (addr) addr.insertAdjacentElement('afterend', bar);
         else card.appendChild(bar);
       }
+    }
+  },
+
+  // ── Service tags + sale total (bottom bar on job cards) ─────────────────
+
+  _serviceInfo: {},  // orderId → { services: [{name, color}], sale_total }
+
+  async _applyServiceBars(container, jobs) {
+    const showSvc   = this._showBadge('services');
+    const showTotal = this._showBadge('sale_total');
+    if (!showSvc && !showTotal) return;
+
+    const missing = jobs.map(j => j.id).filter(id => !(id in this._serviceInfo));
+    if (missing.length) {
+      try {
+        const info = await OdooAPI.getServiceInfo(missing);
+        Object.assign(this._serviceInfo, info || {});
+      } catch (e) { /* offline — show what we have */ }
+    }
+    if (!container.isConnected) return;
+
+    for (const j of jobs) {
+      const card = container.querySelector(`.job-card[data-job-id="${j.id}"]`);
+      if (!card) continue;
+      card.querySelector('.job-service-bar')?.remove();
+      const info = this._serviceInfo[j.id];
+      if (!info) continue;
+
+      const chips = [];
+      if (showSvc) {
+        for (const s of (info.services || [])) {
+          const color = this.ODOO_TAG_COLORS[(s.color || 0) % this.ODOO_TAG_COLORS.length];
+          chips.push(`<span class="service-badge" style="background:${color}">${this._esc(s.name)}</span>`);
+        }
+      }
+      if (showTotal && info.sale_total > 0) {
+        const txt = '$' + Number(info.sale_total).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        chips.push(`<span class="service-badge service-badge--total">${txt}</span>`);
+      }
+      if (!chips.length) continue;
+
+      const bar = document.createElement('div');
+      bar.className = 'job-service-bar';
+      bar.innerHTML = chips.join('');
+      card.appendChild(bar);
     }
   },
 
