@@ -136,12 +136,18 @@ const DriveInfo = {
       }
       if (!chips.length) continue;
 
-      const bar = document.createElement('div');
+      const bar = document.createElement('span');
       bar.className = 'job-badge-bar';
       bar.innerHTML = chips.join('');
-      const addr = card.querySelector('.job-card-address');
-      if (addr) addr.insertAdjacentElement('afterend', bar);
-      else card.appendChild(bar);
+      // Sit immediately left of the status badge in the card footer
+      const statusBadge = card.querySelector('.job-card-footer .status-badge');
+      if (statusBadge) {
+        statusBadge.insertAdjacentElement('beforebegin', bar);
+      } else {
+        const addr = card.querySelector('.job-card-address');
+        if (addr) addr.insertAdjacentElement('afterend', bar);
+        else card.appendChild(bar);
+      }
     }
   },
 

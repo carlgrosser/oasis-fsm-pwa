@@ -3973,10 +3973,10 @@ textarea.form-input {
 }
 
 .job-badge-bar {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
-  margin-top: 4px;
 }
 .drive-badge {
   display: inline-block;
