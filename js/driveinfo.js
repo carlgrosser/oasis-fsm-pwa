@@ -141,7 +141,7 @@ const DriveInfo = {
       if (showLeg && e.prevMins > 0) {
         chips.push(`<span class="drive-badge drive-badge--leg">&#8672; ${this._fmtMins(e.prevMins)}</span>`);
       }
-      if (showReturn && e.isLast && e.toShopMins > 0) {
+      if (showReturn && e.isLast && !e.isFirst && e.toShopMins > 0) {
         chips.push(`<span class="drive-badge drive-badge--return" title="Drive back to shop">&#8674; ${this._fmtMins(e.toShopMins)}</span>`);
       }
       if (showTotal && e.isLast && e.dayTotalMins > 0) {
