@@ -185,7 +185,7 @@ const DriveInfo = {
       const info = this._serviceInfo[j.id];
       if (!info) continue;
 
-      // Bottom bar: sale total on the left, service tags right-aligned
+      // Top bar: sale total on the left, service tags right-aligned
       const parts = [];
       if (showTotal && info.sale_total > 0) {
         const txt = '$' + Number(info.sale_total).toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -203,7 +203,10 @@ const DriveInfo = {
       const bar = document.createElement('div');
       bar.className = 'job-service-bar';
       bar.innerHTML = parts.join('');
-      card.appendChild(bar);
+      // Top of the card, above the customer/time header (below alert banners)
+      const header = card.querySelector('.job-card-header');
+      if (header) header.insertAdjacentElement('beforebegin', bar);
+      else card.insertAdjacentElement('afterbegin', bar);
     }
   },
 

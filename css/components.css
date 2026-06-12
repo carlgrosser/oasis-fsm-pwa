@@ -4002,9 +4002,9 @@ textarea.form-input {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border-color);
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Service tags right-aligned, after the left-aligned sale total */
