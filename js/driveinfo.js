@@ -200,14 +200,16 @@ const DriveInfo = {
       const target = el();
       if (!target) return; // re-rendered meanwhile
       if (!stats) { target.textContent = 'Drive times unavailable for this day.'; return; }
-      const fromLabel = this._origin.mode === 'custom' ? 'you' : 'shop';
-      const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth',
-                        'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
-      const lines = stats.legMins.slice(0, ORDINALS.length).map((mins, i) => i === 0
-        ? `<div>Drive time to first job: <b>~${this._fmtMins(mins)}</b> from ${fromLabel}` +
-          (stats.estimated ? '' : ' <span class="drive-info-note">saved estimate</span>') + `</div>`
-        : `<div>Time to ${ORDINALS[i]} job: <b>~${this._fmtMins(mins)}</b></div>`);
-      target.innerHTML = lines.join('');
+      // Compact inline legs: "To 1st job: ~22m · 2nd: ~15m · 3rd: ~9m"
+      // (origin context comes from the "Leaving from" row above)
+      const ord = (n) => {
+        const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+        return n + (s[(v - 20) % 10] || s[v] || s[0]);
+      };
+      const items = stats.legMins.slice(0, 10).map((mins, i) =>
+        `<span class="drive-info-leg">${i === 0 ? 'To 1st job' : ord(i + 1)}: ` +
+        `<b>~${this._fmtMins(mins)}</b></span>`);
+      target.innerHTML = items.join('<span class="drive-info-sep">&middot;</span>');
     } catch (e) {
       const target = el();
       if (target) target.textContent = 'Could not compute drive times.';
