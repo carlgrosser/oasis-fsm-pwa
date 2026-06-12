@@ -207,7 +207,7 @@ const DriveInfo = {
         return n + (s[(v - 20) % 10] || s[v] || s[0]);
       };
       const items = stats.legMins.slice(0, 10).map((mins, i) =>
-        `<span class="drive-info-leg">${i === 0 ? 'To 1st job' : ord(i + 1)}: ` +
+        `<span class="drive-info-leg">${i === 0 ? 'Drive to 1st job' : ord(i + 1)}: ` +
         `<b>~${this._fmtMins(mins)}</b></span>`);
       target.innerHTML = items.join('<span class="drive-info-sep">&middot;</span>');
     } catch (e) {
