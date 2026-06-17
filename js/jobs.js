@@ -729,14 +729,8 @@ const Jobs = {
     // Init tab swiping
     this._initDetailTabs();
 
-    // Bind gate code edit
+    // Gate code is now shown/edited as part of the contact details
     const locationId = Array.isArray(job.location_id) ? job.location_id[0] : null;
-    const gateCodeRow = document.getElementById('gateCodeRow');
-    if (gateCodeRow && locationId) {
-      gateCodeRow.addEventListener('click', () => {
-        this._showGateCodeModal(job, locationId);
-      });
-    }
 
     // Bind contact info edit
     const contactEditRow = document.getElementById('contactEditRow');
@@ -897,13 +891,10 @@ const Jobs = {
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
     const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
-    // Gate code
-    const gateCodeHtml = `<div class="detail-row gate-code-row" id="gateCodeRow">
+    // Gate code — a contact detail row; edited via the contact modal
+    const gateCodeHtml = `<div class="detail-row">
            <span class="label">Gate Code</span>
-           <span class="value">
-             <span class="gate-code-value" id="gateCodeValue">${job.gate_code ? this._escapeHtml(job.gate_code) : '<em style="opacity:0.5">None</em>'}</span>
-             <span class="gate-code-edit" title="Tap to edit">✏️</span>
-           </span>
+           <span class="value">${job.gate_code ? this._escapeHtml(job.gate_code) : '<em style="opacity:0.5">None</em>'}</span>
          </div>`;
 
     // Contact rows shown under the address. Email is always shown (lazy-loaded
@@ -990,8 +981,36 @@ const Jobs = {
         </button>
       </div>` : '';
 
+    // Pre-work action (Head to Job / Start Job) — rendered above the customer
+    // info card so the primary action is the first thing on the Info tab.
+    const preWorkHtml = this._isPreWorkStage(stageName) ? (() => {
+      const sn = stageName.toLowerCase();
+      const isDispatched = sn.includes('dispatch');
+      if (isDispatched) {
+        return `
+      <div class="detail-section">
+        <h3>Head to Job</h3>
+        <div class="status-actions" id="infoStatusActions">
+          <button class="btn btn-warning btn-block btn-lg" id="enRouteBtn" data-next-stage="En Route">
+            → En Route
+          </button>
+        </div>
+      </div>`;
+      }
+      return `
+      <div class="detail-section">
+        <h3>Start Job</h3>
+        <div class="status-actions" id="infoStatusActions">
+          <button class="btn btn-primary btn-block btn-lg" id="startJobBtn">
+            Start Job
+          </button>
+        </div>
+      </div>`;
+    })() : '';
+
     return `
       ${earlyWrapupHtml}
+      ${preWorkHtml}
       <div class="detail-section">
         <div class="info-name-row" style="display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-sm);">
           <h3 style="margin:0;">${this._escapeHtml(locationName)}</h3>
@@ -1001,7 +1020,6 @@ const Jobs = {
           📍 ${this._escapeHtml(fullAddress)}
         </a>
         ${contactRowsHtml}
-        <div class="divider"></div>
         ${gateCodeHtml}
         ${descHtml}
         ${todoHtml}
@@ -1019,31 +1037,7 @@ const Jobs = {
           ${saleRowHtml}
           ${gdriveRowHtml}
         </div>
-      </div>
-      ${this._isPreWorkStage(stageName) ? (() => {
-        const sn = stageName.toLowerCase();
-        const isDispatched = sn.includes('dispatch');
-        if (isDispatched) {
-          return `
-      <div class="detail-section">
-        <h3>Head to Job</h3>
-        <div class="status-actions" id="infoStatusActions">
-          <button class="btn btn-warning btn-block btn-lg" id="enRouteBtn" data-next-stage="En Route">
-            → En Route
-          </button>
-        </div>
       </div>`;
-        }
-        return `
-      <div class="detail-section">
-        <h3>Start Job</h3>
-        <div class="status-actions" id="infoStatusActions">
-          <button class="btn btn-primary btn-block btn-lg" id="startJobBtn">
-            Start Job
-          </button>
-        </div>
-      </div>`;
-      })() : ''}`;
   },
 
   /**
@@ -2692,80 +2686,6 @@ const Jobs = {
   },
 
   /**
-   * Show modal to edit gate code.
-   */
-  _showGateCodeModal(job, locationId) {
-    const currentCode = job.gate_code || '';
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-      <div class="modal">
-        <div class="modal-header">
-          <h3>Update Gate Code</h3>
-          <button class="modal-close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>Gate Code</label>
-            <input type="text" class="form-input" id="gateCodeInput"
-                   value="${this._escapeHtml(currentCode)}"
-                   placeholder="e.g., #1234* or 5678">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" id="gateCodeCancel">Cancel</button>
-          <button class="btn btn-primary" id="gateCodeSave">Save</button>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    const input = document.getElementById('gateCodeInput');
-    input.focus();
-    input.select();
-
-    const close = () => overlay.remove();
-
-    overlay.querySelector('.modal-close').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-    document.getElementById('gateCodeCancel').addEventListener('click', close);
-
-    document.getElementById('gateCodeSave').addEventListener('click', async () => {
-      const newCode = input.value.trim();
-      if (newCode === currentCode) { close(); return; }
-
-      if (!confirm('Are you sure you want to update the gate code?')) return;
-
-      const saveBtn = document.getElementById('gateCodeSave');
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving...';
-
-      try {
-        if (navigator.onLine) {
-          await OdooAPI.updateLocationGateCode(locationId, newCode);
-        }
-        // Update local cache
-        job.gate_code = newCode;
-        await DB.put('jobs', job);
-
-        close();
-        App.showToast('Gate code updated', 'success');
-
-        // Re-render detail
-        const container = document.getElementById('jobDetail');
-        if (container) await this.renderJobDetail(job.id, container);
-      } catch (err) {
-        App.showToast('Failed to save: ' + err.message, 'error');
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
-      }
-    });
-  },
-
-  /**
    * Fill the Info tab's Email row. Email isn't a field on fsm.order, so it's
    * read from the location on demand (and cached on the job for re-renders).
    */
@@ -2839,6 +2759,10 @@ const Jobs = {
             <input type="tel" class="form-input" id="cPhone" value="${this._escapeHtml(data.phone)}">
           </div>
           <div class="form-group">
+            <label>Gate Code</label>
+            <input type="text" class="form-input" id="cGateCode" value="${this._escapeHtml(data.gate_code || '')}">
+          </div>
+          <div class="form-group">
             <label>Street</label>
             <input type="text" class="form-input" id="cStreet" value="${this._escapeHtml(data.street)}">
           </div>
@@ -2884,6 +2808,7 @@ const Jobs = {
         phone: document.getElementById('cPhone').value.trim(),
         mobile: document.getElementById('cMobile').value.trim(),
         email: document.getElementById('cEmail').value.trim(),
+        gate_code: document.getElementById('cGateCode').value.trim(),
       };
 
       const saveBtn = document.getElementById('contactSave');
@@ -2907,6 +2832,7 @@ const Jobs = {
         job.phone = c.phone || '';
         job.mobile = c.mobile || '';
         job.email = c.email || '';
+        job.gate_code = c.gate_code || '';
         try { await DB.put('jobs', job); } catch { /* cache best-effort */ }
 
         close();
