@@ -1,0 +1,18 @@
+[Unit]
+Description=Oasis FSM PWA server (static files + Odoo API proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=administrator
+WorkingDirectory=/var/www/pwa
+ExecStart=/usr/bin/python3 /var/www/pwa/server.py
+Restart=always
+RestartSec=3
+# Surface server.py's stdout/stderr in the journal (journalctl -u fsm-pwa)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
