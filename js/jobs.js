@@ -746,6 +746,9 @@ const Jobs = {
       });
     }
 
+    // Lazy-load the customer email for the Info tab (not a field on fsm.order)
+    this._loadInfoEmail(job, locationId);
+
     // Load additional worker names
     const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
     if (workerCount > 1 && job.additional_worker_ids && job.additional_worker_ids.length > 0) {
@@ -903,33 +906,24 @@ const Jobs = {
            </span>
          </div>`;
 
-    // Contact — phone/mobile shown here; address (above) + email edited in modal
+    // Contact rows shown under the address. Email is always shown (lazy-loaded
+    // after render — it isn't a field on fsm.order); phone/mobile only when set.
+    const emailContactHtml = `
+        <div class="detail-row">
+          <span class="label">Email</span>
+          <span class="value" id="infoEmailValue"><em style="opacity:0.5">…</em></span>
+        </div>`;
     const phoneContactHtml = job.phone ? `
-          <div class="detail-row">
-            <span class="label">Phone</span>
-            <span class="value"><a href="tel:${this._escapeHtml(job.phone)}">${this._escapeHtml(job.phone)}</a></span>
-          </div>` : '';
+        <div class="detail-row">
+          <span class="label">Phone</span>
+          <span class="value"><a href="tel:${this._escapeHtml(job.phone)}">${this._escapeHtml(job.phone)}</a></span>
+        </div>` : '';
     const mobileContactHtml = job.mobile ? `
-          <div class="detail-row">
-            <span class="label">Mobile</span>
-            <span class="value"><a href="tel:${this._escapeHtml(job.mobile)}">${this._escapeHtml(job.mobile)}</a></span>
-          </div>` : '';
-    const noContactHtml = (!job.phone && !job.mobile) ? `
-          <div class="detail-row">
-            <span class="value"><em style="opacity:0.5">No phone or mobile on file</em></span>
-          </div>` : '';
-    const contactHtml = `
-      <div class="detail-section">
-        <div class="detail-row gate-code-row" id="contactEditRow">
-          <span class="label" style="font-weight:600;">Contact</span>
-          <span class="value">
-            <span class="gate-code-edit" title="Tap to edit contact info">✏️ Edit</span>
-          </span>
-        </div>
-        ${phoneContactHtml}
-        ${mobileContactHtml}
-        ${noContactHtml}
-      </div>`;
+        <div class="detail-row">
+          <span class="label">Mobile</span>
+          <span class="value"><a href="tel:${this._escapeHtml(job.mobile)}">${this._escapeHtml(job.mobile)}</a></span>
+        </div>` : '';
+    const contactRowsHtml = emailContactHtml + phoneContactHtml + mobileContactHtml;
 
     // Crew
     const primaryWorker = Array.isArray(job.person_id) ? job.person_id[1] : '';
@@ -999,10 +993,14 @@ const Jobs = {
     return `
       ${earlyWrapupHtml}
       <div class="detail-section">
-        <h3>${this._escapeHtml(locationName)}</h3>
+        <div class="info-name-row" style="display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-sm);">
+          <h3 style="margin:0;">${this._escapeHtml(locationName)}</h3>
+          <span class="gate-code-edit" id="contactEditRow" title="Edit contact info" style="cursor:pointer;white-space:nowrap;">✏️ Edit</span>
+        </div>
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
           📍 ${this._escapeHtml(fullAddress)}
         </a>
+        ${contactRowsHtml}
         <div class="divider"></div>
         ${gateCodeHtml}
         ${descHtml}
@@ -1022,7 +1020,6 @@ const Jobs = {
           ${gdriveRowHtml}
         </div>
       </div>
-      ${contactHtml}
       ${this._isPreWorkStage(stageName) ? (() => {
         const sn = stageName.toLowerCase();
         const isDispatched = sn.includes('dispatch');
@@ -2769,6 +2766,33 @@ const Jobs = {
   },
 
   /**
+   * Fill the Info tab's Email row. Email isn't a field on fsm.order, so it's
+   * read from the location on demand (and cached on the job for re-renders).
+   */
+  async _loadInfoEmail(job, locationId) {
+    const el = document.getElementById('infoEmailValue');
+    if (!el) return;
+    const none = '<em style="opacity:0.5">None</em>';
+
+    let email = job.email;
+    if (email === undefined) {
+      if (!locationId || !navigator.onLine) { el.innerHTML = none; return; }
+      try {
+        const rows = await OdooAPI.read('fsm.location', [locationId], ['email']);
+        email = (rows && rows[0] && rows[0].email) || '';
+        job.email = email;
+      } catch {
+        el.innerHTML = none;
+        return;
+      }
+    }
+
+    el.innerHTML = email
+      ? `<a href="mailto:${this._escapeHtml(email)}">${this._escapeHtml(email)}</a>`
+      : none;
+  },
+
+  /**
    * Show modal to edit customer contact info (address, phone, mobile, email).
    * Loads current values from the server, then writes changes back via a
    * method that diffs and logs an audit note to the order journal and the
@@ -2803,6 +2827,18 @@ const Jobs = {
         </div>
         <div class="modal-body">
           <div class="form-group">
+            <label>Email</label>
+            <input type="email" class="form-input" id="cEmail" value="${this._escapeHtml(data.email)}">
+          </div>
+          <div class="form-group">
+            <label>Mobile</label>
+            <input type="tel" class="form-input" id="cMobile" value="${this._escapeHtml(data.mobile)}">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" class="form-input" id="cPhone" value="${this._escapeHtml(data.phone)}">
+          </div>
+          <div class="form-group">
             <label>Street</label>
             <input type="text" class="form-input" id="cStreet" value="${this._escapeHtml(data.street)}">
           </div>
@@ -2821,18 +2857,6 @@ const Jobs = {
           <div class="form-group">
             <label>ZIP</label>
             <input type="text" class="form-input" id="cZip" inputmode="numeric" value="${this._escapeHtml(data.zip)}">
-          </div>
-          <div class="form-group">
-            <label>Phone</label>
-            <input type="tel" class="form-input" id="cPhone" value="${this._escapeHtml(data.phone)}">
-          </div>
-          <div class="form-group">
-            <label>Mobile</label>
-            <input type="tel" class="form-input" id="cMobile" value="${this._escapeHtml(data.mobile)}">
-          </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input type="email" class="form-input" id="cEmail" value="${this._escapeHtml(data.email)}">
           </div>
         </div>
         <div class="modal-footer">
@@ -2882,6 +2906,7 @@ const Jobs = {
         job.state_name = c.state_name || '';
         job.phone = c.phone || '';
         job.mobile = c.mobile || '';
+        job.email = c.email || '';
         try { await DB.put('jobs', job); } catch { /* cache best-effort */ }
 
         close();
