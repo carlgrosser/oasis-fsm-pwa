@@ -363,6 +363,23 @@ const OdooAPI = {
   },
 
   /**
+   * Get the job's current editable contact info (+ state list for its country).
+   */
+  async getContact(orderId) {
+    return this.callKw('fsm.order', 'worker_get_contact', [orderId], {});
+  },
+
+  /**
+   * Apply contact-info changes to the job's location/customer. The server
+   * diffs against current values and logs an audit note; pass only the
+   * fields the worker may have edited (street, street2, city, state_id, zip,
+   * phone, mobile, email).
+   */
+  async updateContact(orderId, changes) {
+    return this.callKw('fsm.order', 'worker_update_contact', [orderId, changes], {});
+  },
+
+  /**
    * Read fsm.person names by IDs (for multi-worker display).
    */
   async readPersonNames(ids) {

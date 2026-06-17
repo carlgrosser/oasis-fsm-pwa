@@ -738,6 +738,14 @@ const Jobs = {
       });
     }
 
+    // Bind contact info edit
+    const contactEditRow = document.getElementById('contactEditRow');
+    if (contactEditRow) {
+      contactEditRow.addEventListener('click', () => {
+        this._showContactModal(job);
+      });
+    }
+
     // Load additional worker names
     const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
     if (workerCount > 1 && job.additional_worker_ids && job.additional_worker_ids.length > 0) {
@@ -895,6 +903,34 @@ const Jobs = {
            </span>
          </div>`;
 
+    // Contact — phone/mobile shown here; address (above) + email edited in modal
+    const phoneContactHtml = job.phone ? `
+          <div class="detail-row">
+            <span class="label">Phone</span>
+            <span class="value"><a href="tel:${this._escapeHtml(job.phone)}">${this._escapeHtml(job.phone)}</a></span>
+          </div>` : '';
+    const mobileContactHtml = job.mobile ? `
+          <div class="detail-row">
+            <span class="label">Mobile</span>
+            <span class="value"><a href="tel:${this._escapeHtml(job.mobile)}">${this._escapeHtml(job.mobile)}</a></span>
+          </div>` : '';
+    const noContactHtml = (!job.phone && !job.mobile) ? `
+          <div class="detail-row">
+            <span class="value"><em style="opacity:0.5">No phone or mobile on file</em></span>
+          </div>` : '';
+    const contactHtml = `
+      <div class="detail-section">
+        <div class="detail-row gate-code-row" id="contactEditRow">
+          <span class="label" style="font-weight:600;">Contact</span>
+          <span class="value">
+            <span class="gate-code-edit" title="Tap to edit contact info">✏️ Edit</span>
+          </span>
+        </div>
+        ${phoneContactHtml}
+        ${mobileContactHtml}
+        ${noContactHtml}
+      </div>`;
+
     // Crew
     const primaryWorker = Array.isArray(job.person_id) ? job.person_id[1] : '';
     const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
@@ -986,6 +1022,7 @@ const Jobs = {
           ${gdriveRowHtml}
         </div>
       </div>
+      ${contactHtml}
       ${this._isPreWorkStage(stageName) ? (() => {
         const sn = stageName.toLowerCase();
         const isDispatched = sn.includes('dispatch');
@@ -2725,6 +2762,135 @@ const Jobs = {
         if (container) await this.renderJobDetail(job.id, container);
       } catch (err) {
         App.showToast('Failed to save: ' + err.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
+    });
+  },
+
+  /**
+   * Show modal to edit customer contact info (address, phone, mobile, email).
+   * Loads current values from the server, then writes changes back via a
+   * method that diffs and logs an audit note to the order journal and the
+   * customer record. Requires a connection (the audit log is server-side).
+   */
+  async _showContactModal(job) {
+    if (!navigator.onLine) {
+      App.showToast('Contact edits need a connection', 'error');
+      return;
+    }
+
+    let data;
+    try {
+      data = await OdooAPI.getContact(job.id);
+    } catch (err) {
+      App.showToast('Could not load contact: ' + err.message, 'error');
+      return;
+    }
+
+    const stateOptions = ['<option value="">— State —</option>']
+      .concat((data.states || []).map(s =>
+        `<option value="${s.id}"${s.id === data.state_id ? ' selected' : ''}>${this._escapeHtml(s.name)}</option>`
+      )).join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Edit Contact Info</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Street</label>
+            <input type="text" class="form-input" id="cStreet" value="${this._escapeHtml(data.street)}">
+          </div>
+          <div class="form-group">
+            <label>Street 2</label>
+            <input type="text" class="form-input" id="cStreet2" value="${this._escapeHtml(data.street2)}">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" class="form-input" id="cCity" value="${this._escapeHtml(data.city)}">
+          </div>
+          <div class="form-group">
+            <label>State</label>
+            <select class="form-input" id="cState">${stateOptions}</select>
+          </div>
+          <div class="form-group">
+            <label>ZIP</label>
+            <input type="text" class="form-input" id="cZip" inputmode="numeric" value="${this._escapeHtml(data.zip)}">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" class="form-input" id="cPhone" value="${this._escapeHtml(data.phone)}">
+          </div>
+          <div class="form-group">
+            <label>Mobile</label>
+            <input type="tel" class="form-input" id="cMobile" value="${this._escapeHtml(data.mobile)}">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" class="form-input" id="cEmail" value="${this._escapeHtml(data.email)}">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="contactCancel">Cancel</button>
+          <button class="btn btn-primary" id="contactSave">Save</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.getElementById('contactCancel').addEventListener('click', close);
+
+    document.getElementById('contactSave').addEventListener('click', async () => {
+      const stateVal = document.getElementById('cState').value;
+      const changes = {
+        street: document.getElementById('cStreet').value.trim(),
+        street2: document.getElementById('cStreet2').value.trim(),
+        city: document.getElementById('cCity').value.trim(),
+        state_id: stateVal ? parseInt(stateVal, 10) : false,
+        zip: document.getElementById('cZip').value.trim(),
+        phone: document.getElementById('cPhone').value.trim(),
+        mobile: document.getElementById('cMobile').value.trim(),
+        email: document.getElementById('cEmail').value.trim(),
+      };
+
+      const saveBtn = document.getElementById('contactSave');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        const res = await OdooAPI.updateContact(job.id, changes);
+        if (res && res.changed === false) {
+          close();
+          App.showToast('No changes to save', 'info');
+          return;
+        }
+
+        // Update local cache with the authoritative new values
+        const c = (res && res.contact) || {};
+        job.street = c.street || '';
+        job.street2 = c.street2 || '';
+        job.city = c.city || '';
+        job.state_name = c.state_name || '';
+        job.phone = c.phone || '';
+        job.mobile = c.mobile || '';
+        try { await DB.put('jobs', job); } catch { /* cache best-effort */ }
+
+        close();
+        App.showToast('Contact info updated', 'success');
+
+        const container = document.getElementById('jobDetail');
+        if (container) await this.renderJobDetail(job.id, container);
+      } catch (err) {
+        App.showToast('Failed to save: ' + (err.message || 'error'), 'error');
         saveBtn.disabled = false;
         saveBtn.textContent = 'Save';
       }
