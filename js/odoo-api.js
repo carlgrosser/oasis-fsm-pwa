@@ -356,13 +356,6 @@ const OdooAPI = {
   },
 
   /**
-   * Update gate code on an fsm.location.
-   */
-  async updateLocationGateCode(locationId, gateCode) {
-    return this.write('fsm.location', [locationId], { gate_code: gateCode });
-  },
-
-  /**
    * Get the job's current editable contact info (+ state list for its country).
    */
   async getContact(orderId) {

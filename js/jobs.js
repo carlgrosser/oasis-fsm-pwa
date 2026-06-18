@@ -1019,8 +1019,8 @@ const Jobs = {
         <a href="${mapUrl}" target="_blank" rel="noopener" class="map-link">
           📍 ${this._escapeHtml(fullAddress)}
         </a>
-        ${contactRowsHtml}
         ${gateCodeHtml}
+        ${contactRowsHtml}
         ${descHtml}
         ${todoHtml}
         <div class="divider"></div>
@@ -2747,6 +2747,10 @@ const Jobs = {
         </div>
         <div class="modal-body">
           <div class="form-group">
+            <label>Gate Code</label>
+            <input type="text" class="form-input" id="cGateCode" value="${this._escapeHtml(data.gate_code || '')}">
+          </div>
+          <div class="form-group">
             <label>Email</label>
             <input type="email" class="form-input" id="cEmail" value="${this._escapeHtml(data.email)}">
           </div>
@@ -2757,10 +2761,6 @@ const Jobs = {
           <div class="form-group">
             <label>Phone</label>
             <input type="tel" class="form-input" id="cPhone" value="${this._escapeHtml(data.phone)}">
-          </div>
-          <div class="form-group">
-            <label>Gate Code</label>
-            <input type="text" class="form-input" id="cGateCode" value="${this._escapeHtml(data.gate_code || '')}">
           </div>
           <div class="form-group">
             <label>Street</label>
