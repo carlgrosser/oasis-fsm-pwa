@@ -1024,14 +1024,11 @@ const Billing = {
           payment_link: '{payment_link}',
           company_name: companyName,
         });
-        const sentAt = new Date().toISOString();
         const result = await OdooAPI.sendPaymentSms(invoice.id, phoneVal, smsBody);
         if (result.success) {
           App.showToast('Payment link sent', 'success');
           OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phoneVal + ': ' + smsBody);
-          if (result.sid) {
-            mirrorSmsToChatwoot({ to: phoneVal, from: result.from || '', body: smsBody, messageSid: result.sid, sentAt });
-          }
+          warnIfSmsMirrorFailed(result);
           this._startPaymentPolling(job, invoice.id, parentContainer, invoice.amount_residual);
         } else {
           App.showToast(result.error || 'Failed to send', 'error');
@@ -1112,13 +1109,10 @@ const Billing = {
             receipt_link: '{receipt_link}',
             company_name: companyName,
           });
-          const sentAt = new Date().toISOString();
           const response = await OdooAPI.sendDocument(invoice.id, 'receipt', 'sms', phone, smsBody);
           App.showToast('Receipt sent via SMS', 'success');
           OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-          if (response?.sid) {
-            mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.sid, sentAt });
-          }
+          warnIfSmsMirrorFailed(response);
         } catch (err) {
           App.showToast('Failed: ' + err.message, 'error');
         }

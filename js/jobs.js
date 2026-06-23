@@ -1621,13 +1621,10 @@ const Jobs = {
             eta: etaMinutes || '30',
             company_name: companyName,
           });
-          const sentAt = new Date().toISOString();
           OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(response => {
             App.showToast('SMS sent to customer', 'success');
             OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-            if (response?.message_sid) {
-              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
-            }
+            warnIfSmsMirrorFailed(response);
           }).catch(err => {
             console.warn('En route SMS failed:', err);
             App.showToast('SMS failed to send', 'error');
@@ -1751,13 +1748,10 @@ const Jobs = {
             eta: etaMinutes || '30',
             company_name: companyName,
           });
-          const sentAt = new Date().toISOString();
           OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody).then(response => {
             App.showToast('SMS sent to customer', 'success');
             OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-            if (response?.message_sid) {
-              mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
-            }
+            warnIfSmsMirrorFailed(response);
           }).catch(err => {
             console.warn('En route SMS failed:', err);
             App.showToast('SMS failed to send', 'error');
@@ -1819,13 +1813,10 @@ const Jobs = {
           eta: etaMinutes || '30',
           company_name: companyName,
         });
-        const sentAt = new Date().toISOString();
         const response = await OdooAPI.sendEnRouteSms(job.id, phone, etaMinutes, smsBody);
         App.showToast('SMS sent to customer', 'success');
         OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
-        if (response?.message_sid) {
-          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
-        }
+        warnIfSmsMirrorFailed(response);
       } catch (err) {
         console.warn('En route SMS failed:', err);
         App.showToast('SMS failed to send', 'error');
@@ -2076,13 +2067,10 @@ const Jobs = {
       });
 
       try {
-        const sentAt = new Date().toISOString();
         const response = await OdooAPI.sendEnRouteSms(job.id, phone, eta, smsBody);
         OdooAPI.postJournalEntry(job.id, 'SMS sent to ' + phone + ': ' + smsBody);
         App.showToast('ETA SMS sent', 'success');
-        if (response?.message_sid) {
-          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
-        }
+        warnIfSmsMirrorFailed(response);
         this._hideSmsPicker();
       } catch (err) {
         App.showToast('SMS failed to send', 'error');
@@ -2120,13 +2108,10 @@ const Jobs = {
           payment_link: '{payment_link}',
         });
 
-        const sentAt = new Date().toISOString();
         const response = await OdooAPI.sendPaymentSms(invoice.id, phone, smsBody);
         OdooAPI.postJournalEntry(job.id, 'Payment SMS sent to ' + phone);
         App.showToast('Payment link sent', 'success');
-        if (response?.message_sid) {
-          mirrorSmsToChatwoot({ to: phone, from: response.from || '', body: smsBody, messageSid: response.message_sid, sentAt });
-        }
+        warnIfSmsMirrorFailed(response);
         this._hideSmsPicker();
       } catch (err) {
         App.showToast('Failed to send payment link', 'error');

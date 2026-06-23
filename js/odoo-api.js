@@ -1239,37 +1239,18 @@ const OdooAPI = {
 // ========== SMS MIRROR ==========
 
 /**
- * Fire-and-forget POST to the n8n SMS mirror endpoint.
- * Call this after every successful outbound SMS send where a Twilio SID is available.
- * Mirror failures are logged but never propagate — they must not affect the UX.
+ * Surface a loud warning when the server-side SMS → Chatwoot mirror failed.
+ *
+ * Mirroring now happens server-side in fieldservice_billing (reusing the
+ * company's SMS mirror config), and each SMS RPC returns mirror_ok. The SMS
+ * itself was already delivered; this only flags that it won't appear in
+ * Chatwoot so the worker/office knows to follow up. Never blocks the send.
  */
-function mirrorSmsToChatwoot({ to, from, body, messageSid, sentAt }) {
-  const mirrorUrl = CONFIG.SMS_MIRROR_URL;
-  const mirrorSecret = CONFIG.SMS_MIRROR_SECRET;
-
-  if (!mirrorSecret) {
-    console.warn('[SMS Mirror] SMS_MIRROR_SECRET not configured — skipping mirror');
-    return;
+function warnIfSmsMirrorFailed(response) {
+  if (response && response.mirror_ok === false) {
+    console.error('[SMS Mirror] Server-side mirror failed:', response.mirror_error);
+    if (typeof App !== 'undefined' && App.showToast) {
+      App.showToast('SMS delivered, but not logged to Chatwoot', 'error');
+    }
   }
-
-  fetch(mirrorUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${mirrorSecret}`
-    },
-    body: JSON.stringify({
-      to,
-      from: from || '',
-      body,
-      sent_at: sentAt,
-      message_sid: messageSid,
-      source: 'fsm-pwa',
-      bot_agent: 'FSM Bot',
-      is_bulk: false,
-      campaign_label: null
-    })
-  }).catch(err => {
-    console.error('[SMS Mirror] Mirror call failed:', err.message);
-  });
 }
