@@ -696,6 +696,10 @@ const Billing = {
       <div class="detail-section">
         <h3>Collect Payment</h3>
         <div class="billing-payment-methods" id="paymentMethods">
+          <button class="billing-payment-method-btn" data-method="cash">
+            <div style="font-size:24px;">&#128181;</div>
+            <div>Cash</div>
+          </button>
           <button class="billing-payment-method-btn" data-method="check">
             <div style="font-size:24px;">&#128221;</div>
             <div>Check</div>
@@ -794,6 +798,9 @@ const Billing = {
 
         const method = btn.dataset.method;
         switch (method) {
+          case 'cash':
+            this._showCashPaymentView(invoice, contentArea, job, container);
+            break;
           case 'check':
             this._showCheckPaymentView(invoice, contentArea, job, container);
             break;
@@ -808,6 +815,49 @@ const Billing = {
             break;
         }
       });
+    });
+  },
+
+  // ---------- Cash Payment ----------
+
+  _showCashPaymentView(invoice, contentArea, job, parentContainer) {
+    contentArea.innerHTML = `
+      <div style="margin-top:var(--spacing-md);">
+        <div class="form-group">
+          <label for="cashAmount">Amount ($${this._money(invoice.amount_residual)} due)</label>
+          <input type="number" class="form-input" id="cashAmount"
+                 value="${invoice.amount_residual}" min="0" step="0.01">
+        </div>
+        <button class="btn btn-success btn-block" id="recordCashBtn">
+          Record Cash Payment
+        </button>
+      </div>
+    `;
+
+    document.getElementById('recordCashBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('recordCashBtn');
+      const amount = parseFloat(document.getElementById('cashAmount').value) || 0;
+
+      if (amount <= 0) {
+        App.showToast('Enter a valid amount', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Recording...';
+
+      try {
+        const result = await OdooAPI.registerManualPayment(invoice.id, 'Cash', '', amount);
+        if (result.success) {
+          App.showToast('Cash payment recorded', 'success');
+          OdooAPI.postJournalEntry(job.id, `Payment collected: Cash, $${amount.toFixed(2)}`).catch(() => {});
+          await this.renderSalesTab(job, parentContainer);
+        }
+      } catch (err) {
+        App.showToast('Failed: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Record Cash Payment';
+      }
     });
   },
 
