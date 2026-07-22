@@ -68,34 +68,22 @@ const App = {
     const userEl = document.getElementById('userName');
     if (userEl) userEl.textContent = user.name || user.username;
 
-    // Load stages
+    // Load stages (cache-first — refreshes in the background)
     await Jobs.loadStages();
 
     // Init sync
     Sync.init();
 
-    // Init time tracking
-    if (typeof TimeTracking !== 'undefined') {
-      await TimeTracking.init();
-    }
-
-    // Init themes
+    // Init themes (local, no network) — do this before the first paint so
+    // there's no flash of the wrong theme.
     if (typeof Themes !== 'undefined') {
       Themes.init();
     }
 
-    // Init camera mode toggle (per-device setting)
-    if (typeof Photos !== 'undefined') {
-      Photos.initCameraModeToggle();
-    }
-
-    // Start helpdesk badge polling
-    if (typeof Helpdesk !== 'undefined') {
-      Helpdesk.startBadgePolling();
-    }
-
-    // Bind UI events
+    // Bind UI events + swipe/orientation handlers before the first render.
     this._bindEvents();
+    this._initListTabs();
+    this._initOrientationHandler();
 
     // Show admin-only menu items
     if (Auth.isAdmin()) {
@@ -105,14 +93,26 @@ const App = {
       });
     }
 
-    // Init list tab swiping
-    this._initListTabs();
-
-    // Re-snap swipeable panels after rotation/resize
-    this._initOrientationHandler();
-
-    // Load today's jobs initially
+    // Paint today's jobs ASAP (cache-first). Everything below makes network
+    // calls, so it runs AFTER the job list is on screen — on weak signal the
+    // tech sees their jobs immediately instead of waiting on these.
     await this._loadViewJobs('today');
+
+    // Init time tracking — restores from cache on failure; not awaited so a
+    // weak-signal attendance fetch can't block the UI.
+    if (typeof TimeTracking !== 'undefined') {
+      TimeTracking.init();
+    }
+
+    // Init camera mode toggle (per-device setting)
+    if (typeof Photos !== 'undefined') {
+      Photos.initCameraModeToggle();
+    }
+
+    // Start helpdesk badge polling (background)
+    if (typeof Helpdesk !== 'undefined') {
+      Helpdesk.startBadgePolling();
+    }
   },
 
   // Set while handling a rotation so scroll-sync handlers don't mistake the
@@ -457,7 +457,11 @@ const App = {
     container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
     try {
-      await Jobs.loadJobs(view);
+      // Cache-first: loadJobs renders instantly from cache, then refreshes in
+      // the background and calls this callback to repaint with fresh data.
+      await Jobs.loadJobs(view, () => {
+        if (this._currentView === view) Jobs.renderJobList(container);
+      });
       Jobs.renderJobList(container);
       this._viewsLoaded[view] = true;
     } catch (err) {

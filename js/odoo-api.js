@@ -26,8 +26,12 @@ const OdooAPI = {
 
   /**
    * Low-level JSON-RPC call.
+   *
+   * opts.timeout (ms) overrides CONFIG.RPC_TIMEOUT_MS for this call. On
+   * timeout the request is aborted and a timeout Error (err.isTimeout=true)
+   * is thrown so callers can fall back to cache instead of hanging.
    */
-  async rpc(url, params) {
+  async rpc(url, params, opts) {
     this._requestId++;
     const fullUrl = CONFIG.ODOO_URL + url;
 
@@ -42,12 +46,29 @@ const OdooAPI = {
       params: params,
     };
 
-    const resp = await fetch(fullUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      credentials: CONFIG.ODOO_URL ? 'include' : 'same-origin',
-    });
+    const timeoutMs = (opts && opts.timeout) || CONFIG.RPC_TIMEOUT_MS || 10000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let resp;
+    try {
+      resp = await fetch(fullUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        credentials: CONFIG.ODOO_URL ? 'include' : 'same-origin',
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        const e = new Error('Request timed out — weak or no connection');
+        e.isTimeout = true;
+        throw e;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -84,14 +105,24 @@ const OdooAPI = {
   },
 
   /**
-   * Check if current session is still valid.
+   * Check whether the current session is still valid.
+   * Returns one of:
+   *   'valid'       — server confirms an authenticated session
+   *   'invalid'     — server responded but the session is expired/anonymous
+   *   'unreachable' — timeout or network error (can't tell; assume offline)
+   * The distinction matters for offline-first: we only force a re-login on
+   * 'invalid', never on 'unreachable' (weak signal must not log people out).
    */
   async checkSession() {
     try {
-      const result = await this.rpc('/web/session/get_session_info', {});
-      return result && result.uid !== false;
-    } catch (e) {
-      return false;
+      const result = await this.rpc('/web/session/get_session_info', {}, { timeout: 8000 });
+      return (result && result.uid) ? 'valid' : 'invalid';
+    } catch (err) {
+      const msg = String(err && err.message ? err.message : '').toLowerCase();
+      if (msg.includes('session expired') || msg.includes('session_expired')) {
+        return 'invalid';
+      }
+      return 'unreachable';
     }
   },
 

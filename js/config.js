@@ -32,6 +32,13 @@ const CONFIG = {
   AUTO_REFRESH_INTERVAL: 30, // minutes
   SYNC_RETRY_ATTEMPTS: 3,
 
+  // NETWORK
+  // Max time to wait on any JSON-RPC call before aborting and falling back to
+  // cached data. navigator.onLine is TRUE in low-reception areas even when
+  // requests time out, so this bound is what actually keeps the app usable on
+  // weak signal — without it, fetches hang on the browser default (30s–2min+).
+  RPC_TIMEOUT_MS: 10000,
+
   // GPS
   GPS_ACCURACY_THRESHOLD: 100,  // meters
   GPS_TIMEOUT: 30000,           // milliseconds

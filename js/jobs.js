@@ -13,22 +13,37 @@ const Jobs = {
   async loadStages() {
     // Try cache first
     const cached = await DB.getStages();
-    if (cached && cached.length > 0) {
+    const haveCache = cached && cached.length > 0;
+    if (haveCache) {
       this._stages = cached;
     }
+    this._buildStageMap();
 
-    // Fetch fresh if online
-    if (navigator.onLine) {
+    if (!navigator.onLine) return;
+
+    // Refresh from Odoo. When we already have a cached copy, do it in the
+    // background so a weak signal can't stall launch. Only block on the
+    // network for the very first load, when we have nothing to show yet.
+    const refresh = async () => {
       try {
         const stages = await OdooAPI.getStages();
         this._stages = stages;
+        this._buildStageMap();
         await DB.saveStages(stages);
       } catch (err) {
         console.warn('Failed to fetch stages:', err);
       }
-    }
+    };
 
-    // Build lookup map
+    if (haveCache) {
+      refresh(); // fire-and-forget
+    } else {
+      await refresh();
+    }
+  },
+
+  /** Rebuild the id → stage lookup map from this._stages. */
+  _buildStageMap() {
     this._stageMap = {};
     for (const s of this._stages) {
       this._stageMap[s.id] = s;
@@ -254,13 +269,36 @@ const Jobs = {
   },
 
   /**
-   * Load jobs — from Odoo if online, from cache if offline.
+   * Load jobs — cache-first.
+   *
+   * Renders instantly from the IndexedDB cache, then (if online) refreshes
+   * from Odoo. Pass `onRefresh` to be called after a successful background
+   * refresh so the caller can re-render with fresh data; without it, the
+   * network refresh is awaited (used by manual sync / post-action reloads).
+   *
+   * On weak signal the network refresh times out (see CONFIG.RPC_TIMEOUT_MS)
+   * and the cached data simply stays on screen — the app never hangs.
    */
-  async loadJobs(view) {
+  async loadJobs(view, onRefresh) {
     this._currentView = view || 'today';
-    let jobs;
 
-    if (navigator.onLine) {
+    // 1) Instant render from cache (filtered client-side for this view).
+    const cached = await DB.getJobs();
+    const hadCache = !!(cached && cached.length > 0);
+    this._applyJobs(this._filterCachedJobs(cached || [], this._currentView));
+    // Counts/upcoming aren't cached — they populate on the network refresh.
+    this._upcomingJobs = [];
+    this._overdueCount = 0;
+    this._notClosedCount = 0;
+    this._uninvoicedIds = new Set();
+    this._unpaidIds = new Set();
+
+    // 2) Offline → cache is all we have.
+    if (!navigator.onLine) return this._jobs;
+
+    // 3) Refresh from Odoo. The server applies the view's domain, so its
+    //    result is used as-is (no client-side re-filter).
+    const doRefresh = async () => {
       try {
         const personId = Auth.getPersonId();
         // Fetch jobs + upcoming in one group; billing states separately so
@@ -277,45 +315,42 @@ const Jobs = {
           upcomingPromise,
           countsPromise,
         ]);
-        jobs = fetchedJobs;
         this._upcomingJobs = this._currentView === 'today' ? (upcoming || []) : [];
         this._overdueCount = counts ? (counts.overdueCount || 0) : 0;
         this._notClosedCount = counts ? (counts.notClosedCount || 0) : 0;
         this._uninvoicedIds = counts ? (counts.uninvoicedIds || new Set()) : new Set();
         this._unpaidIds = counts ? (counts.unpaidIds || new Set()) : new Set();
-        await DB.saveJobs(jobs);
+        await DB.saveJobs(fetchedJobs);
         await DB.setState('lastSync', Date.now());
+        this._applyJobs(fetchedJobs);
+        if (onRefresh) onRefresh();
       } catch (err) {
-        console.warn('Failed to fetch from Odoo, using cache:', err);
-        jobs = await DB.getJobs();
-        this._upcomingJobs = [];
-        this._overdueCount = 0;
-        this._notClosedCount = 0;
-        this._uninvoicedIds = new Set();
-        this._unpaidIds = new Set();
+        // Timeout or network error — keep whatever we rendered from cache.
+        console.warn('Failed to refresh jobs from Odoo, using cache:', err);
       }
+    };
+
+    // Background-refresh only when we had cache to show AND a callback to
+    // re-render with. Otherwise await so the caller gets fresh data (or, on
+    // first-ever launch, we wait rather than flash an empty state).
+    if (onRefresh && hadCache) {
+      doRefresh();
     } else {
-      jobs = await DB.getJobs();
-      this._upcomingJobs = [];
-      this._overdueCount = 0;
-      this._notClosedCount = 0;
-      this._uninvoicedIds = new Set();
-      this._unpaidIds = new Set();
+      await doRefresh();
     }
+    return this._jobs;
+  },
 
-    // Filter cached jobs based on current view
-    if (!navigator.onLine && jobs) {
-      jobs = this._filterCachedJobs(jobs, this._currentView);
-    }
-
+  /**
+   * Apply a job array to the working set, respecting any active search filter.
+   */
+  _applyJobs(jobs) {
     this._allJobs = jobs || [];
-    // Re-apply any active search filter, otherwise use full list
     if (this._searchQuery) {
       this.applySearch(this._searchQuery);
     } else {
       this._jobs = this._allJobs.slice();
     }
-    return this._jobs;
   },
 
   /**

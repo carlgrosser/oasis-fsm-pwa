@@ -134,7 +134,14 @@ const Auth = {
 
   /**
    * Try to restore a previous session.
-   * Returns true if session is valid.
+   *
+   * Cache-first: if we have a stored session we trust it IMMEDIATELY and
+   * return true without any network round-trip, so the app renders instantly
+   * even on weak signal. Session validity is verified in the background
+   * (see _verifySessionInBackground); we only force a re-login if the server
+   * *explicitly* rejects the session — never on a timeout/offline.
+   *
+   * Returns true if a session was restored from cache.
    */
   async tryRestore() {
     const stored = this.getStoredSession();
@@ -151,27 +158,43 @@ const Auth = {
     this._timezone = stored.timezone || null;
     this._isAdmin = stored.isAdmin || false;
 
-    // If we're online, verify the session is still valid
+    // Verify + refresh in the background (do NOT await — this is the whole
+    // point of cache-first launch). Only runs when the OS thinks we're online.
     if (navigator.onLine) {
-      try {
-        const valid = await OdooAPI.checkSession();
-        if (!valid) {
-          // Session expired — try to re-authenticate if we have credentials
-          // For now, just clear and require re-login
-          this._clearSession();
-          return false;
-        }
-        // Refresh PWA settings from Odoo (non-fatal)
-        await this._fetchAndApplySettings();
-        return true;
-      } catch {
-        // Network error — assume session might be OK (offline mode)
-        return true;
-      }
+      this._verifySessionInBackground();
     }
 
-    // Offline — trust the stored session
     return true;
+  },
+
+  /**
+   * Background session check. Never blocks launch. Only forces a re-login on
+   * a definitive 'invalid' from the server; timeouts/offline are ignored so a
+   * tech in a low-reception area is never kicked out to the login screen.
+   */
+  async _verifySessionInBackground() {
+    let status;
+    try {
+      status = await OdooAPI.checkSession();
+    } catch {
+      return; // treat unexpected errors as "unreachable" — stay logged in
+    }
+
+    if (status === 'invalid') {
+      this._clearSession();
+      try { await DB.setState('currentUser', null); } catch { /* non-fatal */ }
+      // Avoid a redirect loop if we're already on the login page.
+      if (!/index\.html$/.test(window.location.pathname)) {
+        window.location.href = 'index.html';
+      }
+      return;
+    }
+
+    if (status === 'valid') {
+      // Refresh PWA settings quietly (non-fatal).
+      this._fetchAndApplySettings().catch(() => {});
+    }
+    // 'unreachable' → do nothing, keep the cached session.
   },
 
   /**
