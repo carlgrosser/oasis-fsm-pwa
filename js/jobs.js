@@ -324,6 +324,13 @@ const Jobs = {
         await DB.setState('lastSync', Date.now());
         this._applyJobs(fetchedJobs);
         if (onRefresh) onRefresh();
+
+        // Prewarm the offline cache for today's jobs (throttled internally):
+        // pre-fetch each job's sale order + options so the whole day's list is
+        // viewable offline even if the tech never opened those jobs on signal.
+        if (this._currentView === 'today') {
+          this.prewarmJobData(fetchedJobs); // fire-and-forget
+        }
       } catch (err) {
         // Timeout or network error — keep whatever we rendered from cache.
         console.warn('Failed to refresh jobs from Odoo, using cache:', err);
@@ -350,6 +357,51 @@ const Jobs = {
       this.applySearch(this._searchQuery);
     } else {
       this._jobs = this._allJobs.slice();
+    }
+  },
+
+  /**
+   * Prewarm the offline cache for a set of jobs by fetching each one's sale
+   * order + options and storing them, so the Sales/Options tabs are viewable
+   * offline without the tech having opened each job on signal first.
+   *
+   * Runs sequentially (gentle on the server), in the background, and bails the
+   * moment we drop offline. Throttled via lastPrewarm so it fires once at
+   * login and at most every CONFIG.PREWARM_MIN_INTERVAL_MS afterwards. Pass
+   * { force: true } to skip the throttle (e.g. manual sync).
+   */
+  async prewarmJobData(jobs, opts) {
+    const force = !!(opts && opts.force);
+    if (!navigator.onLine || !Array.isArray(jobs) || jobs.length === 0) return;
+    if (this._prewarming) return; // don't overlap runs
+
+    if (!force) {
+      const last = await DB.getState('lastPrewarm').catch(() => null);
+      const interval = CONFIG.PREWARM_MIN_INTERVAL_MS || 1800000;
+      if (last && (Date.now() - last) < interval) return; // prewarmed recently
+    }
+
+    this._prewarming = true;
+    let cached = 0;
+    try {
+      for (const job of jobs) {
+        if (!navigator.onLine) break; // stop if we lose connectivity mid-run
+        try {
+          const so = await OdooAPI.getSaleOrder(job.id);
+          await DB.cacheSaleOrder(job.id, so);
+        } catch { /* skip this job's SO */ }
+        try {
+          const options = await OdooAPI.getJobOptions(job.id);
+          await DB.cacheJobOptions(job.id, options);
+        } catch { /* skip this job's options */ }
+        cached++;
+      }
+      if (cached > 0) {
+        await DB.setState('lastPrewarm', Date.now());
+        console.log(`Prewarmed offline billing/options cache for ${cached} job(s)`);
+      }
+    } finally {
+      this._prewarming = false;
     }
   },
 

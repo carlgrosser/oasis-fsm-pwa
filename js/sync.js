@@ -259,6 +259,12 @@ const Sync = {
       await Jobs.loadJobs(Jobs._currentView);
       const container = document.getElementById('jobList');
       if (container) Jobs.renderJobList(container);
+      // Manual sync = "get me ready" — force a prewarm of today's jobs'
+      // sale order + options so everything is offline-ready right now,
+      // bypassing the normal throttle.
+      if (Jobs._currentView === 'today') {
+        Jobs.prewarmJobData(Jobs._jobs, { force: true });
+      }
     } catch (err) {
       console.warn('Failed to refresh jobs:', err);
     }

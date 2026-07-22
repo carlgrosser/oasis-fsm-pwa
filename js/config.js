@@ -39,6 +39,13 @@ const CONFIG = {
   // weak signal — without it, fetches hang on the browser default (30s–2min+).
   RPC_TIMEOUT_MS: 10000,
 
+  // PREWARM
+  // At login (and on the first today-jobs refresh) the app pre-fetches each of
+  // the day's jobs' sale order + options and caches them, so every job on
+  // today's list is viewable offline even if the tech never opened it with
+  // signal. Re-runs at most this often to avoid hammering the server.
+  PREWARM_MIN_INTERVAL_MS: 30 * 60 * 1000, // 30 minutes
+
   // GPS
   GPS_ACCURACY_THRESHOLD: 100,  // meters
   GPS_TIMEOUT: 30000,           // milliseconds
