@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v84';
+const CACHE_NAME = 'fsm-pwa-v85';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -43,10 +43,22 @@ const STATIC_ASSETS = [
 // produced an empty, seemingly dead menu dropdown).
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(
-        STATIC_ASSETS.map((url) => new Request(url, { cache: 'reload' }))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Cache each asset INDEPENDENTLY. cache.addAll() is all-or-nothing: a
+      // single failed request (a transient 5xx, or flaky signal at the moment
+      // the SW installs) rejects the whole batch, the install fails, and the
+      // app is left with NO offline cache at all — the classic reason a PWA
+      // "needs internet to open." allSettled keeps every asset we did get, so
+      // one bad fetch can't wipe out offline capability.
+      const results = await Promise.allSettled(
+        STATIC_ASSETS.map((url) => cache.add(new Request(url, { cache: 'reload' })))
       );
+      const failed = results
+        .map((r, i) => (r.status === 'rejected' ? STATIC_ASSETS[i] : null))
+        .filter(Boolean);
+      if (failed.length) {
+        console.warn('[SW] Some assets failed to precache (will retry via runtime cache):', failed);
+      }
     })
   );
   self.skipWaiting();

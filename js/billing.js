@@ -14,26 +14,105 @@ const Billing = {
    * Render the full sales/billing tab content into a container.
    */
   async renderSalesTab(job, container) {
-    if (!navigator.onLine) {
-      container.innerHTML = this._offlineMessage();
-      return;
-    }
+    // Online: fetch live, cache the result for offline viewing, render the
+    // full interactive tab. On a weak-signal failure we fall through to the
+    // cached read-only view rather than showing an error.
+    if (navigator.onLine) {
+      container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      try {
+        const data = await OdooAPI.getSaleOrder(job.id);
+        DB.cacheSaleOrder(job.id, data).catch(() => {}); // cache for offline (non-fatal)
 
-    container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-
-    try {
-      const data = await OdooAPI.getSaleOrder(job.id);
-
-      if (!data.has_sale_order) {
-        container.innerHTML = this._noSalesOrder(job);
+        if (!data.has_sale_order) {
+          container.innerHTML = this._noSalesOrder(job);
+          return;
+        }
+        this._renderSalesContent(job, data, container);
         return;
+      } catch (err) {
+        console.warn('Billing: live SO fetch failed, falling back to cache', err);
+        // fall through to cached read-only view
       }
-
-      this._renderSalesContent(job, data, container);
-    } catch (err) {
-      console.error('Billing: failed to load SO', err);
-      container.innerHTML = this._errorMessage(err);
     }
+
+    // Offline (or fetch failed): render last-synced data read-only.
+    const cached = await DB.getCachedSaleOrder(job.id).catch(() => null);
+    if (cached && cached.has_sale_order) {
+      this._renderCachedReadOnly(job, cached, container);
+    } else if (cached && !cached.has_sale_order) {
+      container.innerHTML = this._noSalesOrder(job);
+    } else {
+      container.innerHTML = this._offlineMessage();
+    }
+  },
+
+  /**
+   * Read-only billing view rendered from cached data when offline. Shows the
+   * sale order, line items, totals, and any invoice/payment status, but no
+   * action controls — creating invoices and collecting payment require the
+   * server, so those stay behind a "reconnect" banner.
+   */
+  _renderCachedReadOnly(job, data, container) {
+    const so = data.sale_order;
+    const lines = data.lines || [];
+    const invoices = data.invoices || [];
+
+    const soStateName = {
+      'draft': 'Quotation',
+      'sent': 'Quotation Sent',
+      'sale': 'Sales Order',
+      'done': 'Locked',
+      'cancel': 'Cancelled',
+    }[so.state] || so.state;
+
+    let html = `
+      <div class="alert alert-info" style="margin-bottom:var(--spacing-sm);">
+        📴 Offline — showing last-synced billing data. Reconnect to edit lines,
+        create an invoice, or collect payment.
+      </div>
+      <div class="detail-section">
+        <div class="billing-so-header">
+          <h3>${this._esc(so.name)}</h3>
+          <span class="billing-so-status">${this._esc(soStateName)}</span>
+        </div>
+        <div class="billing-so-total">
+          Total: <strong>$${this._money(so.amount_total)}</strong>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="billing-lines">`;
+
+    for (const line of lines) {
+      html += this._lineItemHtml(line, false); // editable=false → read-only rows
+    }
+
+    html += `</div></div>`;
+
+    if (invoices.length > 0) {
+      html += `<div class="detail-section"><h3>Invoice${invoices.length !== 1 ? 's' : ''}</h3>`;
+      for (const inv of invoices) {
+        const paid = inv.payment_state === 'paid' || inv.payment_state === 'in_payment';
+        const statusLabel = paid
+          ? 'Paid'
+          : (inv.state === 'posted' ? 'Posted (Unpaid)' : (inv.state || ''));
+        const amount = paid
+          ? inv.amount_total
+          : (inv.amount_residual != null ? inv.amount_residual : inv.amount_total);
+        html += `
+          <div class="billing-change-order-item">
+            <div>
+              <strong>${this._esc(inv.name || 'Draft')}</strong>
+              <div style="font-size:var(--font-size-xs);color:var(--text-muted);">${this._esc(statusLabel)}</div>
+            </div>
+            <div style="font-weight:600;">$${this._money(amount)}</div>
+          </div>`;
+      }
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
+    // No event binding — this view is intentionally read-only.
   },
 
   // ========== STATE-BASED RENDERING ==========

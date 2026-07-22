@@ -243,6 +243,27 @@ const DB = {
     return this.getByIndex(storeName, 'synced', 0);
   },
 
+  // ========== BILLING / OPTIONS CACHE (view-only offline) ==========
+  // Stored in the appState store (key/value) so no schema migration is
+  // needed. Written whenever the Sales/Options tab loads online, and read
+  // back to render a read-only view when offline.
+
+  async cacheSaleOrder(jobId, data) {
+    return this.setState('so_' + jobId, data);
+  },
+
+  async getCachedSaleOrder(jobId) {
+    return this.getState('so_' + jobId);
+  },
+
+  async cacheJobOptions(jobId, data) {
+    return this.setState('opt_' + jobId, data);
+  },
+
+  async getCachedJobOptions(jobId) {
+    return this.getState('opt_' + jobId);
+  },
+
   async queueStatusChange(jobId, stageId, timestamp, gps, extraValues) {
     return this.put('statusChanges', {
       temp_id: 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),

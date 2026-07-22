@@ -16,35 +16,50 @@ const Options = {
 
   // ========== ENTRY POINT ==========
 
-  async renderSection(job, container) {
-    if (!navigator.onLine) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <p>Options unavailable offline.</p>
-        </div>`;
-      return;
-    }
+  // True while rendering from cache offline — suppresses action controls.
+  _readOnly: false,
 
-    container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  async renderSection(job, container) {
     this._selectedForNewJob.clear();
 
-    try {
-      const data = await OdooAPI.getJobOptions(job.id);
+    // Online: fetch live, cache for offline, render the interactive view.
+    // On a weak-signal failure, fall through to the cached read-only view.
+    if (navigator.onLine) {
+      container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      try {
+        const data = await OdooAPI.getJobOptions(job.id);
+        DB.cacheJobOptions(job.id, data).catch(() => {}); // cache for offline (non-fatal)
+        this._readOnly = false;
 
-      if (!data.has_options) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <p>No optional items for this job.</p>
-          </div>`;
+        if (!data.has_options) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <p>No optional items for this job.</p>
+            </div>`;
+          return;
+        }
+        this._render(job, data, container);
         return;
+      } catch (err) {
+        console.warn('Options: live fetch failed, falling back to cache', err);
+        // fall through to cache
       }
+    }
 
-      this._render(job, data, container);
-    } catch (err) {
-      console.error('Options: failed to load', err);
+    // Offline (or fetch failed): render last-synced options read-only.
+    const cached = await DB.getCachedJobOptions(job.id).catch(() => null);
+    if (cached && cached.has_options) {
+      this._readOnly = true;
+      this._render(job, cached, container);
+    } else if (cached && !cached.has_options) {
       container.innerHTML = `
         <div class="empty-state">
-          <p style="color:var(--error-color);">Failed to load options: ${this._esc(err.message)}</p>
+          <p>No optional items for this job.</p>
+        </div>`;
+    } else {
+      container.innerHTML = `
+        <div class="empty-state">
+          <p>Options unavailable offline — not yet synced for this job.</p>
         </div>`;
     }
   },
@@ -56,6 +71,13 @@ const Options = {
     const proposedCount = data.proposed_count || 0;
 
     let html = '';
+
+    if (this._readOnly) {
+      html += `
+        <div class="alert alert-info" style="margin-bottom:var(--spacing-sm);">
+          📴 Offline — showing last-synced options. Reconnect to add or decline items.
+        </div>`;
+    }
 
     if (proposedCount > 0) {
       html += `
@@ -86,17 +108,22 @@ const Options = {
       }
     }
 
-    // Floating bar for "Create New Job" — shown when items are checked
-    html += `
-      <div class="options-new-job-bar" id="optionsNewJobBar" style="display:none;">
-        <button class="btn btn-primary btn-block" id="optionsCreateNewJobBtn">
-          Create New Job &mdash; <span id="optionsNewJobCount">0</span> item(s)
-        </button>
-      </div>
-      <div style="height: 16px;"></div>`;
+    // Floating bar for "Create New Job" — shown when items are checked.
+    // Omitted offline: creating a job needs the server.
+    if (!this._readOnly) {
+      html += `
+        <div class="options-new-job-bar" id="optionsNewJobBar" style="display:none;">
+          <button class="btn btn-primary btn-block" id="optionsCreateNewJobBtn">
+            Create New Job &mdash; <span id="optionsNewJobCount">0</span> item(s)
+          </button>
+        </div>`;
+    }
+    html += `<div style="height: 16px;"></div>`;
 
     container.innerHTML = html;
-    this._bindEvents(job, container);
+    if (!this._readOnly) {
+      this._bindEvents(job, container);
+    }
   },
 
   _renderItem(item) {
@@ -131,7 +158,10 @@ const Options = {
       : '';
 
     let actionsHtml = '';
-    if (isProposed) {
+    if (isProposed && this._readOnly) {
+      // Offline: no actions, just indicate the item is available.
+      actionsHtml = `<div class="option-state-badge">Available — reconnect to add</div>`;
+    } else if (isProposed) {
       actionsHtml = `
         <div class="option-actions">
           <label class="option-new-job-label">

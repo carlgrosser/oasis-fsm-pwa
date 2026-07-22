@@ -839,12 +839,25 @@ const Jobs = {
           }
         };
 
-        // Also load badge count eagerly (lightweight — just fetch proposed_count)
-        OdooAPI.getJobOptions(job.id).then(data => {
-          if (data && data.proposed_count > 0) {
-            Options._updateBadge(data.proposed_count);
-          }
-        }).catch(() => {});
+        // Also load badge count eagerly (lightweight — just proposed_count).
+        // Online: fetch live; offline: read it from the cached options.
+        if (navigator.onLine) {
+          OdooAPI.getJobOptions(job.id).then(data => {
+            // Cache here too, so just opening a job online (which always fires
+            // this) makes its options viewable offline — the tech needn't have
+            // scrolled to the Options tab first.
+            DB.cacheJobOptions(job.id, data).catch(() => {});
+            if (data && data.proposed_count > 0) {
+              Options._updateBadge(data.proposed_count);
+            }
+          }).catch(() => {});
+        } else {
+          DB.getCachedJobOptions(job.id).then(data => {
+            if (data && data.proposed_count > 0) {
+              Options._updateBadge(data.proposed_count);
+            }
+          }).catch(() => {});
+        }
 
         // Load full options when panel 3 becomes visible
         if (panels) {
