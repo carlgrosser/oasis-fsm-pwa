@@ -325,11 +325,14 @@ const Jobs = {
         this._applyJobs(fetchedJobs);
         if (onRefresh) onRefresh();
 
-        // Prewarm the offline cache for today's jobs (throttled internally):
-        // pre-fetch each job's sale order + options so the whole day's list is
-        // viewable offline even if the tech never opened those jobs on signal.
+        // Prewarm the offline cache (throttled internally): pre-fetch each
+        // job's sale order + options so they're viewable offline even if the
+        // tech never opened them on signal. Covers today's jobs AND the
+        // upcoming/next-scheduled-day jobs (what the Today view shows as
+        // "tomorrow"), since techs often review the next day's work offline.
         if (this._currentView === 'today') {
-          this.prewarmJobData(fetchedJobs); // fire-and-forget
+          const prewarmJobs = fetchedJobs.concat(this._upcomingJobs || []);
+          this.prewarmJobData(prewarmJobs); // fire-and-forget
         }
       } catch (err) {
         // Timeout or network error — keep whatever we rendered from cache.
