@@ -83,6 +83,7 @@ const CONFIG = {
     'photo_count_before', 'photo_count_after', 'photos_complete',
     'project_id',
     'wrapup_submitted', 'resolution',
+    'cancel_requested', 'cancel_request_reason_id', 'cancel_request_note',
   ],
 
   // Set to true after installing the custom Odoo modules

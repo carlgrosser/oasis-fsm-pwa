@@ -753,9 +753,23 @@ const Jobs = {
       </div>`) : ''}
 
       ${(isComplete || statusClass === 'cancelled' || job.wrapup_submitted) ? '' : `
+      ${job.cancel_requested ? `
+      <div class="cancel-request-banner" id="cancelRequestBanner"
+           style="margin:8px 12px;padding:10px 12px;border-radius:6px;
+                  background:#fff4e5;border:1px solid #e0a800;color:#7a5200;">
+        <div style="font-weight:600;margin-bottom:4px;">Cancel request sent</div>
+        <div style="font-size:14px;">
+          ${this._escapeHtml(this._cancelRequestSummary(job))}
+          The office will confirm — keep the job on your list until they do.
+        </div>
+        <button class="btn btn-sm" id="withdrawCancelBtn"
+                style="margin-top:8px;">Withdraw Request</button>
+      </div>` : ''}
       <div class="visit-planning-actions" style="display:flex;gap:8px;padding:8px 12px;">
         <button class="btn btn-sm" id="rescheduleVisitBtn" style="flex:1;">Reschedule</button>
         <button class="btn btn-sm" id="continueAnotherDayBtn" style="flex:1;">Continue Another Day</button>
+        ${job.cancel_requested ? '' : `
+        <button class="btn btn-sm" id="requestCancelBtn" style="flex:1;">Can't Do This Job</button>`}
       </div>`}
 
       <div class="detail-tabs" id="detailTabs">
@@ -814,6 +828,14 @@ const Jobs = {
     const continueBtn = document.getElementById('continueAnotherDayBtn');
     if (continueBtn) {
       continueBtn.addEventListener('click', () => this._showContinueAnotherDayModal(job));
+    }
+    const requestCancelBtn = document.getElementById('requestCancelBtn');
+    if (requestCancelBtn) {
+      requestCancelBtn.addEventListener('click', () => this._showCantDoJobModal(job));
+    }
+    const withdrawCancelBtn = document.getElementById('withdrawCancelBtn');
+    if (withdrawCancelBtn) {
+      withdrawCancelBtn.addEventListener('click', () => this._withdrawCancelRequest(job));
     }
 
     // Init tab swiping
@@ -2438,6 +2460,10 @@ const Jobs = {
             <input type="checkbox" id="rescheduleResetStage" checked />
             Reset stage to Scheduled (uncheck if work has already started)
           </label>
+          <label style="display:block;margin-bottom:8px;">
+            <input type="checkbox" id="rescheduleNotifyCustomer" />
+            Text the customer the new date
+          </label>
           <label style="display:block;margin-bottom:12px;">
             <span style="font-weight:600;">Reason</span>
             <textarea id="rescheduleReason" rows="3"
@@ -2467,6 +2493,7 @@ const Jobs = {
       const durHrs = parseFloat(overlay.querySelector('#rescheduleDuration').value) || 0;
       const reason = overlay.querySelector('#rescheduleReason').value || '';
       const resetStage = overlay.querySelector('#rescheduleResetStage').checked;
+      const notifyCustomer = overlay.querySelector('#rescheduleNotifyCustomer').checked;
       if (!startLocal || durHrs <= 0) {
         App.showToast('Pick a start time and a duration greater than zero.', 'error');
         return;
@@ -2480,7 +2507,7 @@ const Jobs = {
         `${pad(endD.getUTCMinutes())}:00`;
       try {
         const res = await OdooAPI.workerRescheduleOrder(
-          job.id, newStartOdoo, newEndOdoo, reason, resetStage,
+          job.id, newStartOdoo, newEndOdoo, reason, resetStage, notifyCustomer,
         );
         if (!res || !res.ok) {
           if (res && res.error === 'conflict') {
@@ -2497,12 +2524,181 @@ const Jobs = {
           return;
         }
         close();
-        App.showToast('Visit rescheduled', 'success');
+        if (res.notify_error) {
+          App.showToast('Rescheduled, but the customer text failed: ' +
+            res.notify_error, 'error');
+        } else {
+          App.showToast(res.customer_notified
+            ? 'Visit rescheduled — customer texted'
+            : 'Visit rescheduled', 'success');
+        }
         await Jobs.loadJobs(Jobs._currentView || 'today');
       } catch (err) {
         App.showToast('Reschedule failed: ' + (err.message || err), 'error');
       }
     });
+  },
+
+  _cancelRequestSummary(job) {
+    const reason = Array.isArray(job.cancel_request_reason_id)
+      ? job.cancel_request_reason_id[1] : '';
+    const note = job.cancel_request_note || '';
+    return [reason, note].filter(Boolean).join(' — ') + (reason || note ? '.' : '');
+  },
+
+  /**
+   * "Can't Do This Job" — the field worker's escape hatch. Offers the two
+   * legitimate outcomes side by side: move it (reschedule, applies straight
+   * away) or kill it (cancel *request*, which the office must approve). A
+   * worker can never close a job outright from here.
+   */
+  _showCantDoJobModal(job) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <h3>Can't Do This Job</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin:0 0 12px 0;color:#555;">
+            Moving it to another day is usually the fastest fix. Ask the office
+            to cancel only if the work isn't happening at all.
+          </p>
+          <button class="btn btn-block" id="cantDoRescheduleBtn"
+                  style="margin-bottom:8px;">Move to Another Day</button>
+          <button class="btn btn-block" id="cantDoCancelBtn">Ask Office to Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('#cantDoRescheduleBtn').addEventListener('click', () => {
+      close();
+      this._showRescheduleModal(job);
+    });
+    overlay.querySelector('#cantDoCancelBtn').addEventListener('click', () => {
+      close();
+      this._showCancelRequestModal(job);
+    });
+  },
+
+  async _showCancelRequestModal(job) {
+    let reasons = [];
+    try {
+      reasons = await OdooAPI.getCancelReasons();
+    } catch (err) {
+      App.showToast('Could not load cancellation reasons: ' +
+        (err.message || err), 'error');
+      return;
+    }
+    if (!reasons.length) {
+      App.showToast('No cancellation reasons are set up — call the office.', 'error');
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <h3>Ask Office to Cancel</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin:0 0 12px 0;color:#555;">
+            This sends a request to the office. The job stays on your list
+            until they confirm.
+          </p>
+          <label style="display:block;margin-bottom:8px;">
+            <span style="font-weight:600;">Reason</span>
+            <select id="cancelReasonSelect"
+                    style="width:100%;padding:8px;font-size:16px;">
+              <option value="">— Pick a reason —</option>
+              ${reasons.map(r => `<option value="${r.id}"
+                data-requires-note="${r.requires_note ? '1' : '0'}">
+                ${this._escapeHtml(r.name)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:block;margin-bottom:12px;">
+            <span style="font-weight:600;">What happened?
+              <span id="cancelNoteRequired" style="color:#a00;display:none;">*</span>
+            </span>
+            <textarea id="cancelRequestNote" rows="3"
+                      style="width:100%;padding:8px;font-size:16px;"
+                      placeholder="Anything the office needs to know"></textarea>
+          </label>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-block" id="cancelRequestBackBtn"
+                    style="flex:1;">Back</button>
+            <button class="btn btn-block btn-primary" id="cancelRequestSendBtn"
+                    style="flex:1;">Send Request</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.querySelector('#cancelRequestBackBtn').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const select = overlay.querySelector('#cancelReasonSelect');
+    const noteStar = overlay.querySelector('#cancelNoteRequired');
+    const noteRequired = () => {
+      const opt = select.selectedOptions[0];
+      return !!(opt && opt.dataset.requiresNote === '1');
+    };
+    select.addEventListener('change', () => {
+      noteStar.style.display = noteRequired() ? '' : 'none';
+    });
+
+    overlay.querySelector('#cancelRequestSendBtn').addEventListener('click', async () => {
+      const reasonId = parseInt(select.value, 10);
+      const note = overlay.querySelector('#cancelRequestNote').value.trim();
+      if (!reasonId) {
+        App.showToast('Pick a reason first.', 'error');
+        return;
+      }
+      if (noteRequired() && !note) {
+        App.showToast('That reason needs a short explanation.', 'error');
+        return;
+      }
+      try {
+        const res = await OdooAPI.workerRequestCancel(job.id, reasonId, note);
+        if (!res || !res.ok) {
+          const msg = {
+            already_cancelled: 'This job is already cancelled.',
+            already_requested: 'A cancel request is already pending.',
+            note_required: 'That reason needs a short explanation.',
+          }[res && res.error] || (res && res.error) || 'unknown error';
+          App.showToast('Request failed: ' + msg, 'error');
+          return;
+        }
+        close();
+        App.showToast('Cancel request sent to the office', 'success');
+        await Jobs.loadJobs(Jobs._currentView || 'today');
+      } catch (err) {
+        App.showToast('Request failed: ' + (err.message || err), 'error');
+      }
+    });
+  },
+
+  async _withdrawCancelRequest(job) {
+    if (!confirm('Withdraw your cancel request and keep this job?')) return;
+    try {
+      const res = await OdooAPI.workerWithdrawCancelRequest(job.id);
+      if (!res || !res.ok) {
+        App.showToast('Could not withdraw the request.', 'error');
+        return;
+      }
+      App.showToast('Cancel request withdrawn', 'success');
+      await Jobs.loadJobs(Jobs._currentView || 'today');
+    } catch (err) {
+      App.showToast('Could not withdraw: ' + (err.message || err), 'error');
+    }
   },
 
   _showContinueAnotherDayModal(job) {

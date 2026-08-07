@@ -1245,13 +1245,36 @@ const OdooAPI = {
     return this.callKw('fsm.order', 'get_visit_planning_summary', [orderId], {});
   },
 
-  async workerRescheduleOrder(orderId, newStart, newEnd, reason, resetStage) {
+  async workerRescheduleOrder(orderId, newStart, newEnd, reason, resetStage, notifyCustomer) {
     return this.callKw(
       'fsm.order',
       'worker_reschedule_order',
       [orderId, newStart, newEnd, reason || ''],
-      { reset_stage: resetStage !== false },
+      {
+        reset_stage: resetStage !== false,
+        notify_customer: notifyCustomer === true,
+      },
     );
+  },
+
+  // ── Cancellation (request-only from the field; the office approves) ───────
+  async getCancelReasons() {
+    return this.callKw('fsm.order', 'get_cancel_reasons', [], {
+      worker_only: true,
+    });
+  },
+
+  async workerRequestCancel(orderId, reasonId, note) {
+    return this.callKw(
+      'fsm.order',
+      'worker_request_cancel',
+      [orderId],
+      { reason_id: reasonId || false, note: note || '' },
+    );
+  },
+
+  async workerWithdrawCancelRequest(orderId) {
+    return this.callKw('fsm.order', 'worker_withdraw_cancel_request', [orderId], {});
   },
 
   async workerCreateNextVisit(orderId, scheduledStart, durationHours, reason) {
