@@ -111,7 +111,9 @@ const Jobs = {
   _upcomingJobs: [], // Jobs on the next scheduled day (shown below today's jobs)
   _overdueCount: 0,      // Overdue jobs count (for today banner)
   _notClosedCount: 0,    // Completed-but-not-wrapped-up count (for today banner, excludes overdue)
-  _uninvoicedIds: new Set(),  // IDs of closed jobs with no invoice yet
+  // Invoicing is the office's job — techs are not shown or counted on it.
+  // Payment collection still is theirs (they take Venmo/cash/check on site),
+  // so the Unpaid tag stays.
   _unpaidIds: new Set(),      // IDs of closed jobs with unpaid posted invoice
 
   /**
@@ -204,24 +206,26 @@ const Jobs = {
 
   /**
    * Fetch counts of overdue and not-closed jobs for the today banner.
-   * Overdue = uncompleted jobs scheduled before today.
-   * Not closed = completed-stage jobs where wrapup_submitted is false (excludes overdue).
+   * Overdue = uncompleted jobs scheduled before today — the work never got
+   *   finished, and only the assigned tech can advance the stage.
+   * Not closed = completed-stage jobs where wrapup_submitted is false — the
+   *   work is done but the wrap-up (photos/signature/resolution) is missing.
+   * Invoicing state is deliberately absent: that belongs to the office.
    */
   async fetchHistoryCounts(personId) {
     const { overdueJobs, completedJobs } = await this._fetchHistoryBase(personId);
 
     // getBillingStates requires a module upgrade — catch independently so
     // overdue/not-closed counts still work if the method isn't installed yet.
-    let billingStates = { uninvoiced_ids: [], unpaid_ids: [] };
+    let billingStates = { unpaid_ids: [] };
     try {
       billingStates = await OdooAPI.getBillingStates(personId);
     } catch (e) { /* module not yet upgraded */ }
 
     const overdueCount = overdueJobs.length;
     const notClosedCount = completedJobs.filter(j => !j.wrapup_submitted).length;
-    const uninvoicedIds = new Set(billingStates.uninvoiced_ids || []);
     const unpaidIds = new Set(billingStates.unpaid_ids || []);
-    return { overdueCount, notClosedCount, uninvoicedIds, unpaidIds };
+    return { overdueCount, notClosedCount, unpaidIds };
   },
 
   /**
@@ -290,7 +294,6 @@ const Jobs = {
     this._upcomingJobs = [];
     this._overdueCount = 0;
     this._notClosedCount = 0;
-    this._uninvoicedIds = new Set();
     this._unpaidIds = new Set();
 
     // 2) Offline → cache is all we have.
@@ -318,7 +321,6 @@ const Jobs = {
         this._upcomingJobs = this._currentView === 'today' ? (upcoming || []) : [];
         this._overdueCount = counts ? (counts.overdueCount || 0) : 0;
         this._notClosedCount = counts ? (counts.notClosedCount || 0) : 0;
-        this._uninvoicedIds = counts ? (counts.uninvoicedIds || new Set()) : new Set();
         this._unpaidIds = counts ? (counts.unpaidIds || new Set()) : new Set();
         await DB.saveJobs(fetchedJobs);
         await DB.setState('lastSync', Date.now());
@@ -441,13 +443,12 @@ const Jobs = {
       return;
     }
 
-    // Today view — history alert banner
-    const uninvoicedCount = this._uninvoicedIds.size;
-    if (this._overdueCount > 0 || this._notClosedCount > 0 || uninvoicedCount > 0) {
+    // Today view — history alert banner. Only work the tech can actually
+    // clear: unfinished jobs and missing wrap-ups. Invoicing is the office's.
+    if (this._overdueCount > 0 || this._notClosedCount > 0) {
       const parts = [];
       if (this._overdueCount > 0) parts.push(`${this._overdueCount} job${this._overdueCount !== 1 ? 's' : ''} overdue`);
       if (this._notClosedCount > 0) parts.push(`${this._notClosedCount} not closed`);
-      if (uninvoicedCount > 0) parts.push(`${uninvoicedCount} uninvoiced`);
 
       const banner = document.createElement('div');
       banner.className = 'history-alert-banner';
@@ -650,9 +651,6 @@ const Jobs = {
     }
 
     const isHistory = this._currentView === 'history';
-    const uninvoicedHtml = isHistory && this._uninvoicedIds.has(job.id)
-      ? '<div class="job-billing-banner uninvoiced-banner">Uninvoiced</div>'
-      : '';
     const unpaidTagHtml = isHistory && this._unpaidIds.has(job.id)
       ? '<span class="job-billing-tag unpaid-tag">Unpaid</span>'
       : '';
@@ -660,7 +658,6 @@ const Jobs = {
     if (isHistoryComplete) {
       const completedIcon = '<span class="status-icon complete" title="Completed">✓</span>';
       card.innerHTML = `
-        ${uninvoicedHtml}
         ${notClosedHtml}
         <div class="job-card-header compact">
           <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
@@ -675,7 +672,6 @@ const Jobs = {
       `;
     } else {
       card.innerHTML = `
-        ${uninvoicedHtml}
         ${overdueHtml}
         ${notClosedHtml}
         <div class="job-card-header">
