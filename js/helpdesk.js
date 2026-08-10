@@ -369,11 +369,19 @@ const Helpdesk = {
     const date     = t.create_date
       ? new Date(t.create_date.replace(' ', 'T') + 'Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
       : '';
+    const ref = t.number ? `<span class="ticket-ref">#${this._esc(t.number)}</span> ` : '';
+    // Tickets with a callback job already booked — resolve those from the job,
+    // not from here, so the job close-out and the ticket stay in step.
+    const visitCount = (t.fsm_order_ids || []).length;
+    const visitHtml = visitCount
+      ? `<span class="helpdesk-visit-hint" title="Resolve this from the job">🔧 ${visitCount === 1 ? 'Visit booked' : visitCount + ' visits'}</span>`
+      : '';
     return `
       <div class="helpdesk-ticket-row" data-ticket-id="${t.id}">
-        <div class="helpdesk-ticket-title">${priority ? priority + ' ' : ''}${this._esc(t.name)}</div>
+        <div class="helpdesk-ticket-title">${priority ? priority + ' ' : ''}${ref}${this._esc(t.name)}</div>
         <div class="helpdesk-ticket-meta">
           <span class="helpdesk-stage">${this._esc(stage)}</span>
+          ${visitHtml}
           <span class="helpdesk-date">${date}</span>
         </div>
       </div>`;

@@ -554,6 +554,60 @@ const Jobs = {
     }
   },
 
+  // ========== CALLBACK / TROUBLE TICKET HELPERS ==========
+
+  /**
+   * True when this job is a callback — either it resolves a trouble ticket or
+   * it carries the callback FSM category (is_callback is computed server-side
+   * from both). Falls back to ticket_id alone on instances that predate the
+   * fieldservice_helpdesk_link upgrade.
+   */
+  _isCallbackJob(job) {
+    return !!(job.is_callback || job.ticket_id);
+  },
+
+  /**
+   * Card-sized ticket label, e.g. "#1042 · Lights out on north eave".
+   * `ticket_id` arrives as [id, display_name] and helpdesk_mgmt builds that as
+   * "<number> - <subject>", so normalise it into the same shape either way and
+   * truncate — the ribbon is one line on a phone.
+   */
+  _ticketRef(job) {
+    const cached = this._ticketCache[job.id] || job._ticket;
+    let label;
+    if (cached && cached.number) {
+      label = '#' + cached.number + (cached.name ? ' · ' + cached.name : '');
+    } else if (Array.isArray(job.ticket_id)) {
+      label = '#' + String(job.ticket_id[1] || '').replace(/^\s*(\S+)\s*-\s*/, '$1 · ');
+    } else {
+      return '';
+    }
+    return label.length > 44 ? label.slice(0, 43) + '…' : label;
+  },
+
+  /**
+   * Estimated time on site as a short string ("1h", "45m", "2h 30m").
+   * Prefers scheduled_duration (hours); falls back to the scheduled window.
+   */
+  _formatDuration(job) {
+    let hours = Number(job.scheduled_duration) || 0;
+    if (!hours && job.scheduled_date_start && job.scheduled_date_end) {
+      const start = new Date(job.scheduled_date_start.replace(' ', 'T') + 'Z');
+      const end = new Date(job.scheduled_date_end.replace(' ', 'T') + 'Z');
+      const ms = end.getTime() - start.getTime();
+      if (ms > 0) hours = ms / 3600000;
+    }
+    if (!hours || hours <= 0) return '';
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    if (h && m) return `${h}h ${m}m`;
+    if (h) return `${h}h`;
+    return `${m}m`;
+  },
+
+  // Ticket payloads keyed by order id, populated when a job detail is opened.
+  _ticketCache: {},
+
   /**
    * Create a job card DOM element.
    */
@@ -595,6 +649,20 @@ const Jobs = {
     // Overdue indicator for past uncompleted jobs
     const overdueHtml = job._isOverdue
       ? '<span class="overdue-badge" title="Needs completion">⚠️ OVERDUE</span>'
+      : '';
+
+    // Callback / trouble-ticket ribbon. Callbacks are short maintenance visits
+    // that read very differently from a full install, so they get their own
+    // stripe at the top of the card rather than a footer chip.
+    const callbackHtml = this._isCallbackJob(job)
+      ? `<div class="callback-ribbon">🎫 CALLBACK${job.ticket_id ? ` · ${this._escapeHtml(this._ticketRef(job))}` : ''}</div>`
+      : '';
+
+    // Estimated duration — the whole point of flagging callbacks is that a
+    // 1h ticket visit sits next to 4-8h installs on the same list.
+    const durationStr = this._formatDuration(job);
+    const durationHtml = durationStr
+      ? `<span class="job-card-duration" title="Estimated time on site">⏱ ${durationStr}</span>`
       : '';
 
     // "Open / Not Closed" badge logic:
@@ -658,6 +726,7 @@ const Jobs = {
     if (isHistoryComplete) {
       const completedIcon = '<span class="status-icon complete" title="Completed">✓</span>';
       card.innerHTML = `
+        ${callbackHtml}
         ${notClosedHtml}
         <div class="job-card-header compact">
           <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
@@ -672,11 +741,12 @@ const Jobs = {
       `;
     } else {
       card.innerHTML = `
+        ${callbackHtml}
         ${overdueHtml}
         ${notClosedHtml}
         <div class="job-card-header">
           <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
-          <span class="job-card-time">${timeStr}</span>
+          <span class="job-card-time">${timeStr}${durationHtml}</span>
         </div>
         <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
         ${cardContactHtml}
@@ -691,6 +761,8 @@ const Jobs = {
         </div>
       `;
     }
+
+    if (callbackHtml) card.classList.add('is-callback');
 
     card.addEventListener('click', () => {
       App.showJobDetail(job.id);
@@ -850,6 +922,9 @@ const Jobs = {
 
     // Lazy-load the customer email for the Info tab (not a field on fsm.order)
     this._loadInfoEmail(job, locationId);
+
+    // Lazy-load the trouble ticket for callback jobs
+    if (this._isCallbackJob(job)) this._loadTicketPanel(job);
 
     // Load additional worker names
     const workerCount = job.worker_count || (job.person_ids ? job.person_ids.length : 1);
@@ -1129,8 +1204,23 @@ const Jobs = {
       </div>`;
     })() : '';
 
+    // Trouble-ticket card — rendered as a shell and filled by _loadTicketPanel
+    // once the ticket is fetched, so the Info tab paints immediately (and still
+    // paints offline, where the fetch just leaves the shell hidden).
+    const ticketHtml = this._isCallbackJob(job) ? `
+      <div class="detail-section ticket-section" id="infoTicketSection">
+        <div class="ticket-section-head">
+          <h3>🎫 Trouble Ticket</h3>
+          <span class="ticket-stage-chip" id="ticketStageChip"></span>
+        </div>
+        <div id="ticketSectionBody">
+          <p class="ticket-loading">Loading ticket…</p>
+        </div>
+      </div>` : '';
+
     return `
       ${earlyWrapupHtml}
+      ${ticketHtml}
       ${preWorkHtml}
       <div class="detail-section">
         <div class="info-name-row" style="display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-sm);">
@@ -1152,6 +1242,14 @@ const Jobs = {
             <div>${scheduledTime}</div>
           </span>
         </div>
+        ${(() => {
+          const dur = this._formatDuration(job);
+          return dur ? `
+        <div class="detail-row">
+          <span class="label">Est. Time</span>
+          <span class="value">⏱ ${dur}</span>
+        </div>` : '';
+        })()}
         ${crewHtml}
         <div id="infoExtrasSection"${job.sale_id ? '' : ' style="display:none;"'}>
           <div class="divider"></div>
@@ -2990,6 +3088,205 @@ const Jobs = {
     el.innerHTML = email
       ? `<a href="mailto:${this._escapeHtml(email)}">${this._escapeHtml(email)}</a>`
       : none;
+  },
+
+  // ========== TROUBLE TICKET PANEL (Info tab) ==========
+
+  /**
+   * Fetch and render the trouble ticket for a callback job. Cached per order
+   * so the panel survives a re-render (and stays readable offline once seen).
+   */
+  async _loadTicketPanel(job) {
+    const section = document.getElementById('infoTicketSection');
+    if (!section) return;
+
+    let ticket = this._ticketCache[job.id];
+    if (!ticket && navigator.onLine) {
+      try {
+        ticket = await OdooAPI.getJobTicket(job.id);
+        if (ticket && ticket.id) {
+          this._ticketCache[job.id] = ticket;
+          // Persist alongside the job so the panel works offline next time.
+          job._ticket = ticket;
+          DB.put('jobs', job).catch(() => {});
+        }
+      } catch {
+        ticket = null;
+      }
+    }
+    if (!ticket) ticket = job._ticket;
+
+    if (!ticket || !ticket.id) {
+      // A callback by category with no ticket attached — drop the shell rather
+      // than leave a permanent "Loading…" on the tab.
+      section.remove();
+      return;
+    }
+    this._ticketCache[job.id] = ticket;
+    this._renderTicketBody(job, ticket);
+  },
+
+  _renderTicketBody(job, ticket) {
+    const body = document.getElementById('ticketSectionBody');
+    const chip = document.getElementById('ticketStageChip');
+    if (!body) return;
+
+    if (chip) {
+      chip.textContent = ticket.stage_name || '';
+      chip.className = 'ticket-stage-chip' + (ticket.closed ? ' closed' : '');
+    }
+
+    const ref = ticket.number ? `#${this._escapeHtml(ticket.number)}` : '';
+    const prio = ticket.priority === '3' ? '🔴 Urgent'
+      : ticket.priority === '2' ? '🟠 High'
+      : ticket.priority === '1' ? '🔵 Low' : '';
+
+    const metaBits = [
+      ticket.team_name && this._escapeHtml(ticket.team_name),
+      ticket.category_name && this._escapeHtml(ticket.category_name),
+      prio,
+    ].filter(Boolean).join(' · ');
+
+    const tagsHtml = (ticket.tags || []).length
+      ? `<div class="ticket-tags">${ticket.tags.map(t => `<span class="ticket-tag">${this._escapeHtml(t)}</span>`).join('')}</div>`
+      : '';
+
+    const descHtml = ticket.description
+      ? `<div class="ticket-desc">${this._escapeHtml(ticket.description)}</div>`
+      : '';
+
+    const resolutionHtml = ticket.resolution
+      ? `<div class="ticket-resolution"><span class="ticket-resolution-label">Resolution</span>${this._escapeHtml(ticket.resolution)}</div>`
+      : '';
+
+    // Other jobs hanging off the same ticket — the office may have split a
+    // callback across two visits, and the ticket can't close until all are done.
+    const others = (ticket.orders || []).filter(o => !o.is_current);
+    const siblingsHtml = others.length
+      ? `<div class="ticket-siblings">
+           <span class="ticket-siblings-label">Also on this ticket</span>
+           ${others.map(o => `<div class="ticket-sibling${o.is_closed ? ' done' : ''}">${o.is_closed ? '✓' : '○'} ${this._escapeHtml(o.name)} — ${this._escapeHtml(o.stage)}</div>`).join('')}
+         </div>`
+      : '';
+
+    let actionHtml = '';
+    if (ticket.closed) {
+      actionHtml = `<div class="ticket-closed-note">✓ Ticket closed (${this._escapeHtml(ticket.stage_name)})</div>`;
+    } else if (!ticket.can_close) {
+      actionHtml = `<div class="ticket-blocked-note">Ticket can't be closed until the other jobs on it are finished.</div>
+        <button class="btn btn-outline btn-sm btn-block" id="ticketNoteBtn">Add Ticket Note</button>`;
+    } else {
+      actionHtml = `<button class="btn btn-outline btn-block" id="ticketResolveBtn">Resolve Ticket</button>`;
+    }
+
+    body.innerHTML = `
+      <div class="ticket-title">${ref ? `<span class="ticket-ref">${ref}</span>` : ''}${this._escapeHtml(ticket.name)}</div>
+      ${metaBits ? `<div class="ticket-meta">${metaBits}</div>` : ''}
+      ${tagsHtml}
+      ${descHtml}
+      ${resolutionHtml}
+      ${siblingsHtml}
+      <div class="ticket-actions">${actionHtml}</div>
+    `;
+
+    const resolveBtn = document.getElementById('ticketResolveBtn');
+    if (resolveBtn) {
+      resolveBtn.addEventListener('click', () => this._showResolveTicketModal(job, ticket));
+    }
+    const noteBtn = document.getElementById('ticketNoteBtn');
+    if (noteBtn) {
+      noteBtn.addEventListener('click', () => this._showResolveTicketModal(job, ticket, true));
+    }
+  },
+
+  /**
+   * Resolve-ticket modal. `noteOnly` drops the stage picker for the case where
+   * the ticket still has other open jobs — the worker can record what they did
+   * without being told "you can't close this".
+   */
+  _showResolveTicketModal(job, ticket, noteOnly = false) {
+    if (!navigator.onLine) {
+      App.showToast('Resolving a ticket needs a connection', 'error');
+      return;
+    }
+
+    const stages = ticket.close_stages || [];
+    const defaultStage = ticket.default_close_stage_id || (stages[0] && stages[0].id);
+    const stageOptions = stages.map(s =>
+      `<option value="${s.id}"${s.id === defaultStage ? ' selected' : ''}>${this._escapeHtml(s.name)}</option>`
+    ).join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h3>${noteOnly ? 'Add Ticket Note' : 'Resolve Ticket'}</h3>
+          <button class="modal-close" id="resolveTicketClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="ticket-modal-subject">
+            ${ticket.number ? `<span class="ticket-ref">#${this._escapeHtml(ticket.number)}</span>` : ''}
+            ${this._escapeHtml(ticket.name)}
+          </div>
+          <div class="form-group">
+            <label class="form-label">What fixed it?</label>
+            <textarea class="form-input" id="resolveTicketText" rows="4"
+              placeholder="Describe the repair so the office can answer the customer…">${this._escapeHtml(ticket.resolution || job.resolution || '')}</textarea>
+          </div>
+          ${noteOnly || !stages.length ? '' : `
+          <div class="form-group">
+            <label class="form-label">Close ticket as</label>
+            <select class="form-input" id="resolveTicketStage">${stageOptions}</select>
+          </div>`}
+          ${noteOnly ? '<p class="ticket-blocked-note">Other jobs on this ticket are still open, so it stays open for now.</p>' : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary btn-block" id="resolveTicketSubmit">
+            ${noteOnly ? 'Save Note' : 'Resolve Ticket'}
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('#resolveTicketClose').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#resolveTicketSubmit').addEventListener('click', async () => {
+      const btn = overlay.querySelector('#resolveTicketSubmit');
+      const text = overlay.querySelector('#resolveTicketText').value.trim();
+      const stageSel = overlay.querySelector('#resolveTicketStage');
+      const stageId = (!noteOnly && stageSel) ? parseInt(stageSel.value, 10) : false;
+
+      if (!text) {
+        App.showToast('Add a short note about what was done', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        const res = await OdooAPI.resolveJobTicket(job.id, text, stageId);
+        if (!res || !res.ok) {
+          App.showToast((res && res.error) || 'Could not update the ticket', 'error');
+          btn.disabled = false;
+          btn.textContent = noteOnly ? 'Save Note' : 'Resolve Ticket';
+          return;
+        }
+        close();
+        App.showToast(res.closed ? 'Ticket resolved' : 'Ticket note saved', 'success');
+        // Re-fetch so the panel reflects the new stage/resolution.
+        delete this._ticketCache[job.id];
+        delete job._ticket;
+        this._loadTicketPanel(job);
+      } catch (err) {
+        App.showToast('Could not update the ticket: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = noteOnly ? 'Save Note' : 'Resolve Ticket';
+      }
+    });
   },
 
   /**

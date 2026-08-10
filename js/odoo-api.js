@@ -204,7 +204,32 @@ const OdooAPI = {
     if (CONFIG.CUSTOM_MODULE_INSTALLED) {
       fields.push(...CONFIG.FSM_ORDER_EXTRA_FIELDS);
     }
+    if (this._optionalOrderFieldsOk) {
+      fields.push(...CONFIG.FSM_ORDER_OPTIONAL_FIELDS);
+    }
     return fields;
+  },
+
+  // Optional fsm.order fields come from modules that may not be installed or
+  // upgraded yet (helpdesk_mgmt_fieldservice + fieldservice_helpdesk_link).
+  // Asking for a column Odoo doesn't have fails the whole read, which would
+  // blank the job list — so the first failure drops them for the session and
+  // the app carries on without the callback badges.
+  _optionalOrderFieldsOk: true,
+
+  /**
+   * Run an fsm.order search_read, retrying once without the optional fields if
+   * the server rejects them.
+   */
+  async _searchReadOrders(domain, opts) {
+    try {
+      return await this.searchRead('fsm.order', domain, this._getOrderFields(), opts);
+    } catch (err) {
+      if (!this._optionalOrderFieldsOk) throw err;
+      console.warn('fsm.order optional fields unavailable — retrying without them.', err);
+      this._optionalOrderFieldsOk = false;
+      return this.searchRead('fsm.order', domain, this._getOrderFields(), opts);
+    }
   },
 
   /**
@@ -220,12 +245,8 @@ const OdooAPI = {
       ['scheduled_date_start', '<=', dateTo],
     ];
 
-    return this.searchRead(
-      'fsm.order',
-      domain,
-      this._getOrderFields(),
-      { order: 'scheduled_date_start asc', limit: CONFIG.JOBS_PER_PAGE }
-    );
+    return this._searchReadOrders(domain,
+      { order: 'scheduled_date_start asc', limit: CONFIG.JOBS_PER_PAGE });
   },
 
   /**
@@ -242,12 +263,8 @@ const OdooAPI = {
       ['scheduled_date_start', '<', beforeDate],
     ];
 
-    return this.searchRead(
-      'fsm.order',
-      domain,
-      this._getOrderFields(),
-      { order: 'scheduled_date_start desc', limit: 100 }
-    );
+    return this._searchReadOrders(domain,
+      { order: 'scheduled_date_start desc', limit: 100 });
   },
 
   /**
@@ -268,12 +285,8 @@ const OdooAPI = {
       ['write_date', '>=', dateFrom],
     ];
 
-    return this.searchRead(
-      'fsm.order',
-      domain,
-      this._getOrderFields(),
-      { order: 'date_end desc', limit: CONFIG.JOBS_PER_PAGE, offset }
-    );
+    return this._searchReadOrders(domain,
+      { order: 'date_end desc', limit: CONFIG.JOBS_PER_PAGE, offset });
   },
 
   /**
@@ -985,7 +998,8 @@ const OdooAPI = {
     return this.searchRead(
       'helpdesk.ticket',
       ['|', ['user_id', '=', uid], ['create_uid', '=', uid]],
-      ['name', 'stage_id', 'priority', 'create_date', 'partner_id', 'team_id'],
+      ['name', 'number', 'stage_id', 'priority', 'create_date', 'partner_id',
+       'team_id', 'fsm_order_ids'],
       { limit }
     );
   },
@@ -1000,6 +1014,34 @@ const OdooAPI = {
       [[['user_id', '=', uid], ['stage_id.closed', '=', false]]],
       {}
     );
+  },
+
+  /**
+   * Full trouble-ticket summary for a job — subject, description, stage,
+   * sibling FSM orders, and the closed stages the worker may resolve to.
+   * Returns {} when the job has no linked ticket.
+   */
+  async getJobTicket(orderId) {
+    return this.callKw('fsm.order', 'worker_get_ticket_info', [orderId], {});
+  },
+
+  /**
+   * Resolve (or just annotate) the trouble ticket linked to a job.
+   * Pass stageId to move the ticket to a closed stage; omit it to only
+   * record the resolution text.
+   */
+  async resolveJobTicket(orderId, resolution, stageId, note) {
+    return this.callKw('fsm.order', 'worker_resolve_ticket',
+      [orderId, resolution || '', stageId || false, note || ''], {});
+  },
+
+  /**
+   * Lightweight ticket badges for a set of jobs (list cards).
+   * Returns { orderId: {ticket_id, number, name, stage_name, closed, ...} }.
+   */
+  async getJobTicketBadges(orderIds) {
+    if (!orderIds || !orderIds.length) return {};
+    return this.callKw('fsm.order', 'worker_get_ticket_badges', [orderIds], {});
   },
 
   /**

@@ -86,6 +86,14 @@ const CONFIG = {
     'cancel_requested', 'cancel_request_reason_id', 'cancel_request_note',
   ],
 
+  // Fields from modules that may not be installed/upgraded on every instance.
+  // OdooAPI drops these for the session on the first read that rejects them,
+  // so the app degrades to plain job cards instead of an empty list.
+  // Source: helpdesk_mgmt_fieldservice (ticket_id) + fieldservice_helpdesk_link.
+  FSM_ORDER_OPTIONAL_FIELDS: [
+    'ticket_id', 'is_callback',
+  ],
+
   // Set to true after installing the custom Odoo modules
   CUSTOM_MODULE_INSTALLED: true,
 

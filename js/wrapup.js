@@ -160,6 +160,9 @@ const WrapUp = {
             `}
           </div>
 
+          <!-- Trouble ticket (callback jobs only) — filled by _loadTicketSection -->
+          <div class="wrapup-field wrapup-ticket-field" id="wrapupTicketField" style="display:none;"></div>
+
           <!-- Note to Office (hidden behind toggle) -->
           <div class="wrapup-field">
             <button class="btn btn-outline btn-sm wrapup-office-toggle-btn" id="wrapupOfficeToggleBtn" type="button">
@@ -183,6 +186,129 @@ const WrapUp = {
     document.body.appendChild(overlay);
     this._bindFullModal(overlay, job, workerCount, editMode);
     if (!editMode) this._loadPaymentStatus(job, overlay);
+    this._loadTicketSection(job, overlay);
+  },
+
+  // ── Trouble ticket section ──────────────────────────────────────────────────
+
+  /**
+   * Fill the Close Job modal's ticket block for callback jobs, so the worker
+   * closes the job and its trouble ticket in one submit. Silent no-op for
+   * regular jobs, offline, or if the fetch fails — the wrap-up must never be
+   * blocked by the ticket.
+   */
+  async _loadTicketSection(job, overlay) {
+    const field = overlay.querySelector('#wrapupTicketField');
+    if (!field) return;
+
+    const isCallback = typeof Jobs !== 'undefined'
+      ? Jobs._isCallbackJob(job)
+      : !!job.ticket_id;
+    if (!isCallback) return;
+
+    let ticket = (typeof Jobs !== 'undefined' && Jobs._ticketCache[job.id]) || job._ticket;
+    if (!ticket && navigator.onLine) {
+      try {
+        ticket = await OdooAPI.getJobTicket(job.id);
+      } catch {
+        ticket = null;
+      }
+    }
+    if (!ticket || !ticket.id) return;
+    if (typeof Jobs !== 'undefined') Jobs._ticketCache[job.id] = ticket;
+    this._ticket = ticket;
+
+    const ref = ticket.number ? `#${this._esc(ticket.number)} ` : '';
+    const stages = ticket.close_stages || [];
+    const defaultStage = ticket.default_close_stage_id || (stages[0] && stages[0].id);
+    const stageOptions = stages.map(s =>
+      `<option value="${s.id}"${s.id === defaultStage ? ' selected' : ''}>${this._esc(s.name)}</option>`
+    ).join('');
+
+    // Three states: already closed, blocked by sibling jobs, or resolvable.
+    let controlsHtml;
+    if (ticket.closed) {
+      controlsHtml = `<div class="wrapup-ticket-note">✓ Already closed (${this._esc(ticket.stage_name)}) — nothing to do here.</div>`;
+    } else if (!ticket.can_close) {
+      controlsHtml = `
+        <div class="wrapup-ticket-note">
+          Ticket stays open — still on ${this._esc((ticket.blocking_orders || []).join(', '))}.
+        </div>
+        <label class="wrapup-label" for="wrapupTicketResolution">Ticket note</label>
+        <textarea class="form-input" id="wrapupTicketResolution" rows="2"
+          placeholder="What you did on this visit…"></textarea>`;
+    } else {
+      controlsHtml = `
+        <label class="wrapup-check-label">
+          <input type="checkbox" id="wrapupResolveTicket" checked>
+          <span>Resolve this ticket</span>
+        </label>
+        <div id="wrapupTicketControls">
+          <label class="wrapup-label" for="wrapupTicketResolution">
+            Resolution <span class="wrapup-nudge">(what fixed it)</span>
+          </label>
+          <textarea class="form-input" id="wrapupTicketResolution" rows="2"
+            placeholder="Leave blank to reuse the job notes above…">${this._esc(ticket.resolution || '')}</textarea>
+          ${stages.length ? `
+          <label class="wrapup-label" for="wrapupTicketStage" style="margin-top:6px;">Close to</label>
+          <select class="form-input" id="wrapupTicketStage">${stageOptions}</select>` : ''}
+        </div>`;
+    }
+
+    field.innerHTML = `
+      <div class="wrapup-ticket-head">🎫 Trouble Ticket</div>
+      <div class="wrapup-ticket-subject">${ref}${this._esc(ticket.name)}</div>
+      ${ticket.description ? `<div class="wrapup-ticket-desc">${this._esc(ticket.description)}</div>` : ''}
+      ${controlsHtml}
+    `;
+    field.style.display = '';
+
+    // Toggle the resolution/stage controls with the checkbox
+    const resolveCheck = field.querySelector('#wrapupResolveTicket');
+    const controls = field.querySelector('#wrapupTicketControls');
+    if (resolveCheck && controls) {
+      resolveCheck.addEventListener('change', () => {
+        controls.style.display = resolveCheck.checked ? '' : 'none';
+      });
+    }
+
+    // A return trip means the work isn't finished, so the ticket must not
+    // close. Mirror the job-status toggle into the ticket checkbox.
+    const statusBtns = overlay.querySelectorAll('#jobStatusToggle .toggle-btn');
+    statusBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!resolveCheck) return;
+        const returning = btn.dataset.val === 'return_trip';
+        resolveCheck.checked = !returning;
+        resolveCheck.disabled = returning;
+        if (controls) controls.style.display = returning ? 'none' : '';
+        const note = field.querySelector('.wrapup-ticket-returning');
+        if (returning && !note) {
+          const el = document.createElement('div');
+          el.className = 'wrapup-ticket-note wrapup-ticket-returning';
+          el.textContent = 'Return trip — ticket will stay open.';
+          field.appendChild(el);
+        } else if (!returning && note) {
+          note.remove();
+        }
+      });
+    });
+  },
+
+  /**
+   * Read the ticket controls out of the Close Job modal into wrap-up data.
+   */
+  _collectTicketData(overlay) {
+    const field = overlay.querySelector('#wrapupTicketField');
+    if (!field || field.style.display === 'none') return {};
+    const resolveCheck = field.querySelector('#wrapupResolveTicket');
+    const stageSel = field.querySelector('#wrapupTicketStage');
+    const textArea = field.querySelector('#wrapupTicketResolution');
+    return {
+      resolve_ticket: !!(resolveCheck && resolveCheck.checked && !resolveCheck.disabled),
+      ticket_stage_id: stageSel ? parseInt(stageSel.value, 10) : false,
+      ticket_resolution: textArea ? textArea.value.trim() : '',
+    };
   },
 
   _bindFullModal(overlay, job, workerCount, editMode = false) {
@@ -262,6 +388,7 @@ const WrapUp = {
         payment_not_collected:   paymentNotCollected,
         payment_followup_note:   reasons.join('; '),
         office_note:             overlay.querySelector('#wrapupOfficeNote')?.value.trim() || '',
+        ...this._collectTicketData(overlay),
       };
       if (editMode) {
         if (isEditingOriginal) {
@@ -306,6 +433,19 @@ const WrapUp = {
           if (!editMode) job.wrapup_submitted = true;
           if (typeof Jobs !== 'undefined') Jobs._historyFetchCache = null;
           if (result.new_stage_id) job.stage_id = [result.new_stage_id, result.new_stage_name];
+
+          // Ticket outcome — the server never fails the wrap-up over a ticket,
+          // so report it separately rather than silently swallowing it.
+          if (result.ticket) {
+            if (typeof Jobs !== 'undefined') delete Jobs._ticketCache[job.id];
+            delete job._ticket;
+            if (!result.ticket.ok && result.ticket.error) {
+              App.showToast('Job closed, but the ticket was not updated: ' + result.ticket.error, 'error');
+            } else if (result.ticket.closed) {
+              App.showToast('Ticket resolved (' + (result.ticket.stage_name || 'closed') + ')', 'success');
+            }
+          }
+
           await DB.put('jobs', job);
           const detailContainer = document.getElementById('jobDetail');
           if (detailContainer && typeof Jobs !== 'undefined') Jobs.renderJobDetail(job.id, detailContainer);
