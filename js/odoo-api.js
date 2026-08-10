@@ -220,12 +220,20 @@ const OdooAPI = {
   /**
    * Run an fsm.order search_read, retrying once without the optional fields if
    * the server rejects them.
+   *
+   * Whether to retry is decided from what THIS call actually sent, captured
+   * before the request — not from the shared flag at the time the error lands.
+   * loadJobs fires this concurrently (today's jobs + upcoming), so reading the
+   * live flag in the catch let the first failure flip it and the second call
+   * rethrow instead of retrying, failing the whole Promise.all and leaving the
+   * job list on stale cache.
    */
   async _searchReadOrders(domain, opts) {
+    const sentOptional = this._optionalOrderFieldsOk;
     try {
       return await this.searchRead('fsm.order', domain, this._getOrderFields(), opts);
     } catch (err) {
-      if (!this._optionalOrderFieldsOk) throw err;
+      if (!sentOptional) throw err;
       console.warn('fsm.order optional fields unavailable — retrying without them.', err);
       this._optionalOrderFieldsOk = false;
       return this.searchRead('fsm.order', domain, this._getOrderFields(), opts);
