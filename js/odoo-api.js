@@ -1024,6 +1024,26 @@ const OdooAPI = {
     );
   },
 
+  // ========== JOB PROFILES ==========
+
+  /**
+   * Per-order job profile (fieldservice_job_profile): which capture sections
+   * are hidden/optional/required, how many photos each stage needs, which
+   * stages gate on photos, and the stage flow for this kind of job.
+   *
+   * Returns {} rather than throwing when the module isn't installed — the app
+   * falls back to its built-in CONFIG behaviour.
+   */
+  async getJobProfiles(orderIds) {
+    if (!orderIds || !orderIds.length) return {};
+    try {
+      return await this.callKw('fsm.order', 'worker_get_job_profiles', [orderIds], {});
+    } catch (err) {
+      console.warn('Job profiles unavailable — using built-in defaults.', err);
+      return {};
+    }
+  },
+
   /**
    * Full trouble-ticket summary for a job — subject, description, stage,
    * sibling FSM orders, and the closed stages the worker may resolve to.

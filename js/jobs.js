@@ -322,6 +322,11 @@ const Jobs = {
         this._overdueCount = counts ? (counts.overdueCount || 0) : 0;
         this._notClosedCount = counts ? (counts.notClosedCount || 0) : 0;
         this._unpaidIds = counts ? (counts.unpaidIds || new Set()) : new Set();
+
+        // Attach each job's profile before caching, so the photo gate, stage
+        // flow and section visibility all work offline too.
+        await this._attachProfiles(fetchedJobs.concat(this._upcomingJobs || []));
+
         await DB.saveJobs(fetchedJobs);
         await DB.setState('lastSync', Date.now());
         this._applyJobs(fetchedJobs);
@@ -552,6 +557,87 @@ const Jobs = {
         }
       });
     }
+  },
+
+  // ========== JOB PROFILES ==========
+
+  /**
+   * Fetch and attach `_profile` to each job. Silent no-op if the server has
+   * no profiles for them — _profileFor then falls back to CONFIG.
+   */
+  async _attachProfiles(jobs) {
+    const list = (jobs || []).filter(j => j && j.id);
+    if (!list.length) return;
+
+    // Freshly fetched job objects never carry _profile, and these are about to
+    // be written over the IndexedDB cache. If the profile RPC fails (session
+    // hiccup, module mid-upgrade) getJobProfiles returns {} — so carry the
+    // last known profile across rather than blanking it, which offline would
+    // silently re-gate a job whose template hides photos.
+    let cachedById = {};
+    try {
+      const cached = await DB.getJobs();
+      for (const c of (cached || [])) {
+        if (c && c._profile) cachedById[c.id] = c._profile;
+      }
+    } catch { /* no cache to carry over */ }
+
+    const profiles = await OdooAPI.getJobProfiles(list.map(j => j.id)) || {};
+    for (const job of list) {
+      const fresh = profiles[job.id] || profiles[String(job.id)];
+      const carried = cachedById[job.id];
+      if (fresh) job._profile = fresh;
+      else if (carried) job._profile = carried;
+    }
+  },
+
+  /**
+   * The effective job profile, falling back to the behaviour that was
+   * hardcoded before fieldservice_job_profile existed. Every caller goes
+   * through here so an instance without the module behaves exactly as before.
+   */
+  _profileFor(job) {
+    if (job && job._profile) return job._profile;
+    const req = key => {
+      const cat = (CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === key);
+      return cat ? (cat.required || 0) : 0;
+    };
+    return {
+      photos: {
+        mode: 'required',
+        equipment: req('equipment'),
+        before: req('before'),
+        after: req('after'),
+      },
+      materials: { mode: 'optional' },
+      resolution: { mode: 'optional' },
+      gate_stages: ['Arrived', 'In Progress'],
+      workflow: CONFIG.WORKFLOW,
+    };
+  },
+
+  /** Case-insensitive loose match used throughout for stage names. */
+  _stageMatches(a, b) {
+    const x = (a || '').toLowerCase().trim();
+    const y = (b || '').toLowerCase().trim();
+    if (!x || !y) return false;
+    return x.includes(y) || y.includes(x);
+  },
+
+  /**
+   * Photo categories that BLOCK advancing past a stage. Distinct from
+   * _getStagePhotoCategories, which is what the Work tab displays — a stage
+   * can offer more categories than it gates on (e.g. In Progress shows
+   * problem areas and other, but only After photos hold the job up).
+   */
+  _gateCategoriesForStage(stageName) {
+    const name = (stageName || '').toLowerCase();
+    if (name.includes('arrived')) return ['equipment', 'before'];
+    if (name.includes('progress')) return ['after'];
+    // A stage the app has no category mapping for. It was configured as
+    // photo-gated, so gating on nothing would silently ignore the setting —
+    // hold it against every category the profile actually requires instead.
+    return ['equipment', 'before', 'after'];
   },
 
   // ========== CALLBACK / TROUBLE TICKET HELPERS ==========
@@ -935,7 +1021,7 @@ const Jobs = {
     // Render work tab photos (stage-filtered)
     const workPhotoSection = document.getElementById('workPhotoSection');
     if (workPhotoSection) {
-      const cats = this._getStagePhotoCategories(stageName);
+      const cats = this._getStagePhotoCategories(stageName, job);
       if (cats.length > 0) {
         Photos.renderFilteredPhotoSection(job.id, workPhotoSection, cats, () => {
           this._updateStageGate(job, stageName);
@@ -1183,12 +1269,23 @@ const Jobs = {
       const sn = stageName.toLowerCase();
       const isDispatched = sn.includes('dispatch');
       if (isDispatched) {
+        // Whatever this job type does after Dispatched — normally En Route,
+        // but a template may skip straight to Arrived. The En Route button
+        // opens the ETA/customer-text modal, which only makes sense when the
+        // worker is actually setting off; any other next stage gets a plain
+        // advance button instead.
+        const wf = this._workflowFor(job);
+        const idx = wf.findIndex(s => this._stageMatches(stageName, s));
+        const nextStage = (idx !== -1 && wf[idx + 1]) ? wf[idx + 1] : 'En Route';
+        const isEnRouteNext = this._stageMatches(nextStage, 'En Route');
         return `
       <div class="detail-section">
         <h3>Head to Job</h3>
         <div class="status-actions" id="infoStatusActions">
-          <button class="btn btn-warning btn-block btn-lg" id="enRouteBtn" data-next-stage="En Route">
-            → En Route
+          <button class="btn btn-warning btn-block btn-lg"
+                  id="${isEnRouteNext ? 'enRouteBtn' : 'preWorkAdvanceBtn'}"
+                  data-next-stage="${this._escapeHtml(nextStage)}">
+            → ${this._escapeHtml(nextStage)}
           </button>
         </div>
       </div>`;
@@ -1265,27 +1362,39 @@ const Jobs = {
    * regardless of the current stage — useful for catch-up entry.
    */
   _renderWorkPanel(job, stageName) {
+    const prof = this._profileFor(job);
     const isPreWork = this._isPreWorkStage(stageName);
     const workflowHtml = isPreWork ? '' : this._buildWorkflowButtons(job, stageName);
-    const stageCats = this._getStagePhotoCategories(stageName);
-    const allCats = (CONFIG.PHOTO_CATEGORIES || []).map(c => c.key);
+    const stageCats = this._getStagePhotoCategories(stageName, job);
+    // "Show all steps" must still respect a template that hides photos —
+    // otherwise the toggle would resurrect a section the profile removed.
+    const allCats = prof.photos.mode === 'hidden'
+      ? []
+      : (CONFIG.PHOTO_CATEGORIES || []).map(c => c.key);
     const cats = this._showAllSteps ? allCats : stageCats;
-    const showMaterials = this._showAllSteps ||
+    const showMaterials = prof.materials.mode !== 'hidden' && (
+                          this._showAllSteps ||
                           stageName.toLowerCase().includes('progress') ||
-                          stageName.toLowerCase().includes('complete');
+                          stageName.toLowerCase().includes('complete'));
 
     const toggleHtml = `
       <button class="view-all-toggle${this._showAllSteps ? ' active' : ''}" id="viewAllStepsBtn">
         ${this._showAllSteps ? '&#10003; Showing All Steps' : '&#9711; Show All Steps'}
       </button>`;
 
-    // Pre-work and not showing all: minimal message + toggle
+    // Pre-work and not showing all: minimal message + toggle. Name the button
+    // this job's flow actually shows, which may not be "En Route".
     if (isPreWork && !this._showAllSteps) {
+      const wf = this._workflowFor(job);
+      const idx = wf.findIndex(s => this._stageMatches(stageName, s));
+      const nextLabel = (idx !== -1 && wf[idx + 1])
+        ? wf[idx + 1]
+        : (this._clockInStageFor(job, false) || 'En Route');
       return `
         <div class="detail-section">
           ${toggleHtml}
           <p style="color:var(--text-secondary); text-align:center; padding:var(--spacing-lg) 0 var(--spacing-sm);">
-            Tap "En Route" on the Info tab to start this job.
+            Tap "${this._escapeHtml(nextLabel)}" on the Info tab to start this job.
           </p>
         </div>`;
     }
@@ -1304,7 +1413,12 @@ const Jobs = {
 
     // Earlier-step photos (equipment/before) stay reachable after moving to
     // In Progress — collapsed by default so the current step stays the focus.
-    const earlierCats = (!this._showAllSteps && stageName.toLowerCase().includes('progress'))
+    // Gated on the profile like stageCats/allCats — otherwise a template with
+    // photos hidden still gets a collapsible "Earlier Steps" block that both
+    // shows and uploads photos, resurrecting the section the profile removed.
+    const earlierCats = (prof.photos.mode !== 'hidden'
+      && !this._showAllSteps
+      && stageName.toLowerCase().includes('progress'))
       ? ['equipment', 'before']
       : [];
 
@@ -1376,7 +1490,9 @@ const Jobs = {
   /**
    * Get photo category keys relevant to the current stage.
    */
-  _getStagePhotoCategories(stageName) {
+  _getStagePhotoCategories(stageName, job) {
+    // A template with photos hidden gets no photo sections at all.
+    if (job && this._profileFor(job).photos.mode === 'hidden') return [];
     const name = stageName.toLowerCase();
     if (name.includes('arrived')) return ['equipment', 'before'];
     if (name.includes('progress')) return ['after', 'problem_areas', 'other'];
@@ -1442,18 +1558,74 @@ const Jobs = {
    * Build workflow status buttons for a job.
    */
   _buildWorkflowButtons(job, currentStageName) {
-    const workflow = CONFIG.WORKFLOW;
+    const workflow = this._workflowFor(job);
     const currentIdx = workflow.findIndex(s =>
-      currentStageName.toLowerCase().includes(s.toLowerCase()) ||
-      s.toLowerCase().includes(currentStageName.toLowerCase())
-    );
+      this._stageMatches(currentStageName, s));
+
+    // The job sits on a stage its template's flow doesn't include (someone
+    // moved it in Odoo, or the flow changed under it). Fall back to the next
+    // stage in the app's built-in order rather than stranding the worker with
+    // no button at all.
+    if (currentIdx === -1) {
+      const base = CONFIG.WORKFLOW;
+      const baseIdx = base.findIndex(s => this._stageMatches(currentStageName, s));
+      // The stage is in neither the job's flow nor the built-in order — an
+      // On Hold / Needs Parts kind of stage. Offering a button here would mean
+      // guessing, and slicing from -1 would offer the FIRST stage, rewinding
+      // the job. Show nothing and let the office move it.
+      if (baseIdx === -1) return '';
+      const nextFromBase = base
+        .slice(baseIdx + 1)
+        .find(s => workflow.some(w => this._stageMatches(w, s)));
+      if (!nextFromBase) {
+        return '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">Job completed</p>';
+      }
+      return this._nextStageButtonHtml(nextFromBase);
+    }
 
     const nextIdx = currentIdx + 1;
     if (nextIdx >= workflow.length) {
       return '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">Job completed</p>';
     }
 
-    const nextStage = workflow[nextIdx];
+    return this._nextStageButtonHtml(workflow[nextIdx]);
+  },
+
+  /**
+   * The stage flow for a job: its template's, else the app's built-in order.
+   *
+   * Returned as-is — the server already sorts by fsm.stage.sequence, which is
+   * the only ordering that knows about stages this app has never heard of. An
+   * earlier version re-sorted against CONFIG.WORKFLOW and ranked unknown
+   * stages last, which pushed any custom intermediate stage past Completed and
+   * silently skipped it.
+   */
+  _workflowFor(job) {
+    const configured = this._profileFor(job).workflow;
+    return (configured && configured.length) ? configured : CONFIG.WORKFLOW;
+  },
+
+  /**
+   * The stage at which this job's flow should clock the worker on.
+   *
+   * Normally the first working stage (En Route in the default flow). When the
+   * worker sets off from somewhere other than the shop and the office allows
+   * it, the gate moves to Arrived so the drive isn't paid. Derived from the
+   * job's own flow rather than the literal name "En Route" — a template that
+   * skips it would otherwise never clock anyone in, and the job would be
+   * worked with no attendance record and no payroll time.
+   */
+  _clockInStageFor(job, remoteStart) {
+    const working = this._workflowFor(job)
+      .filter(s => !this._isPreWorkStage(s) && !this._stageMatches(s, 'Completed'));
+    if (!working.length) return null;
+    if (remoteStart) {
+      return working.find(s => s.toLowerCase().includes('arrived')) || working[0];
+    }
+    return working[0];
+  },
+
+  _nextStageButtonHtml(nextStage) {
     const btnClass = nextStage.toLowerCase().includes('complete') ? 'btn-success' :
                      nextStage.toLowerCase().includes('route') ? 'btn-warning' :
                      'btn-primary';
@@ -1468,28 +1640,34 @@ const Jobs = {
    * Returns { met: boolean, missing: [{category, label, have, need}] }
    */
   async _checkPhotoGate(job, stageName) {
-    const name = stageName.toLowerCase();
-    let gatedCategories = [];
+    const prof = this._profileFor(job);
 
-    if (name.includes('arrived')) {
-      gatedCategories = ['equipment', 'before'];
-    } else if (name.includes('progress')) {
-      gatedCategories = ['after'];
-    } else {
+    // Hidden or optional photos never block, whatever the stage.
+    if (prof.photos.mode !== 'required') return { met: true, missing: [] };
+
+    // Only the stages this job type gates on hold anything up.
+    const gateStages = prof.gate_stages || [];
+    if (!gateStages.some(s => this._stageMatches(stageName, s))) {
       return { met: true, missing: [] };
     }
+
+    const gatedCategories = this._gateCategoriesForStage(stageName);
+    if (!gatedCategories.length) return { met: true, missing: [] };
 
     const counts = await Photos.getPhotoCountsByCategory(job.id);
     const missing = [];
 
     for (const key of gatedCategories) {
-      const cat = (CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === key);
-      if (cat && cat.required > 0 && (counts[key] || 0) < cat.required) {
+      const need = prof.photos[key] || 0;
+      if (need <= 0) continue;
+      const have = counts[key] || 0;
+      if (have < need) {
+        const cat = (CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === key);
         missing.push({
           category: key,
-          label: cat.label,
-          have: counts[key] || 0,
-          need: cat.required
+          label: cat ? cat.label : key,
+          have,
+          need,
         });
       }
     }
@@ -1722,6 +1900,31 @@ const Jobs = {
         this._showEnRouteModal(job);
       });
     }
+
+    // Same slot, but for a template whose flow skips En Route — no ETA text,
+    // just advance to whatever its next stage is.
+    const advanceBtn = document.getElementById('preWorkAdvanceBtn');
+    if (advanceBtn) {
+      advanceBtn.addEventListener('click', async () => {
+        const target = advanceBtn.dataset.nextStage;
+        advanceBtn.disabled = true;
+        advanceBtn.textContent = 'Updating…';
+        try {
+          const changed = await this.changeJobStatus(job, target);
+          if (changed) {
+            const container = document.getElementById('jobDetail');
+            if (container) this.renderJobDetail(job.id, container);
+            return;
+          }
+          // false means the worker declined the clock-in prompt — a deliberate
+          // cancel, not a failure. Say nothing, same as _proceedWithStatusChange.
+        } catch (err) {
+          App.showToast('Could not update the job status: ' + err.message, 'error');
+        }
+        advanceBtn.disabled = false;
+        advanceBtn.textContent = '→ ' + target;
+      });
+    }
   },
 
   /**
@@ -1818,7 +2021,16 @@ const Jobs = {
       confirmBtn.textContent = 'Updating...';
 
       try {
-        const targetStage = goingDirect ? 'En Route' : 'Dispatched';
+        // "Going straight there" means jumping to whatever this job's flow
+        // does after Dispatched — usually En Route, but a template may skip
+        // it. Hardcoding the name would push the job onto a stage its own
+        // flow excludes.
+        const wf = this._workflowFor(job);
+        const dispatchedIdx = wf.findIndex(s => this._stageMatches(s, 'Dispatched'));
+        const afterDispatched = (dispatchedIdx !== -1 && wf[dispatchedIdx + 1])
+          ? wf[dispatchedIdx + 1]
+          : (this._clockInStageFor(job, false) || 'En Route');
+        const targetStage = goingDirect ? afterDispatched : 'Dispatched';
         const changed = await this.changeJobStatus(job, targetStage);
         if (!changed) {
           // Worker declined the clock-in prompt — don't SMS or navigate
@@ -2399,7 +2611,7 @@ const Jobs = {
             const workSection = document.getElementById('workPhotoSection');
             if (workSection) {
               const stageName = this.getStageName(this._currentJob.stage_id);
-              const cats = this._getStagePhotoCategories(stageName);
+              const cats = this._getStagePhotoCategories(stageName, this._currentJob);
               if (cats.length > 0) {
                 Photos.renderFilteredPhotoSection(jobId, workSection, cats, () => {
                   this._updateStageGate(this._currentJob, stageName);
@@ -2894,13 +3106,11 @@ const Jobs = {
       try { await DriveInfo.ensureReady(); } catch (e) { /* default gating */ }
     }
     const remoteStart = typeof DriveInfo !== 'undefined' && DriveInfo.isRemoteStart();
-    if (name.includes('route') && !remoteStart && typeof TimeTracking !== 'undefined') {
-      const ok = await TimeTracking.ensureClockedIn();
+    const clockInStage = this._clockInStageFor(job, remoteStart);
+    if (clockInStage && this._stageMatches(stageName, clockInStage)
+        && typeof TimeTracking !== 'undefined') {
+      const ok = await TimeTracking.ensureClockedIn(); // no-op if already on
       if (!ok) return false; // user declined
-    }
-    if (name.includes('arrived') && remoteStart && typeof TimeTracking !== 'undefined') {
-      const ok = await TimeTracking.ensureClockedIn(); // no-op if already clocked in
-      if (!ok) return false;
     }
 
     // Find the stage ID for this name, preferring the job's company

@@ -80,6 +80,21 @@ const WrapUp = {
     const timeOnSite = this._calcTimeOnSite();
     const existingResolution = (job.resolution || '').trim();
 
+    // On a callback this one note is the job resolution AND the trouble
+    // ticket's resolution — the ticket block below never asks for it again.
+    const isCallback = typeof Jobs !== 'undefined'
+      ? Jobs._isCallbackJob(job) : !!job.ticket_id;
+    const profile = typeof Jobs !== 'undefined' ? Jobs._profileFor(job) : null;
+    let resolutionMode = profile ? profile.resolution.mode : 'optional';
+    // A callback's note is the ticket's resolution, and the ticket block below
+    // tells the worker it will be used. Hiding the box would leave that copy
+    // pointing at nothing while the stale prefilled value got written to the
+    // ticket, so a hidden profile is overridden to optional here.
+    if (isCallback && resolutionMode === 'hidden') resolutionMode = 'optional';
+    const resolutionHint = resolutionMode === 'required'
+      ? (isCallback ? '(required — also resolves the ticket)' : '(required)')
+      : (isCallback ? '(also resolves the ticket)' : '(quick note about job)');
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
@@ -140,7 +155,8 @@ const WrapUp = {
           </div>
 
           <!-- Resolution -->
-          <div class="wrapup-field">
+          <div class="wrapup-field" id="wrapupResolutionField"
+               ${resolutionMode === 'hidden' ? 'style="display:none;"' : ''}>
             ${editMode ? `
             <label class="wrapup-label" id="resolutionLabel">
               Additional notes <span class="wrapup-nudge">(will be appended to resolution)</span>
@@ -153,10 +169,11 @@ const WrapUp = {
             </label>
             ` : `
             <label class="wrapup-label">
-              What was done? <span class="wrapup-nudge">(quick note about job)</span>
+              ${isCallback ? 'What fixed it?' : 'What was done?'}
+              <span class="wrapup-nudge">${resolutionHint}</span>
             </label>
             <textarea class="form-input" id="wrapupResolution" rows="3"
-              placeholder="Describe the work completed…">${this._esc(existingResolution)}</textarea>
+              placeholder="${isCallback ? 'Describe the repair…' : 'Describe the work completed…'}">${this._esc(existingResolution)}</textarea>
             `}
           </div>
 
@@ -187,6 +204,45 @@ const WrapUp = {
     this._bindFullModal(overlay, job, workerCount, editMode);
     if (!editMode) this._loadPaymentStatus(job, overlay);
     this._loadTicketSection(job, overlay);
+  },
+
+  /**
+   * Enforce the job profile's "required" sections at close-out.
+   * Returns an error message to show, or '' when the job may be closed.
+   */
+  async _checkRequirements(job, resolutionText) {
+    const prof = typeof Jobs !== 'undefined' ? Jobs._profileFor(job) : null;
+    if (!prof) return '';
+
+    if (prof.resolution.mode === 'required' && !resolutionText) {
+      return Jobs._isCallbackJob(job)
+        ? 'Describe what fixed it — this resolves the ticket too.'
+        : 'Add a note about what was done before closing.';
+    }
+
+    if (prof.materials.mode === 'required') {
+      // Offline we cannot verify, and blocking the close would strand the
+      // worker with no way to satisfy it. Materials are re-checked by the
+      // office close-out queue anyway.
+      if (!navigator.onLine) return '';
+      try {
+        // Must count lines with a real quantity, not just any line: the
+        // materials modal saves a row for EVERY prompted product including
+        // the ones left at 0, and the server creates an fsm.material.line for
+        // each. Tapping "Save & Complete" without typing anything would
+        // otherwise satisfy this check with nothing recorded.
+        const used = await OdooAPI.callKw(
+          'fsm.material.line', 'search_count',
+          [[['order_id', '=', job.id], ['quantity', '>', 0]]], {});
+        if (!used) {
+          return 'Record the materials used before closing this job.';
+        }
+      } catch {
+        // Can't tell — don't block the close over it.
+      }
+    }
+
+    return '';
   },
 
   // ── Trouble ticket section ──────────────────────────────────────────────────
@@ -226,6 +282,8 @@ const WrapUp = {
     ).join('');
 
     // Three states: already closed, blocked by sibling jobs, or resolvable.
+    // None of them asks for resolution text — the single "What fixed it?" box
+    // above covers both the job and the ticket.
     let controlsHtml;
     if (ticket.closed) {
       controlsHtml = `<div class="wrapup-ticket-note">✓ Already closed (${this._esc(ticket.stage_name)}) — nothing to do here.</div>`;
@@ -233,24 +291,17 @@ const WrapUp = {
       controlsHtml = `
         <div class="wrapup-ticket-note">
           Ticket stays open — still on ${this._esc((ticket.blocking_orders || []).join(', '))}.
-        </div>
-        <label class="wrapup-label" for="wrapupTicketResolution">Ticket note</label>
-        <textarea class="form-input" id="wrapupTicketResolution" rows="2"
-          placeholder="What you did on this visit…"></textarea>`;
+          Your note above is added to it either way.
+        </div>`;
     } else {
       controlsHtml = `
         <label class="wrapup-check-label">
           <input type="checkbox" id="wrapupResolveTicket" checked>
-          <span>Resolve this ticket</span>
+          <span>Resolve this ticket with the note above</span>
         </label>
         <div id="wrapupTicketControls">
-          <label class="wrapup-label" for="wrapupTicketResolution">
-            Resolution <span class="wrapup-nudge">(what fixed it)</span>
-          </label>
-          <textarea class="form-input" id="wrapupTicketResolution" rows="2"
-            placeholder="Leave blank to reuse the job notes above…">${this._esc(ticket.resolution || '')}</textarea>
           ${stages.length ? `
-          <label class="wrapup-label" for="wrapupTicketStage" style="margin-top:6px;">Close to</label>
+          <label class="wrapup-label" for="wrapupTicketStage">Close to</label>
           <select class="form-input" id="wrapupTicketStage">${stageOptions}</select>` : ''}
         </div>`;
     }
@@ -297,17 +348,17 @@ const WrapUp = {
 
   /**
    * Read the ticket controls out of the Close Job modal into wrap-up data.
+   * Resolution text is deliberately absent — the server falls back to the job
+   * resolution, which is the same single box the worker filled in.
    */
   _collectTicketData(overlay) {
     const field = overlay.querySelector('#wrapupTicketField');
     if (!field || field.style.display === 'none') return {};
     const resolveCheck = field.querySelector('#wrapupResolveTicket');
     const stageSel = field.querySelector('#wrapupTicketStage');
-    const textArea = field.querySelector('#wrapupTicketResolution');
     return {
       resolve_ticket: !!(resolveCheck && resolveCheck.checked && !resolveCheck.disabled),
       ticket_stage_id: stageSel ? parseInt(stageSel.value, 10) : false,
-      ticket_resolution: textArea ? textArea.value.trim() : '',
     };
   },
 
@@ -365,6 +416,16 @@ const WrapUp = {
 
     // Submit
     overlay.querySelector('#wrapupSubmitBtn').addEventListener('click', async () => {
+      // Disabled up front: _checkRequirements below can round-trip to Odoo, and
+      // on a slow connection a second tap would fire a second submit_wrapup.
+      const btn = overlay.querySelector('#wrapupSubmitBtn');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const restoreBtn = () => {
+        btn.disabled = false;
+        btn.textContent = editMode ? 'Save Changes' : 'Close Job';
+      };
+
       const jobComplete = overlay.querySelector('#jobStatusToggle .toggle-btn.active').dataset.val === 'complete';
       const paymentNotCollected = payCheck.checked;
 
@@ -378,8 +439,20 @@ const WrapUp = {
         reasons.push(otherText ? `Other: ${otherText}` : 'Other');
       }
 
-      const resolutionText = overlay.querySelector('#wrapupResolution').value.trim();
+      const resolutionText = overlay.querySelector('#wrapupResolution')?.value.trim() || '';
       const isEditingOriginal = editMode && !!overlay.querySelector('#editOriginalCheck')?.checked;
+
+      // Profile-driven requirements. Checked here rather than server-side so
+      // the worker is told before anything is written, and only on a fresh
+      // close — an edit of an already-closed job must never be blocked.
+      if (!editMode) {
+        const blocked = await this._checkRequirements(job, resolutionText);
+        if (blocked) {
+          App.showToast(blocked, 'error');
+          restoreBtn();
+          return;
+        }
+      }
 
       const data = {
         edit_mode:               editMode,
@@ -400,9 +473,7 @@ const WrapUp = {
         data.resolution = resolutionText;
       }
 
-      const submitBtn = overlay.querySelector('#wrapupSubmitBtn');
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Submitting…';
+      btn.textContent = 'Submitting…'; // already disabled at the top
 
       await this._submitFull(overlay, job, workerCount, data, editMode);
     });
