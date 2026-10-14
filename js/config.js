@@ -165,6 +165,22 @@ const CONFIG = {
   }
 })();
 
+// Staging copy (https://…:8443/pwa/): the staging Odoo and database (after saved settings, so a
+// saved live address can't win), and a red strip so nobody mistakes it for the live app.
+if (location.port === '8443') {
+  CONFIG.ODOO_URL = location.origin;
+  CONFIG.ODOO_DB = 'odoo18_staging';
+  CONFIG.STAGING = true;
+  document.title = 'STAGING · ' + document.title;
+  document.addEventListener('DOMContentLoaded', function () {
+    var strip = document.createElement('div');
+    strip.textContent = 'STAGING: test copy (odoo18_staging), not the live app';
+    strip.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#c62828;color:#fff;'
+      + 'text-align:center;font:600 11px system-ui,sans-serif;padding:1px;pointer-events:none';
+    document.body.appendChild(strip);
+  });
+}
+
 /**
  * Render an SMS template by replacing {variable} placeholders with values.
  * Returns the composed string, or null if the template is empty.
