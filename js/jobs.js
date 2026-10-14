@@ -476,6 +476,7 @@ const Jobs = {
           <p>No jobs scheduled</p>
         </div>
       `;
+      if (typeof HolidayCrew !== 'undefined') HolidayCrew.renderPool(container);
       return;
     }
 
@@ -503,6 +504,8 @@ const Jobs = {
     if (typeof DriveInfo !== 'undefined') {
       DriveInfo.apply(container, this._jobs, this._upcomingJobs).catch(() => {});
     }
+    // Holiday install leads: jobs they can pick up for the rest of today.
+    if (typeof HolidayCrew !== 'undefined') HolidayCrew.renderPool(container);
   },
 
   /**
@@ -928,6 +931,7 @@ const Jobs = {
       </div>`}
 
       ${typeof InstallMap !== 'undefined' ? InstallMap.buttonHtml(job) : ''}
+      ${typeof HolidayCrew !== 'undefined' && !isComplete ? HolidayCrew.buttonsHtml(job) : ''}
 
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
@@ -957,6 +961,7 @@ const Jobs = {
       App.showJobList();
     });
     if (typeof InstallMap !== 'undefined') InstallMap.bind(job);
+    if (typeof HolidayCrew !== 'undefined') HolidayCrew.bind(job);
 
     // Bind Close Job / Edit Closed Job buttons (visible when job is complete)
     const closeJobBtn = document.getElementById('closeJobBtn');
