@@ -167,7 +167,7 @@ const HolidayCrew = {
       return;
     }
     if (!data.items.length) {
-      App.showToast('No items set up for adding on site (Odoo: product "Crew can add")', 'error');
+      App.showToast('No items set up for adding on site (Odoo: product "Crew Can Add on Site")', 'error');
       return;
     }
     const money = (n) => '$' + Number(n).toFixed(2);
