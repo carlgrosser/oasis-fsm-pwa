@@ -404,6 +404,7 @@ const Jobs = {
           const options = await OdooAPI.getJobOptions(job.id);
           await DB.cacheJobOptions(job.id, options);
         } catch { /* skip this job's options */ }
+        if (typeof InstallMap !== 'undefined') await InstallMap.prewarm(job);
         cached++;
       }
       if (cached > 0) {
@@ -926,6 +927,8 @@ const Jobs = {
         <button class="btn btn-sm" id="requestCancelBtn" style="flex:1;">Can't Do This Job</button>`}
       </div>`}
 
+      ${typeof InstallMap !== 'undefined' ? InstallMap.buttonHtml(job) : ''}
+
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
@@ -953,6 +956,7 @@ const Jobs = {
     document.getElementById('backToList').addEventListener('click', () => {
       App.showJobList();
     });
+    if (typeof InstallMap !== 'undefined') InstallMap.bind(job);
 
     // Bind Close Job / Edit Closed Job buttons (visible when job is complete)
     const closeJobBtn = document.getElementById('closeJobBtn');
