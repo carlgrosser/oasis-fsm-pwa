@@ -2121,6 +2121,12 @@ textarea.form-input {
   width: 60%;
 }
 
+.modal-themes .theme-grid-modes { grid-template-columns: 1fr; }
+.theme-section { font-weight: 700; margin: var(--spacing-sm) 0 2px; }
+.theme-swatch-row { display: flex; gap: 6px; width: 100%; }
+.theme-swatch-row .theme-swatch { flex: 1; }
+.theme-note { margin: 0 0 var(--spacing-sm); font-size: var(--font-size-sm, 14px); color: var(--text-secondary); }
+
 .theme-option-icon {
   font-size: 16px;
   line-height: 1;

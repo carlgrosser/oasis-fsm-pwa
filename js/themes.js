@@ -1,8 +1,19 @@
 /**
- * Theme engine — applies CSS custom property overrides and persists selection.
+ * Theme engine — applies CSS custom property overrides.
+ *
+ * - Home screen (job list, timesheet, other screens): the theme the worker picks, any of them.
+ * - A job: its company's colors (Holiday Lighting: Holiday; tile cleaning: Pool), in the worker's
+ *   Light, Dark or Match my phone. Opening a job shows which business it is.
  */
 const Themes = {
-  STORAGE_KEY: 'fsm_theme',
+  STORAGE_KEY: 'fsm_theme',          // the home screen's theme
+  MODE_KEY: 'fsm_theme_mode',        // jobs: 'light' | 'dark' | 'auto'
+
+  // Each company's light and dark job theme.
+  PAIRS: {
+    pool: { light: 'pool', dark: 'ocean' },
+    holiday: { light: 'holiday_light', dark: 'holiday' },
+  },
 
   // Theme definitions — each overrides variables from variables.css
   _themes: {
@@ -255,26 +266,116 @@ const Themes = {
         '--shadow-lg': '0 4px 16px rgba(91, 155, 213, 0.15)',
       },
     },
+
+    holiday_light: {
+      name: 'Holiday Light',
+      icon: '🎁',
+      colors: {
+        '--primary-color': '#b3261e',
+        '--secondary-color': '#1e7d45',
+        '--accent-color': '#d4a017',
+        '--background': '#fbf6ee',
+        '--card-background': '#ffffff',
+        '--text-primary': '#3b1d1a',
+        '--text-secondary': '#6d4a44',
+        '--text-muted': '#a08a84',
+        '--border-color': '#ecdccf',
+        '--error-color': '#c62828',
+        '--success-color': '#1e7d45',
+        '--warning-color': '#d4a017',
+        '--shadow-sm': '0 1px 3px rgba(179, 38, 30, 0.08)',
+        '--shadow-md': '0 2px 8px rgba(179, 38, 30, 0.12)',
+        '--shadow-lg': '0 4px 16px rgba(179, 38, 30, 0.15)',
+      },
+    },
   },
 
-  /**
-   * Initialize — apply saved theme on load.
-   */
+  _kind: 'none',
+
+  /** A theme with a dark background. */
+  isDarkTheme(themeId) {
+    const hex = ((this._themes[themeId] || {}).colors || {})['--background'] || '#ffffff';
+    const n = parseInt(hex.replace('#', '').slice(0, 6), 16);
+    const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    return lum < 110;
+  },
+
+  home() {
+    let id = null;
+    try { id = localStorage.getItem(this.STORAGE_KEY); } catch (e) { /* private mode */ }
+    return this._themes[id] ? id : 'default';
+  },
+
+  /** Jobs: light, dark or auto (the phone's setting). Saved choice, else like the home theme. */
+  mode() {
+    let mode = null;
+    try { mode = localStorage.getItem(this.MODE_KEY); } catch (e) { /* private mode */ }
+    if (mode === 'light' || mode === 'dark' || mode === 'auto') return mode;
+    let old = null;
+    try { old = localStorage.getItem(this.STORAGE_KEY); } catch (e) { /* private mode */ }
+    return old ? (this.isDarkTheme(old) ? 'dark' : 'light') : 'auto';
+  },
+
+  _isDark() {
+    const mode = this.mode();
+    if (mode === 'auto') return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    return mode === 'dark';
+  },
+
   init() {
-    const saved = localStorage.getItem(this.STORAGE_KEY) || 'default';
-    this.apply(saved, false);
+    this.refresh();
+    if (window.matchMedia) {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const onChange = () => { if (this.mode() === 'auto') this.refresh(); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+    }
+  },
+
+  /** Holiday Lighting jobs: holiday; other jobs: pool; no job (lists): none. */
+  kindOf(job) {
+    if (!job) return 'none';
+    const company = Array.isArray(job.company_id) ? job.company_id[0] : job.company_id;
+    return company === CONFIG.HOLIDAY_COMPANY_ID ? 'holiday' : 'pool';
+  },
+
+  /** Called when a job opens (job) or the list shows again (null). */
+  forJob(job) {
+    this._kind = this.kindOf(job);
+    this.refresh();
+  },
+
+  refresh() {
+    const pair = this.PAIRS[this._kind];
+    this.apply(pair ? (this._isDark() ? pair.dark : pair.light) : this.home());
+  },
+
+  setHome(themeId) {
+    if (!this._themes[themeId]) return;
+    try { localStorage.setItem(this.STORAGE_KEY, themeId); } catch (e) { /* private mode */ }
+    this.refresh();
+  },
+
+  setMode(mode) {
+    try { localStorage.setItem(this.MODE_KEY, mode); } catch (e) { /* private mode */ }
+    this.refresh();
   },
 
   /**
    * Apply a theme by ID.
    */
-  apply(themeId, save = true) {
+  apply(themeId) {
     const theme = this._themes[themeId];
     if (!theme) return;
 
     const root = document.documentElement;
 
-    // Apply color overrides
+    // Apply color overrides (clearing what the last theme set and this one doesn't, e.g. status colors)
+    const prev = this._themes[this._currentTheme];
+    if (prev) {
+      for (const prop of Object.keys(prev.colors)) {
+        if (!(prop in theme.colors)) root.style.removeProperty(prop);
+      }
+    }
     for (const [prop, value] of Object.entries(theme.colors)) {
       root.style.setProperty(prop, value);
     }
@@ -282,16 +383,13 @@ const Themes = {
     // Update derived variables that reference others
     root.style.setProperty('--bg-primary', theme.colors['--card-background']);
     root.style.setProperty('--bg-secondary', theme.colors['--background']);
+    root.style.colorScheme = this.isDarkTheme(themeId) ? 'dark' : 'light';
 
     // Update theme-color meta tag for browser chrome
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme.colors['--primary-color']);
 
     this._currentTheme = themeId;
-
-    if (save) {
-      localStorage.setItem(this.STORAGE_KEY, themeId);
-    }
   },
 
   /**
@@ -301,52 +399,62 @@ const Themes = {
     return this._currentTheme || 'default';
   },
 
+  _swatch(themeId) {
+    const t = this._themes[themeId].colors;
+    return `<div class="theme-swatch"><div class="theme-swatch-bg" style="background:${t['--background']};">
+        <div class="theme-swatch-card" style="background:${t['--card-background']}; border-color:${t['--primary-color']};">
+          <div class="theme-swatch-line" style="background:${t['--primary-color']};"></div>
+          <div class="theme-swatch-line short" style="background:${t['--text-primary']}; opacity:0.3;"></div>
+        </div></div></div>`;
+  },
+
   /**
-   * Show the theme picker modal.
+   * Show the picker: the home screen's theme, and Light / Dark / Match my phone for jobs.
    */
   showPicker() {
     // Close any open menus
     document.querySelectorAll('.menu-dropdown').forEach(d => d.style.display = 'none');
 
-    const currentId = this.current();
-
-    let swatchesHtml = '';
-    for (const [id, theme] of Object.entries(this._themes)) {
-      const isActive = id === currentId;
-      const bg = theme.colors['--background'];
-      const card = theme.colors['--card-background'];
-      const primary = theme.colors['--primary-color'];
-      const text = theme.colors['--text-primary'];
-
-      swatchesHtml += `
-        <button class="theme-option ${isActive ? 'active' : ''}" data-theme="${id}">
-          <div class="theme-swatch">
-            <div class="theme-swatch-bg" style="background:${bg};">
-              <div class="theme-swatch-card" style="background:${card}; border-color:${primary};">
-                <div class="theme-swatch-line" style="background:${primary};"></div>
-                <div class="theme-swatch-line short" style="background:${text}; opacity:0.3;"></div>
-              </div>
-            </div>
-          </div>
+    const home = this.home();
+    const mode = this.mode();
+    const modes = [
+      { mode: 'light', icon: '☀️', name: 'Light' },
+      { mode: 'dark', icon: '🌙', name: 'Dark' },
+      { mode: 'auto', icon: '📱', name: 'Match my phone' },
+    ];
+    const homeHtml = Object.entries(this._themes).map(([id, theme]) => `
+        <button class="theme-option ${id === home ? 'active' : ''}" data-home="${id}">
+          ${this._swatch(id)}
           <span class="theme-option-icon">${theme.icon}</span>
           <span class="theme-option-name">${theme.name}</span>
-          ${isActive ? '<span class="theme-option-check">&#10003;</span>' : ''}
-        </button>
-      `;
-    }
+          ${id === home ? '<span class="theme-option-check">&#10003;</span>' : ''}
+        </button>`).join('');
+    const modeHtml = modes.map(o => {
+      const side = o.mode === 'auto' ? (this._isDarkPhone() ? 'dark' : 'light') : o.mode;
+      return `<button class="theme-option ${o.mode === mode ? 'active' : ''}" data-mode="${o.mode}">
+          <div class="theme-swatch-row">${['pool', 'holiday'].map(k => this._swatch(this.PAIRS[k][side])).join('')}</div>
+          <span class="theme-option-icon">${o.icon}</span>
+          <span class="theme-option-name">${o.name}</span>
+          ${o.mode === mode ? '<span class="theme-option-check">&#10003;</span>' : ''}
+        </button>`;
+    }).join('');
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal modal-themes">
         <div class="modal-header">
-          <h3>Choose Theme</h3>
+          <h3>Themes</h3>
           <button class="modal-close" id="themeModalClose">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="theme-grid">
-            ${swatchesHtml}
-          </div>
+          <div class="theme-section">Jobs</div>
+          <p class="theme-note">Each job shows its company's colors: Pool for tile cleaning, Holiday for Holiday
+            Lighting. Pick light or dark.</p>
+          <div class="theme-grid theme-grid-modes">${modeHtml}</div>
+          <div class="theme-section">Home screen</div>
+          <p class="theme-note">The job list, timesheet and other screens.</p>
+          <div class="theme-grid">${homeHtml}</div>
         </div>
       </div>
     `;
@@ -361,16 +469,23 @@ const Themes = {
       });
     });
 
-    // Bind theme selection
-    overlay.querySelectorAll('.theme-option').forEach(btn => {
+    overlay.querySelectorAll('[data-mode]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const themeId = btn.dataset.theme;
-        this.apply(themeId);
+        this.setMode(btn.dataset.mode);
         close();
-        if (typeof App !== 'undefined') {
-          App.showToast(`Theme: ${this._themes[themeId].name}`, 'success');
-        }
+        if (typeof App !== 'undefined') App.showToast(`Jobs: ${modes.find(o => o.mode === btn.dataset.mode).name}`, 'success');
       });
     });
+    overlay.querySelectorAll('[data-home]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.setHome(btn.dataset.home);
+        close();
+        if (typeof App !== 'undefined') App.showToast(`Home screen: ${this._themes[btn.dataset.home].name}`, 'success');
+      });
+    });
+  },
+
+  _isDarkPhone() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   },
 };

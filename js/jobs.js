@@ -2279,6 +2279,8 @@ const Jobs = {
    */
   _updateFooter(job) {
     this._currentJob = job;
+    // The job's company colors (Holiday / Pool), in the worker's light or dark.
+    if (typeof Themes !== 'undefined') Themes.forJob(job);
     const hasPhone = job.phone && job.phone.trim();
     const hasMobile = job.mobile && job.mobile.trim();
     const hasAnyContact = hasPhone || hasMobile;
@@ -2347,6 +2349,7 @@ const Jobs = {
    */
   _resetFooter() {
     this._currentJob = null;
+    if (typeof Themes !== 'undefined') Themes.forJob(null);
     const contactBtn = document.getElementById('footerContactBtn');
     if (contactBtn) contactBtn.classList.add('disabled');
     this._hideContactPicker();
