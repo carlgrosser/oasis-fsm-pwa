@@ -60,6 +60,7 @@ const CONFIG = {
 
   // MULTI-COMPANY: list all company IDs this user should see orders from
   ALLOWED_COMPANY_IDS: [1, 2],  // 1=Oasis Pool Tile Cleaning, 2=Oasis Holiday Lighting
+  HOLIDAY_COMPANY_ID: 2,
 
   // FSM ORDER FIELDS TO FETCH
   // Base fields that exist in standard OCA fieldservice
@@ -92,6 +93,7 @@ const CONFIG = {
   // Source: helpdesk_mgmt_fieldservice (ticket_id) + fieldservice_helpdesk_link.
   FSM_ORDER_OPTIONAL_FIELDS: [
     'ticket_id', 'is_callback',
+    'ohl_job_kind', 'ohl_design_id',  // Holiday Lighting: install map (ohl_design)
   ],
 
   // Set to true after installing the custom Odoo modules

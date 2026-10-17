@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v94';
+const CACHE_NAME = 'fsm-pwa-v95';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -29,6 +29,8 @@ const STATIC_ASSETS = [
   'js/options.js',
   'js/documents.js',
   'js/driveinfo.js',
+  'js/installmap.js',
+  'js/holidaycrew.js',
   'js/app.js',
   'manifest.json',
   'favicon.ico',
