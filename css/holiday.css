@@ -61,3 +61,13 @@
 .review-qr { width: min(80vw, 360px); height: auto; image-rendering: pixelated; border: 8px solid #fff;
   box-shadow: 0 0 0 1px #ddd; }
 .review-ask { font-size: 17px; margin: 14px 0 20px; line-height: 1.35; }
+.review-star { display: inline-flex; background: none; border: 0; padding: 4px; }
+.review-star svg path { fill: #e0e0e0; stroke: #bdbdbd; stroke-width: 1; }
+.review-star.on svg path { fill: #fbbc04; stroke: #e2a400; }
+button.review-star { cursor: pointer; touch-action: manipulation; }
+.review-pick { margin: 18px 0 4px; display: flex; justify-content: center; gap: 2px; }
+.review-label { font-size: 18px; font-weight: 600; min-height: 26px; margin-bottom: 16px; }
+.review-hint { font-size: 15px; color: #555; margin: 8px 0 12px; line-height: 1.35; }
+.review-safe { font-size: 13px; color: #2e7d32; margin-top: 16px; line-height: 1.35; }
+.review-note { width: 100%; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 14px; }
+.review-rate .review-card { text-align: center; }
