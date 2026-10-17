@@ -2456,9 +2456,9 @@ const Jobs = {
         <span class="sms-picker-option-icon">💳</span>
         <span>Payment Link</span>
       </button>
-      <button class="sms-picker-option muted" id="smsOptOther">
+      <button class="sms-picker-option" id="smsOptOther">
         <span class="sms-picker-option-icon">💬</span>
-        <span>Custom (open SMS app)</span>
+        <span>Message &amp; replies</span>
       </button>
     `;
 
@@ -2551,10 +2551,10 @@ const Jobs = {
       }
     });
 
-    // Other — open device SMS app
+    // Message — texts with the customer from the business number (texts.js)
     picker.querySelector('#smsOptOther').addEventListener('click', () => {
       this._hideSmsPicker();
-      window.location.href = 'sms:' + encodeURIComponent(phone);
+      Texts.open(job, phone);
     });
 
     // Close when clicking outside

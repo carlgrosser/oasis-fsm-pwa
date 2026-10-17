@@ -808,6 +808,23 @@ const OdooAPI = {
       [orderId, phoneNumber, etaMinutes || false], kwargs);
   },
 
+  // ========== TEXTS WITH THE CUSTOMER ==========
+
+  /** The texts on a job, the reply window, and a gate code the customer sent. */
+  async getJobTexts(orderId) {
+    return this.callKw('fsm.order', 'worker_job_texts', [orderId], {});
+  },
+
+  /** Text the customer from the business number ("From <name>: ..."). */
+  async sendJobText(orderId, phoneNumber, message) {
+    return this.callKw('fsm.order', 'worker_send_text', [orderId, phoneNumber || false, message], {});
+  },
+
+  /** Save a gate code the customer texted on the job's location. */
+  async saveGateCode(orderId, gateCode) {
+    return this.callKw('fsm.order', 'worker_save_gate_code', [orderId, gateCode], {});
+  },
+
   // ========== BILLING ==========
 
   /**

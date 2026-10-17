@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v91';
+const CACHE_NAME = 'fsm-pwa-v94';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
   'css/variables.css',
   'css/mobile.css',
   'css/components.css',
+  'css/texts.css',
   'js/config.js',
   'js/odoo-api.js',
   'js/db.js',
@@ -13,6 +14,7 @@ const STATIC_ASSETS = [
   'js/gps.js',
   'js/photos.js',
   'js/jobs.js',
+  'js/texts.js',
   'js/journal.js',
   'js/materials.js',
   'js/billing.js',
