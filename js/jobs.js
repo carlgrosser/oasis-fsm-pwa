@@ -504,8 +504,11 @@ const Jobs = {
     if (typeof DriveInfo !== 'undefined') {
       DriveInfo.apply(container, this._jobs, this._upcomingJobs).catch(() => {});
     }
-    // Holiday install leads: jobs they can pick up for the rest of today.
-    if (typeof HolidayCrew !== 'undefined') HolidayCrew.renderPool(container);
+    // Holiday installs: the day's load list; install leads: jobs they can pick up for the rest of today.
+    if (typeof HolidayCrew !== 'undefined') {
+      HolidayCrew.renderLoadButton(container, this._jobs, this._upcomingJobs);
+      HolidayCrew.renderPool(container);
+    }
   },
 
   /**

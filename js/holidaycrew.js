@@ -4,8 +4,9 @@
  *    office's rules (most urgent, then closest), and take one onto their day;
  *  - Report a Change: something done differently from the install map (note + photos), so the
  *    office updates the design;
- *  - Add Items: simple priced items added to the sold order on site, signed or approved by phone.
- * All need signal (they change the job in Odoo straight away).
+ *  - Add Items: simple priced items added to the sold order on site, signed or approved by phone;
+ *  - Load List: everything to load for the day's Holiday installs, added up (kept for no signal).
+ * Except the Load List, all need signal (they change the job in Odoo straight away).
  */
 const HolidayCrew = {
   _pool: null,
@@ -97,6 +98,66 @@ const HolidayCrew = {
       App.showToast('Could not take it: ' + (err.message || err), 'error');
       btn.disabled = false;
     }
+  },
+
+  // ---------------------------------------------------------------- Load List
+  _isoDay(d) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  },
+
+  /** A Load List button on the Today list when today's or the next day's jobs have Holiday installs. */
+  renderLoadButton(container, jobs, upcoming) {
+    if (typeof InstallMap === 'undefined' || typeof Auth === 'undefined' || !Auth.getPersonId()) return;
+    const isInstall = (j) => InstallMap.isHolidayJob(j) && j.ohl_job_kind === 'install';
+    const days = [];
+    if ((jobs || []).some(isInstall)) days.push({ iso: this._isoDay(new Date()), label: 'Today' });
+    const next = (upcoming || []).find(isInstall);
+    if (next && next.scheduled_date_start) {
+      const d = new Date(next.scheduled_date_start.replace(' ', 'T') + 'Z');
+      days.push({ iso: this._isoDay(d), label: d.toLocaleDateString([], { weekday: 'long' }) });
+    }
+    if (!days.length) return;
+    const row = document.createElement('div');
+    row.className = 'ohl-load-btn';
+    row.style.cssText = 'display:flex;gap:8px;';
+    row.innerHTML = days.map(d => `<button class="btn btn-sm" style="flex:1;" data-load="${d.iso}">&#128666; Load list: ${this._esc(d.label)}</button>`).join('');
+    row.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', () => this.openLoadList(b.dataset.load, b.textContent.split(': ')[1])));
+    container.insertBefore(row, container.firstChild);
+  },
+
+  async openLoadList(iso, label) {
+    const key = 'ohl_load_' + iso;
+    let data = null;
+    let offline = false;
+    if (navigator.onLine) {
+      try {
+        data = await OdooAPI.callKw('fsm.order', 'worker_get_load_list', [Auth.getPersonId(), iso], {});
+        await DB.setState(key, Object.assign({ saved_at: Date.now() }, data)).catch(() => {});
+      } catch (err) {
+        console.warn('Load list: live fetch failed', err);
+      }
+    }
+    if (!data) {
+      data = await DB.getState(key).catch(() => null);
+      offline = true;
+    }
+    if (!data) { App.showToast('Not on this iPad yet: open it once with signal', 'error'); return; }
+    const groups = data.groups.map(g => `<div class="ohl-load-group">${this._esc(g.title)}</div>
+        ${g.lines.map(l => `<div class="ohl-load-line"><b>${l.qty}</b><div style="flex:1;">${this._esc(l.label)} ${this._esc(l.unit || '')}
+          ${l.jobs.length > 1 ? `<div class="ohl-load-jobs">${this._esc(l.jobs.join(' · '))}</div>` : ''}</div></div>`).join('')}`).join('');
+    const from = { design: 'design', last_season: 'last season\'s count', saved: 'count' };
+    const jobs = data.jobs.map(j => `<li>${this._esc(j.customer)} <span class="ohl-load-jobs">(${this._esc(from[j.source] || j.source)})</span></li>`).join('');
+    const missing = data.missing.length
+      ? `<div style="margin-top:10px;color:#c62828;font-size:14px;"><b>No list for:</b> ${this._esc(data.missing.map(m => m.customer).join(', '))}. Check the rehang sheet (sold items and photos).</div>`
+      : '';
+    this._modal(`Load list: ${label}`, `
+      ${offline ? '<div class="ohl-load-jobs">Offline copy</div>' : ''}
+      ${groups || '<p>Nothing to add up for these jobs.</p>'}
+      ${missing}
+      ${jobs ? `<div style="margin-top:12px;font-size:13px;"><b>From</b><ul style="margin:4px 0 0 18px;padding:0;">${jobs}</ul></div>` : ''}
+      <p class="ohl-load-jobs" style="margin-top:10px;">Each job's design, else last season's count at the house. Grab spares as usual.</p>`,
+      '<button class="btn btn-primary" data-close>Done</button>');
   },
 
   // ---------------------------------------------------------------- Job buttons

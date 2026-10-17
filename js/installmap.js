@@ -2,7 +2,8 @@
  * Holiday Lighting: the job's Install Map & Picking List on the iPad.
  *
  * The office approves a design (Ready for Install); Odoo sends the printed sheet as one
- * stand-alone page (worker_get_install_sheet). It is kept on the device (IndexedDB) so it
+ * stand-alone page (worker_get_install_sheet). A rehang with no design gets the sold order's
+ * picking list with the house's map photos and last season's count instead. It is kept on the device (IndexedDB) so it
  * opens with no signal, and fetched again only when the design changed (stamp).
  */
 const InstallMap = {
@@ -15,17 +16,23 @@ const InstallMap = {
 
   buttonHtml(job) {
     if (!this.isHolidayJob(job)) return '';
-    const ready = !!job.ohl_design_id;
-    return `<div class="install-map-row" style="padding:8px 12px 0;">
-      <button class="btn btn-primary btn-block" id="installMapBtn">
-        &#128506;&#65039; Install Map &amp; Picking List${ready ? '' : ' <small>(not approved yet)</small>'}
-      </button>
-    </div>`;
+    const label = job.ohl_design_id ? 'Install Map &amp; Picking List' : 'Rehang Sheet &amp; Photos';
+    const install = job.ohl_job_kind === 'install';
+    const used = install && typeof HolidayUsed !== 'undefined'
+      ? '<button class="btn" id="ohlUsedBtn">&#9989; Actual Used</button>' : '';
+    const draw = install && typeof HolidayMap !== 'undefined'
+      ? '<button class="btn" id="ohlDrawBtn">&#9999;&#65039; Draw Map</button>' : '';
+    return `<div class="install-map-row ohl-map-row">
+      <button class="btn btn-primary btn-block" id="installMapBtn">&#128506;&#65039; ${label}</button>
+    </div>
+    ${used || draw ? `<div class="ohl-map-row">${used}${draw}</div>` : ''}`;
   },
 
   bind(job) {
     const btn = document.getElementById('installMapBtn');
     if (btn) btn.addEventListener('click', () => this.open(job));
+    document.getElementById('ohlUsedBtn')?.addEventListener('click', () => HolidayUsed.open(job));
+    document.getElementById('ohlDrawBtn')?.addEventListener('click', () => HolidayMap.open(job));
   },
 
   _key(jobId) { return 'ism_' + jobId; },
@@ -49,7 +56,7 @@ const InstallMap = {
           return sheet;
         }
         if (res && !res.ok) {
-          // No approved design (any more): don't keep showing an old one.
+          // No sheet (any more): don't keep showing an old one.
           await DB.setState(this._key(job.id), null).catch(() => {});
           return { reason: res.reason };
         }
@@ -63,8 +70,10 @@ const InstallMap = {
 
   /** Fetch and keep the sheet for a job ahead of time (called with the day's jobs). */
   async prewarm(job) {
-    if (!this.isHolidayJob(job) || !job.ohl_design_id || !navigator.onLine) return;
+    if (!this.isHolidayJob(job) || !navigator.onLine) return;
     await this.load(job).catch(() => {});
+    if (typeof HolidayUsed !== 'undefined') await HolidayUsed.prewarm(job);
+    if (typeof HolidayMap !== 'undefined') await HolidayMap.prewarm(job);
   },
 
   async open(job) {
@@ -77,7 +86,7 @@ const InstallMap = {
         <button class="btn btn-sm" data-act="close">&larr; Back</button>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-            Install Map &amp; Picking List</div>
+            ${job.ohl_design_id ? 'Install Map &amp; Picking List' : 'Rehang Sheet &amp; Photos'}</div>
           <div class="ism-sub" style="font-size:12px;color:#666;">Loading&hellip;</div>
         </div>
         <button class="btn btn-sm" data-act="out" aria-label="Zoom out">&minus;</button>

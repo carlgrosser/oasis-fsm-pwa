@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v95';
+const CACHE_NAME = 'fsm-pwa-v96';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
   'css/mobile.css',
   'css/components.css',
   'css/texts.css',
+  'css/holiday.css',
   'js/config.js',
   'js/odoo-api.js',
   'js/db.js',
@@ -31,6 +32,8 @@ const STATIC_ASSETS = [
   'js/driveinfo.js',
   'js/installmap.js',
   'js/holidaycrew.js',
+  'js/holidayused.js',
+  'js/holidaymap.js',
   'js/app.js',
   'manifest.json',
   'favicon.ico',
