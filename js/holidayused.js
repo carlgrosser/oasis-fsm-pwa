@@ -69,7 +69,7 @@ const HolidayUsed = {
         : '';
       return `Saved${data.saved_by ? ' by ' + data.saved_by : ''}${when ? ', ' + when : ''}. Change anything and save again.`;
     }
-    if (data.source === 'pending') return 'Saved on this iPad: it goes to the office when there\'s signal.';
+    if (data.source === 'pending') return 'Saved on this phone: it goes to the office when there\'s signal.';
     if (data.source === 'design') return 'From the plan. Change only what\'s different, then Save.';
     if (data.source === 'last_season') return 'From last season\'s count here. Change what\'s different, then Save.';
     return 'Nothing to start from: tap Add for each thing you used.';
@@ -99,7 +99,7 @@ const HolidayUsed = {
     const data = await this.load(job.id);
     if (!data) {
       $('.ohu-sub').textContent = '';
-      $('.ohu-body').innerHTML = '<div class="empty-state" style="padding:24px;">Not on this iPad yet: open it once with signal.</div>';
+      $('.ohu-body').innerHTML = '<div class="empty-state" style="padding:24px;">Not on this phone yet: open it once with signal.</div>';
       $('[data-act="add"]').disabled = true;
       overlay.addEventListener('click', (e) => { if (e.target.closest('[data-act="close"]')) overlay.remove(); });
       return;
@@ -269,7 +269,7 @@ const HolidayUsed = {
     const pending = await this._pending();
     pending[jobId] = { rows, at: Date.now() };
     await DB.setState(this.PENDING_KEY, pending);
-    App.showToast('Saved on this iPad: it goes to the office when there\'s signal', 'success');
+    App.showToast('Saved on this phone: it goes to the office when there\'s signal', 'success');
   },
 };
 

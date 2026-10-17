@@ -142,7 +142,7 @@ const HolidayCrew = {
       data = await DB.getState(key).catch(() => null);
       offline = true;
     }
-    if (!data) { App.showToast('Not on this iPad yet: open it once with signal', 'error'); return; }
+    if (!data) { App.showToast('Not on this phone yet: open it once with signal', 'error'); return; }
     const groups = data.groups.map(g => `<div class="ohl-load-group">${this._esc(g.title)}</div>
         ${g.lines.map(l => `<div class="ohl-load-line"><b>${l.qty}</b><div style="flex:1;">${this._esc(l.label)} ${this._esc(l.unit || '')}
           ${l.jobs.length > 1 ? `<div class="ohl-load-jobs">${this._esc(l.jobs.join(' · '))}</div>` : ''}</div></div>`).join('')}`).join('');
