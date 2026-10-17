@@ -523,6 +523,7 @@ const WrapUp = {
           if (editMode) {
             App.showToast('Changes saved.', 'success');
           } else {
+            await this._askReview(job);
             this._showClockOffPrompt(job, workerCount, result.clocked_out_count, gps, gpsAccuracy);
           }
         }
@@ -550,7 +551,20 @@ const WrapUp = {
         if (detailContainer && typeof Jobs !== 'undefined') Jobs.renderJobDetail(job.id, detailContainer);
       }
       App.showToast(editMode ? 'Changes saved — will sync when online.' : 'Job closed — will sync when online.', 'info');
-      if (!editMode) this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
+      if (!editMode) {
+        await this._askReview(job);
+        this._showClockOffPrompt(job, workerCount, 0, gps, gpsAccuracy);
+      }
+    }
+  },
+
+  /** After Close Job: the Google review step (js/reviews.js), never blocking the clock-off. */
+  async _askReview(job) {
+    if (typeof Reviews === 'undefined') return;
+    try {
+      await Reviews.endOfJob(job);
+    } catch (err) {
+      console.warn('Review step skipped', err);
     }
   },
 

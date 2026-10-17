@@ -13,6 +13,7 @@ const App = {
    * placeholders; their modules update them on init.
    */
   _menuItems: [
+    { id: 'reviewBtn', label: '⭐ Google Review QR' },
     { id: 'themeBtn', label: '🎨 Themes' },
     { id: 'noteBtn', label: '📋 Note to Office' },
     { id: 'timeOffBtn', label: '🗓️ My Time Off' },

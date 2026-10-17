@@ -51,3 +51,13 @@
 .ohm-sec { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #666); margin: 12px 0 6px; }
 .ohm-start { min-width: 110px; text-align: center; font-size: 15px; }
 .ohm-overlay .ohu-add { z-index: 2; }
+
+/* Google review QR (js/reviews.js) */
+.review-overlay { position: fixed; inset: 0; z-index: 9500; background: #fff; color: #111; display: flex;
+  align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+.review-card { width: 100%; max-width: 420px; text-align: center; }
+.review-company { font-size: 22px; font-weight: 700; }
+.review-stars { font-size: 26px; margin: 6px 0 10px; }
+.review-qr { width: min(80vw, 360px); height: auto; image-rendering: pixelated; border: 8px solid #fff;
+  box-shadow: 0 0 0 1px #ddd; }
+.review-ask { font-size: 17px; margin: 14px 0 20px; line-height: 1.35; }
