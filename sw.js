@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v96';
+const CACHE_NAME = 'fsm-pwa-v97';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -177,6 +177,9 @@ async function _syncPhotos() {
 // Fetch — cache-first for static assets, network-first for API calls
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Other sites (Google Maps tiles and scripts): never cached here
+  if (url.origin !== self.location.origin) return;
 
   // Don't cache API calls — let them go through normally
   if (event.request.method === 'POST' ||

@@ -16,23 +16,21 @@ const InstallMap = {
 
   buttonHtml(job) {
     if (!this.isHolidayJob(job)) return '';
-    const label = job.ohl_design_id ? 'Install Map &amp; Picking List' : 'Rehang Sheet &amp; Photos';
-    const install = job.ohl_job_kind === 'install';
-    const used = install && typeof HolidayUsed !== 'undefined'
-      ? '<button class="btn" id="ohlUsedBtn">&#9989; Actual Used</button>' : '';
-    const draw = install && typeof HolidayMap !== 'undefined'
-      ? '<button class="btn" id="ohlDrawBtn">&#9999;&#65039; Draw Map</button>' : '';
+    const sheet = job.ohl_design_id ? 'Picking List' : 'Rehang Sheet';
+    const map = typeof HolidayMap !== 'undefined'
+      ? '<button class="btn btn-primary" id="ohlMapBtn">&#128506;&#65039; Map</button>' : '';
+    const used = job.ohl_job_kind === 'install' && typeof HolidayUsed !== 'undefined'
+      ? '<div class="ohl-map-row"><button class="btn" id="ohlUsedBtn">&#9989; Actual Used</button></div>' : '';
     return `<div class="install-map-row ohl-map-row">
-      <button class="btn btn-primary btn-block" id="installMapBtn">&#128506;&#65039; ${label}</button>
-    </div>
-    ${used || draw ? `<div class="ohl-map-row">${used}${draw}</div>` : ''}`;
+      ${map}
+      <button class="btn${map ? '' : ' btn-primary'}" id="installMapBtn">&#128196; ${sheet}</button>
+    </div>${used}`;
   },
 
   bind(job) {
-    const btn = document.getElementById('installMapBtn');
-    if (btn) btn.addEventListener('click', () => this.open(job));
+    document.getElementById('installMapBtn')?.addEventListener('click', () => this.open(job));
+    document.getElementById('ohlMapBtn')?.addEventListener('click', () => HolidayMap.open(job));
     document.getElementById('ohlUsedBtn')?.addEventListener('click', () => HolidayUsed.open(job));
-    document.getElementById('ohlDrawBtn')?.addEventListener('click', () => HolidayMap.open(job));
   },
 
   _key(jobId) { return 'ism_' + jobId; },
@@ -73,7 +71,6 @@ const InstallMap = {
     if (!this.isHolidayJob(job) || !navigator.onLine) return;
     await this.load(job).catch(() => {});
     if (typeof HolidayUsed !== 'undefined') await HolidayUsed.prewarm(job);
-    if (typeof HolidayMap !== 'undefined') await HolidayMap.prewarm(job);
   },
 
   async open(job) {

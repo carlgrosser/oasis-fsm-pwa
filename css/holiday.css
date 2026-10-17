@@ -38,19 +38,16 @@
 .ohl-load-line b { min-width: 64px; text-align: right; }
 .ohl-load-jobs { font-size: 11px; color: var(--text-muted, #777); }
 
-/* Draw Map (js/holidaymap.js) */
-.ohm-pick { display: flex; flex-direction: column; gap: 12px; padding: 24px 8px; }
-.ohm-pick-btn { min-height: 56px; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+/* Map (js/holidaymap.js): the design on the satellite map */
+.ohm-map { flex: 1; position: relative; background: #222; }
+.ohm-bar { padding: 8px 10px max(8px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-color, #ddd);
+  background: var(--bg-primary, #fff); }
+.ohm-btns { display: flex; gap: 8px; }
+.ohm-btns .btn { flex: 1; min-height: 46px; font-size: 16px; }
+.ohm-hint { font-size: 12px; color: var(--text-muted, #777); margin: 4px 0; }
 .ohm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; font-size: 14px; }
 .ohm-row .ohu-chip { margin: 0; }
 .ohu-chip.on { border-color: var(--primary, #1976d2); background: #e3f2fd; font-weight: 600; }
-.ohm-canvas-wrap { margin: 6px -10px; background: #222; }
-.ohm-canvas { display: block; width: 100%; height: auto; touch-action: manipulation; }
-.ohm-tools { display: flex; gap: 8px; margin-top: 8px; }
-.ohm-tools .btn { flex: 1; min-height: 44px; }
-.ohm-hint { font-size: 12px; color: var(--text-muted, #777); margin: 6px 0; }
-.ohm-line { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-color, #eee); font-size: 14px; }
-.ohm-num { width: 26px; height: 26px; border-radius: 13px; color: #fff; font-weight: 700; display: flex;
-  align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
 .ohm-sec { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #666); margin: 12px 0 6px; }
-.ohm-feet { width: 90px; }
+.ohm-start { min-width: 110px; text-align: center; font-size: 15px; }
+.ohm-overlay .ohu-add { z-index: 2; }
