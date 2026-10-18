@@ -1,17 +1,19 @@
 /**
  * Holiday Lighting: the job's design on the Google satellite map (phones first). Kept simple: the
- * crew marks where the lights go and their tag colors; the office makes it a full design.
+ * crew marks where things go; the office makes it a full design.
  *
- *  1. Draw runs: tap the corners of a run, Next run / Done. Each run is a C9 roofline.
- *  2. Tag colors: pick a color, tap the runs that get it.
- *  3. Power: tap where each outlet is (tap one again to remove it).
- *  Only if it isn't roofline: tap a run → Garland / Fence / Ground / Other (or Delete).
+ *  ✏️ Runs:  tap the corners of a run (or ✍️ Freehand: drag a finger along curves), Next / Done.
+ *           Each run is a C9 roofline; tap a run later to say Garland / Fence / Ground / Other.
+ *  🔌 Cords: extension cords and jumpers, drawn the same way.
+ *  🌳 Items: trees, bushes, other (wreaths…): tap where they are.
+ *  🏷️ Tags:  pick a color, tap the runs and cords that get it.
+ *  ⚡ Power: tap where each outlet is.
  *
- * A job with the office's design shows its runs; the crew tags them and can add runs (flagged for
- * the office). Rehangs (no design): the runs drawn here become the house's design.
- * Needs signal (Google's map); the Picking List sheet is the no-signal copy.
- * Odoo: worker_get_design_map, worker_map_save_run, worker_map_delete_run, worker_map_add_power,
- * worker_map_delete_power.
+ * A job with the office's design shows it; things added on site are flagged for the office.
+ * Rehangs (no design): this makes the house's design. Needs signal (Google's map); the Picking List
+ * sheet is the no-signal copy. Odoo: worker_get_design_map, worker_map_save_run / _delete_run,
+ * worker_map_save_cord / _delete_cord, worker_map_add_feature / _delete_feature,
+ * worker_map_add_power / _delete_power.
  */
 const HolidayMap = {
   COLORS: ['#f5c542', '#4fc3f7', '#81c784', '#ff8a65', '#ba68c8', '#4db6ac', '#e57373', '#7986cb'],
@@ -83,11 +85,31 @@ const HolidayMap = {
     { key: 'roofline', label: 'Roofline' }, { key: 'garland', label: 'Garland' },
     { key: 'fence', label: 'Fence' }, { key: 'ground', label: 'Ground' }, { key: 'other', label: 'Other' },
   ],
+  ITEMS: [
+    { key: 'tree', label: '🌳 Tree', color: '#2e7d32' }, { key: 'bush', label: '🌿 Bush', color: '#9ccc65' },
+    { key: 'other', label: '⭐ Other', color: '#ab47bc' },
+  ],
+  CORD_COLOR: '#ff9800',
+
+  /** Ramer–Douglas–Peucker: a finger stroke (pixels) down to the points that matter. */
+  _simplify(pts, tol) {
+    if (pts.length < 3) return pts;
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    let worst = 0, at = 0;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = Math.abs(dy * pts[i].x - dx * pts[i].y + b.x * a.y - b.y * a.x) / len;
+      if (d > worst) { worst = d; at = i; }
+    }
+    if (worst <= tol) return [a, b];
+    return this._simplify(pts.slice(0, at + 1), tol).slice(0, -1).concat(this._simplify(pts.slice(at), tol));
+  },
 
   async _run(job, overlay, data) {
     const $ = (s) => overlay.querySelector(s);
     const g = window.google.maps;
-    const st = { data, mode: 'view', pts: [], temp: [], shapes: [], tag: null, busy: false };
+    const st = { data, mode: 'view', what: 'run', free: false, pts: [], temp: [], shapes: [], tag: null,
+                 item: 'tree', busy: false };
     let center = data.center;
     if (!center || !(center.lat || center.lng)) {
       const pos = await GPS.getCurrentPosition().catch(() => null);
@@ -98,45 +120,73 @@ const HolidayMap = {
       gestureHandling: 'greedy', clickableIcons: false, disableDefaultUI: true, zoomControl: true,
       keyboardShortcuts: false,
     });
-    const runs = () => st.data.runs || (st.data.runs = []);
+    // Pixels ↔ map, for freehand strokes.
+    const proj = new g.OverlayView();
+    proj.onAdd = () => {}; proj.draw = () => {}; proj.onRemove = () => {};
+    proj.setMap(map);
+
+    const list = (k) => st.data[k] || (st.data[k] = []);
     const editable = () => (st.data.design ? st.data.design.editable : st.data.can_start);
     const ownRun = (run) => !st.data.design || st.data.design.field || run.added_on_site;
     const UNTAGGED = '#ffffff';
     const sub = () => {
       const d = st.data.design;
-      const n = runs().length;
-      const tagged = runs().filter(r => r.tag_id).length;
-      if (!d) return st.data.can_start ? 'No design yet: Draw runs, then Tag colors' : 'No design, and no house record: ask the office';
-      return `${d.name} · ${n} run${n === 1 ? '' : 's'} · ${tagged} tagged${d.editable ? '' : ' · locked'}`;
+      const n = list('runs').length;
+      if (!d) return st.data.can_start ? 'No design yet: draw the runs, then tag them' : 'No design, and no house record: ask the office';
+      const tagged = list('runs').filter(r => r.tag_id).length;
+      return `${d.name} · ${n} run${n === 1 ? '' : 's'} · ${tagged} tagged · ${list('cords').length} cord${list('cords').length === 1 ? '' : 's'}${d.editable ? '' : ' · locked'}`;
     };
+    const live = (m) => st.mode === m;
+    const tappable = () => st.mode !== 'draw' && st.mode !== 'power' && st.mode !== 'items';
 
+    const pathOf = (geometry) => (geometry || []).map(([lng, lat]) => ({ lat, lng }));
     const draw = () => {
       st.shapes.forEach(s => s.setMap(null));
       st.shapes = [];
-      runs().forEach((run) => {
-        const path = (run.geometry || []).map(([lng, lat]) => ({ lat, lng }));
+      const hitLine = (path, onTap) => {
+        const hit = new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 28, strokeOpacity: 0.01,
+                                     clickable: tappable(), zIndex: 3 });
+        hit.addListener('click', onTap);
+        st.shapes.push(hit);
+      };
+      list('runs').forEach((run) => {
+        const path = pathOf(run.geometry);
         if (path.length < 2) return;
         const color = run.tag || UNTAGGED;
-        const kindDash = run.kind && run.kind !== 'roofline';
+        const dashed = run.kind && run.kind !== 'roofline';
         st.shapes.push(new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 11, strokeOpacity: 0.45, clickable: false, zIndex: 1 }));
         st.shapes.push(new g.Polyline({ map, path, strokeColor: color, strokeWeight: 6, strokeOpacity: 1, clickable: false, zIndex: 2,
-          icons: kindDash ? [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#000', scale: 3 }, offset: '0', repeat: '14px' }] : [] }));
-        // A wide, see-through line on top: easy to tap with a finger.
-        const hit = new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 28, strokeOpacity: 0.01,
-                                     clickable: st.mode !== 'draw', zIndex: 3 });
-        hit.addListener('click', () => onRun(run));
-        st.shapes.push(hit);
-        const num = new g.Marker({ map, position: path[0], clickable: st.mode !== 'draw', zIndex: 4,
+          icons: dashed ? [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#000', scale: 3 }, offset: '0', repeat: '14px' }] : [] }));
+        hitLine(path, () => onRun(run));
+        const num = new g.Marker({ map, position: path[0], clickable: tappable(), zIndex: 4,
           label: { text: String(run.run_no), color: '#000', fontWeight: '700', fontSize: '12px' },
           icon: { path: g.SymbolPath.CIRCLE, scale: 11, fillColor: color, fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } });
         num.addListener('click', () => onRun(run));
         st.shapes.push(num);
       });
-      (st.data.power || []).forEach(p => {
+      list('cords').forEach((cord) => {
+        const path = pathOf(cord.geometry);
+        if (path.length < 2) return;
+        const color = cord.tag || this.CORD_COLOR;
+        st.shapes.push(new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 6, strokeOpacity: 0.5, clickable: false, zIndex: 1 }));
+        st.shapes.push(new g.Polyline({ map, path, strokeOpacity: 0, clickable: false, zIndex: 2,
+          icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: color, strokeWeight: 4, scale: 3 }, offset: '0', repeat: '9px' }] }));
+        hitLine(path, () => onCord(cord));
+      });
+      list('features').forEach((f) => {
+        if (!(f.lat || f.lng)) return;
+        const kind = this.ITEMS.find(i => i.key === f.kind) || this.ITEMS[2];
+        const m = new g.Marker({ map, position: { lat: f.lat, lng: f.lng }, zIndex: 6, title: f.label,
+          clickable: st.mode === 'items' || st.mode === 'view',
+          label: { text: f.code || kind.label.slice(0, 2), color: '#fff', fontWeight: '700', fontSize: '11px' },
+          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 } });
+        m.addListener('click', () => removeFeature(f));
+        st.shapes.push(m);
+      });
+      list('power').forEach(p => {
         if (!(p.lat || p.lng)) return;
         const m = new g.Marker({ map, position: { lat: p.lat, lng: p.lng }, zIndex: 7, title: p.label,
-          clickable: st.mode === 'power',
-          label: { text: '⚡', fontSize: '16px' },
+          clickable: live('power'), label: { text: '⚡', fontSize: '16px' },
           icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: '#ffeb3b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } });
         m.addListener('click', () => removePower(p));
         st.shapes.push(m);
@@ -145,82 +195,122 @@ const HolidayMap = {
       bar();
     };
 
-    const removePower = async (p) => {
-      if (st.mode !== 'power' || st.busy || !window.confirm(`Remove outlet ${p.code || ''}?`)) return;
-      st.busy = true;
-      try {
-        await OdooAPI.callKw('fsm.order', 'worker_map_delete_power', [job.id, p.id], {});
-        st.data.power = (st.data.power || []).filter(x => x.id !== p.id);
-        draw();
-      } catch (err) {
-        App.showToast('Not removed: ' + (err.message || err), 'error');
+    const bar = () => {
+      const b = $('.ohm-bar');
+      const done = '<button class="btn btn-primary" data-bar="done">Done</button>';
+      if (live('draw')) {
+        const n = st.pts.length;
+        const what = st.what === 'cord' ? 'cord' : 'run';
+        b.innerHTML = `<div class="ohm-seg"><button class="${st.free ? '' : 'on'}" data-bar="corners">&#128205; Tap corners</button>
+            <button class="${st.free ? 'on' : ''}" data-bar="free">&#9997;&#65039; Freehand</button></div>
+          <div class="ohm-hint">${st.free ? `Drag a finger along the ${what}. The map holds still.` : `Tap each corner of the ${what}.`}
+            ${n ? `${n} point${n === 1 ? '' : 's'}.` : ''}</div>
+          <div class="ohm-btns"><button class="btn" data-bar="undo" ${n ? '' : 'disabled'}>&#8630; ${st.free ? 'Clear' : 'Undo'}</button>
+          <button class="btn btn-primary" data-bar="next" ${n < 2 ? 'disabled' : ''}>Next ${what}</button>${done}</div>`;
+        return;
       }
+      if (live('power')) {
+        b.innerHTML = `<div class="ohm-hint">Tap where each outlet is. Tap an outlet to remove it.</div><div class="ohm-btns">${done}</div>`;
+        return;
+      }
+      if (live('items')) {
+        b.innerHTML = `<div class="ohm-row">${this.ITEMS.map(i => `<button class="ohu-chip${st.item === i.key ? ' on' : ''}" data-item="${i.key}">${i.label}</button>`).join('')}</div>
+          <div class="ohm-hint">Tap where each one is. Tap one to remove it.</div><div class="ohm-btns">${done}</div>`;
+        return;
+      }
+      if (live('tag')) {
+        b.innerHTML = `<div class="ohm-hint">${st.tag ? 'Tap each run or cord that gets this tag.' : 'Pick a tag color, then tap the runs and cords.'}</div>
+          <div class="ohm-tags">${st.data.tags.map(t => `<button class="ohm-tag${st.tag === t.id ? ' on' : ''}" data-tag="${t.id}"
+              style="background:${this._esc(t.hex)}" aria-label="${this._esc(t.name)}"><span>${this._esc(t.name)}</span></button>`).join('')}</div>
+          <div class="ohm-btns">${done}</div>`;
+        return;
+      }
+      if (!editable()) {
+        b.innerHTML = '<div class="ohm-hint">This design is locked: ask the office for changes.</div>';
+        return;
+      }
+      const tool = (act, icon, label) => `<button class="ohm-tool" data-bar="${act}"><span>${icon}</span>${label}</button>`;
+      b.innerHTML = `<div class="ohm-tools5">
+          ${tool('runs', '&#9999;&#65039;', 'Runs')}${tool('cords', '&#128268;', 'Cords')}${tool('items', '&#127795;', 'Items')}
+          ${tool('tag', '&#127991;&#65039;', 'Tags')}${tool('power', '&#9889;', 'Power')}</div>
+        ${list('runs').length ? '<div class="ohm-hint">Not roofline? Tap the run.</div>' : ''}`;
+    };
+
+    const center3 = () => { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng(), zoom: map.getZoom() }; };
+    const took = (res) => {
+      st.data.design = res.design;
+      st.data.can_start = false;
+      if (!job.ohl_design_id) job.ohl_design_id = [res.design.id, res.design.name];
+    };
+    const upsert = (key, item) => {
+      const arr = list(key);
+      const i = arr.findIndex(x => x.uid === item.uid);
+      if (i >= 0) arr[i] = item; else arr.push(item);
+    };
+    const saveRun = async (values) => {
+      const res = await OdooAPI.callKw('fsm.order', 'worker_map_save_run', [job.id, values, center3()], {});
+      took(res); upsert('runs', res.run);
+      return res.run;
+    };
+    const saveCord = async (values) => {
+      const res = await OdooAPI.callKw('fsm.order', 'worker_map_save_cord', [job.id, values, center3()], {});
+      took(res); upsert('cords', res.cord);
+      return res.cord;
+    };
+    const guard = async (fn) => {
+      if (st.busy) return;
+      st.busy = true;
+      try { await fn(); } catch (err) { App.showToast('Not saved: ' + (err.message || err), 'error'); }
       st.busy = false;
     };
 
-    const bar = () => {
-      const b = $('.ohm-bar');
-      if (st.mode === 'draw') {
-        const n = st.pts.length;
-        b.innerHTML = `<div class="ohm-hint">Tap each corner of the run. ${n} point${n === 1 ? '' : 's'}.</div>
-          <div class="ohm-btns"><button class="btn" data-bar="undo" ${n ? '' : 'disabled'}>&#8630; Undo</button>
-          <button class="btn btn-primary" data-bar="next" ${n < 2 ? 'disabled' : ''}>Next run</button>
-          <button class="btn" data-bar="done">Done</button></div>`;
-        return;
-      }
-      if (st.mode === 'power') {
-        b.innerHTML = `<div class="ohm-hint">Tap where each outlet is. Tap an outlet to remove it.</div>
-          <div class="ohm-btns"><button class="btn btn-primary" data-bar="done">Done</button></div>`;
-        return;
-      }
-      if (st.mode === 'tag') {
-        b.innerHTML = `<div class="ohm-hint">${st.tag ? 'Tap each run that gets this tag.' : 'Pick a tag color, then tap the runs.'}</div>
-          <div class="ohm-tags">${st.data.tags.map(t => `<button class="ohm-tag${st.tag === t.id ? ' on' : ''}" data-tag="${t.id}"
-              style="background:${this._esc(t.hex)}" aria-label="${this._esc(t.name)}"><span>${this._esc(t.name)}</span></button>`).join('')}</div>
-          <div class="ohm-btns"><button class="btn btn-primary" data-bar="done">Done</button></div>`;
-        return;
-      }
-      b.innerHTML = `<div class="ohm-btns">
-          ${editable() ? '<button class="btn btn-primary" data-bar="draw">&#9999;&#65039; Draw runs</button>' : ''}
-          ${editable() && runs().length ? '<button class="btn btn-primary" data-bar="tag">&#127991;&#65039; Tag colors</button>' : ''}
-          ${editable() ? '<button class="btn" data-bar="power">&#9889; Power</button>' : ''}
-          <button class="btn" data-bar="me" aria-label="Where I am">&#128205;</button></div>
-        ${editable() && runs().length ? '<div class="ohm-hint">Not roofline? Tap the run.</div>' : ''}`;
-    };
-
-    const save = async (values) => {
-      const c = map.getCenter();
-      const res = await OdooAPI.callKw('fsm.order', 'worker_map_save_run',
-        [job.id, values, { lat: c.lat(), lng: c.lng(), zoom: map.getZoom() }], {});
-      st.data.design = res.design;
-      st.data.can_start = false;
-      const i = runs().findIndex(r => r.uid === res.run.uid);
-      if (i >= 0) runs()[i] = res.run; else runs().push(res.run);
-      if (!job.ohl_design_id) job.ohl_design_id = [res.design.id, res.design.name];
-      return res.run;
-    };
-
-    // ------------------------------------------------ Tapping a run: tag it (Tag mode) or say what it is
-    const onRun = async (run) => {
-      if (st.mode === 'draw' || st.mode === 'power' || st.busy || !editable()) return;
-      if (st.mode === 'tag') {
+    // ------------------------------------------------ Tapping things
+    const onRun = (run) => guard(async () => {
+      if (!editable()) return;
+      if (live('tag')) {
         if (!st.tag) { App.showToast('Pick a tag color first', 'info'); return; }
-        st.busy = true;
-        try {
-          await save({ uid: run.uid, tag_color_id: run.tag_id === st.tag ? false : st.tag });
-          draw();
-        } catch (err) {
-          App.showToast('Not saved: ' + (err.message || err), 'error');
-        }
-        st.busy = false;
+        await saveRun({ uid: run.uid, tag_color_id: run.tag_id === st.tag ? false : st.tag });
+        draw();
         return;
       }
+      if (!live('view')) return;
       if (!ownRun(run)) {
-        App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft (the office's run: tag it in Tag colors)`, 'info');
+        App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft (the office's run: tag it in Tags)`, 'info');
         return;
       }
       kindSheet(run);
-    };
+    });
+    const onCord = (cord) => guard(async () => {
+      if (!editable()) return;
+      if (live('tag')) {
+        if (!st.tag) { App.showToast('Pick a tag color first', 'info'); return; }
+        await saveCord({ uid: cord.uid, tag_color_id: cord.tag_id === st.tag ? false : st.tag });
+        draw();
+        return;
+      }
+      if (live('view') && window.confirm(`Cord ${cord.code || ''}: ${Math.round(cord.ft || 0)} ft. Delete it?`)) {
+        await OdooAPI.callKw('fsm.order', 'worker_map_delete_cord', [job.id, cord.uid], {});
+        st.data.cords = list('cords').filter(c => c.uid !== cord.uid);
+        draw();
+      }
+    });
+    const removeFeature = (f) => guard(async () => {
+      if (!(live('items') || live('view')) || !editable()) return;
+      if (!(f.added_on_site || (st.data.design && st.data.design.field))) {
+        App.showToast(`${f.code || f.label}: the office's item`, 'info');
+        return;
+      }
+      if (!window.confirm(`Remove ${f.code || f.label}?`)) return;
+      await OdooAPI.callKw('fsm.order', 'worker_map_delete_feature', [job.id, f.id], {});
+      st.data.features = list('features').filter(x => x.id !== f.id);
+      draw();
+    });
+    const removePower = (p) => guard(async () => {
+      if (!live('power') || !window.confirm(`Remove outlet ${p.code || ''}?`)) return;
+      await OdooAPI.callKw('fsm.order', 'worker_map_delete_power', [job.id, p.id], {});
+      st.data.power = list('power').filter(x => x.id !== p.id);
+      draw();
+    });
 
     const kindSheet = (run) => {
       const box = $('.ohu-add');
@@ -230,102 +320,138 @@ const HolidayMap = {
           <div class="ohm-btns" style="margin-top:14px;"><button class="btn" data-sheet="delete">Delete run</button>
             <button class="btn btn-primary" data-sheet="close">Close</button></div></div>`;
       box.hidden = false;
-      box.onclick = async (e) => {
+      box.onclick = (e) => {
         const t = e.target.closest('button');
-        if (!t || st.busy) return;
+        if (!t) return;
         if (t.dataset.sheet === 'close') { box.hidden = true; return; }
-        st.busy = true;
-        try {
-          if (t.dataset.kind && t.dataset.kind !== (run.kind || 'roofline')) {
-            await save({ uid: run.uid, kind: t.dataset.kind });
+        guard(async () => {
+          if (t.dataset.kind) {
+            if (t.dataset.kind !== (run.kind || 'roofline')) await saveRun({ uid: run.uid, kind: t.dataset.kind });
             box.hidden = true;
             draw();
-          } else if (t.dataset.kind) {
-            box.hidden = true;
           }
           if (t.dataset.sheet === 'delete' && window.confirm(`Delete run ${run.run_no}?`)) {
             await OdooAPI.callKw('fsm.order', 'worker_map_delete_run', [job.id, run.uid], {});
-            st.data.runs = runs().filter(r => r.uid !== run.uid);
+            st.data.runs = list('runs').filter(r => r.uid !== run.uid);
             box.hidden = true;
             draw();
           }
-        } catch (err) {
-          App.showToast('Not saved: ' + (err.message || err), 'error');
-        }
-        st.busy = false;
+        });
       };
     };
 
-    // ------------------------------------------------ Drawing
+    // ------------------------------------------------ Drawing runs and cords (corners or freehand)
     const drawTemp = () => {
       st.temp.forEach(s => s.setMap(null));
       st.temp = [];
       if (st.pts.length) {
-        st.temp.push(new g.Polyline({ map, path: st.pts, strokeColor: '#ffeb3b', strokeWeight: 5, clickable: false, zIndex: 5 }));
-        st.pts.forEach(p => st.temp.push(new g.Marker({ map, position: p, clickable: false, zIndex: 6,
-          icon: { path: g.SymbolPath.CIRCLE, scale: 6, fillColor: '#ffeb3b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } })));
+        const color = st.what === 'cord' ? this.CORD_COLOR : '#ffeb3b';
+        st.temp.push(new g.Polyline({ map, path: st.pts, strokeColor: color, strokeWeight: 5, clickable: false, zIndex: 8 }));
+        if (!st.free) {
+          st.pts.forEach(p => st.temp.push(new g.Marker({ map, position: p, clickable: false, zIndex: 9,
+            icon: { path: g.SymbolPath.CIRCLE, scale: 6, fillColor: color, fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } })));
+        }
       }
       bar();
     };
     const saveCurrent = async () => {
       if (st.pts.length < 2) return true;
-      st.busy = true;
-      try {
-        const run = await save({ geometry: st.pts.map(p => [p.lng, p.lat]) });
-        App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft`, 'success');
+      let ok = true;
+      await guard(async () => {
+        ok = false;
+        const geometry = st.pts.map(p => [p.lng, p.lat]);
+        if (st.what === 'cord') {
+          const cord = await saveCord({ geometry });
+          App.showToast(`Cord ${cord.code || ''}: ${Math.round(cord.ft || 0)} ft`, 'success');
+        } else {
+          const run = await saveRun({ geometry });
+          App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft`, 'success');
+        }
         st.pts = [];
         drawTemp();
         draw();
-        return true;
-      } catch (err) {
-        App.showToast('Not saved: ' + (err.message || err), 'error');
-        return false;
-      } finally {
-        st.busy = false;
-      }
+        ok = true;
+      });
+      return ok;
     };
-    map.addListener('click', async (e) => {
-      if (st.busy) return;
-      if (st.mode === 'power') {
-        st.busy = true;
-        try {
-          const c = map.getCenter();
-          const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_power',
-            [job.id, e.latLng.lat(), e.latLng.lng(), { lat: c.lat(), lng: c.lng(), zoom: map.getZoom() }], {});
-          (st.data.power = st.data.power || []).push(res.power);
-          st.data.design = res.design;
-          st.data.can_start = false;
-          if (!job.ohl_design_id) job.ohl_design_id = [res.design.id, res.design.name];
-          draw();
-        } catch (err) {
-          App.showToast('Not saved: ' + (err.message || err), 'error');
-        }
-        st.busy = false;
-        return;
-      }
-      if (st.mode !== 'draw') return;
-      st.pts.push({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-      drawTemp();
+    // Freehand: a layer over the map takes the finger while the map holds still.
+    const pad = document.createElement('div');
+    pad.className = 'ohm-pad';
+    pad.hidden = true;
+    $('.ohm-map').appendChild(pad);
+    let stroke = null;
+    const toPx = (e) => { const r = pad.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      pad.setPointerCapture && pad.setPointerCapture(e.pointerId);
+      stroke = [toPx(e)];
     });
+    pad.addEventListener('pointermove', (e) => {
+      if (!stroke) return;
+      const p = toPx(e);
+      const last = stroke[stroke.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) < 4) return;
+      stroke.push(p);
+      const pj = proj.getProjection();
+      if (pj) { st.pts = stroke.map(q => pj.fromContainerPixelToLatLng(new g.Point(q.x, q.y))).map(ll => ({ lat: ll.lat(), lng: ll.lng() })); drawTemp(); }
+    });
+    const endStroke = () => {
+      if (!stroke) return;
+      const pj = proj.getProjection();
+      const kept = this._simplify(stroke, 3);
+      stroke = null;
+      if (pj && kept.length >= 2) {
+        st.pts = kept.map(q => pj.fromContainerPixelToLatLng(new g.Point(q.x, q.y))).map(ll => ({ lat: ll.lat(), lng: ll.lng() }));
+      } else {
+        st.pts = [];
+      }
+      drawTemp();
+    };
+    pad.addEventListener('pointerup', endStroke);
+    pad.addEventListener('pointercancel', endStroke);
+    const setFree = (on) => {
+      st.free = on;
+      st.pts = [];
+      pad.hidden = !(on && live('draw'));
+      map.setOptions({ gestureHandling: pad.hidden ? 'greedy' : 'none' });
+      drawTemp();
+    };
+
+    map.addListener('click', (e) => guard(async () => {
+      if (live('power')) {
+        const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_power', [job.id, e.latLng.lat(), e.latLng.lng(), center3()], {});
+        took(res); list('power').push(res.power);
+        draw();
+      } else if (live('items')) {
+        const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_feature', [job.id, st.item, e.latLng.lat(), e.latLng.lng(), center3()], {});
+        took(res); list('features').push(res.feature);
+        draw();
+      } else if (live('draw') && !st.free) {
+        st.pts.push({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+        drawTemp();
+      }
+    }));
 
     $('.ohm-bar').addEventListener('click', async (e) => {
       const t = e.target.closest('button');
       if (!t || st.busy) return;
       if (t.dataset.tag) { st.tag = parseInt(t.dataset.tag, 10); bar(); return; }
+      if (t.dataset.item) { st.item = t.dataset.item; bar(); return; }
       const act = t.dataset.bar;
-      if (act === 'draw') { st.mode = 'draw'; st.pts = []; draw(); drawTemp(); }
-      if (act === 'tag') { st.mode = 'tag'; draw(); }
-      if (act === 'power') { st.mode = 'power'; draw(); }
-      if (act === 'undo') { st.pts.pop(); drawTemp(); }
+      if (act === 'runs' || act === 'cords') {
+        st.mode = 'draw'; st.what = act === 'cords' ? 'cord' : 'run'; st.pts = [];
+        draw(); setFree(st.free);
+      }
+      if (act === 'corners') setFree(false);
+      if (act === 'free') setFree(true);
+      if (act === 'tag' || act === 'power' || act === 'items') { st.mode = act; draw(); }
+      if (act === 'undo') { if (st.free) st.pts = []; else st.pts.pop(); drawTemp(); }
       if (act === 'next') await saveCurrent();
       if (act === 'done') {
-        if (st.mode === 'draw' && !(await saveCurrent())) return;
-        st.mode = 'view'; st.pts = []; drawTemp(); draw();
-      }
-      if (act === 'me') {
-        const pos = await GPS.getCurrentPosition().catch(() => null);
-        if (pos) map.panTo({ lat: pos.lat, lng: pos.lon });
-        else App.showToast('No GPS fix', 'error');
+        if (live('draw') && !(await saveCurrent())) return;
+        st.mode = 'view'; st.pts = [];
+        pad.hidden = true; map.setOptions({ gestureHandling: 'greedy' });
+        drawTemp(); draw();
       }
     });
     draw();
