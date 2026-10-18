@@ -24,7 +24,6 @@ const App = {
     { id: 'viewAsBtn', label: '👁️ View As Worker', hidden: true },
     { divider: true },
     { id: 'wrapupPlacementBtn', label: '📌 Close Job Btn: Above Tabs' },
-    { id: 'cameraModeBtn', label: '📷 Camera: In-App' },
     { divider: true },
     { id: 'feedbackBtn', label: '💬 Report a Bug / Suggest Improvement' },
     { divider: true },
@@ -241,16 +240,6 @@ const App = {
     ['noteBtnList', 'noteBtnDetail'].forEach(id => {
       bindMenuAction(id, () => {
         if (typeof TimeTracking !== 'undefined') TimeTracking.sendOfficeNote();
-      });
-    });
-
-    // Camera mode toggle buttons
-    ['cameraModeBtnList', 'cameraModeBtnDetail'].forEach(id => {
-      bindMenuAction(id, () => {
-        if (typeof Photos !== 'undefined') {
-          const next = Photos.getCameraMode() === 'inapp' ? 'picker' : 'inapp';
-          Photos.setCameraMode(next);
-        }
       });
     });
 

@@ -19,7 +19,9 @@ const Photos = {
    * @returns {'inapp'|'picker'} — 'inapp' uses getUserMedia overlay; 'picker' uses file input.
    */
   getCameraMode() {
-    return localStorage.getItem(this._CAMERA_MODE_KEY) || 'inapp';
+    // Always the in-app camera now (its Higher quality button opens the phone's own camera). The
+    // old File Picker setting is ignored; the phone's camera is still used when ours can't start.
+    return 'inapp';
   },
 
   setCameraMode(mode) {
@@ -77,6 +79,14 @@ const Photos = {
     return { label: (over && over.label) || cat.label, hint: (over && over.hint) || '' };
   },
 
+  _isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  },
+
+  // Photos are kept up to this wide (both cameras).
+  MAX_PHOTO_W: 2560,
+
   _escText(s) {
     const div = document.createElement('div');
     div.textContent = s == null ? '' : String(s);
@@ -114,8 +124,7 @@ const Photos = {
   capturePhoto(jobId, category) {
     this.init();
 
-    if (this.getCameraMode() !== 'picker' &&
-        navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       return this._captureWithInAppCamera(jobId, category);
     }
     return this._pickerSeries(jobId, category);
@@ -125,11 +134,12 @@ const Photos = {
    * The phone's own camera (file picker) hands back one photo and closes. After each one, offer
    * "Take another" (one tap reopens it) and Done, so a series is still quick.
    */
-  async _pickerSeries(jobId, category, already) {
+  async _pickerSeries(jobId, category, already, backToCamera) {
     const all = (already || []).slice();
     const first = await this._captureWithFilePicker(jobId, category);
     if (first) all.push(...first.photos);
     if (!all.length) return null;
+    if (!first && backToCamera) return { series: true, photos: all };  // cancelled: straight back
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -141,7 +151,7 @@ const Photos = {
               ${last && last.thumbnail ? `<img class="photo-series-thumb" src="${last.thumbnail}" alt="">` : ''}
               <div class="photo-series-count">${all.length} photo${all.length === 1 ? '' : 's'} &#10003;</div>
               <button class="btn btn-primary btn-block btn-xl" data-series="more">&#128247; Take another</button>
-              <button class="btn btn-secondary btn-block" data-series="done" style="margin-top:10px;">Done</button>
+              <button class="btn btn-secondary btn-block" data-series="done" style="margin-top:10px;">${backToCamera ? 'Back to the quick camera' : 'Done'}</button>
             </div></div>`;
       };
       draw();
@@ -158,7 +168,9 @@ const Photos = {
         // camera this time, not the camera / gallery chooser.
         overlay.style.visibility = 'hidden';
         this.init();
-        this._fileInput.setAttribute('capture', 'environment');
+        // iPhones: straight to the camera. Not on Android: there, `capture` opens the camera as a
+        // separate app that can get the PWA killed in the background (see init()).
+        if (this._isIOS()) this._fileInput.setAttribute('capture', 'environment');
         let more = null;
         try {
           more = await this._captureWithFilePicker(jobId, category);
@@ -193,9 +205,9 @@ const Photos = {
             <div class="camera-zoom-chips" id="cameraZoomChips" style="display:none;"></div>
           </div>
           <div class="camera-controls">
-            <button class="camera-btn camera-btn-secondary" id="cameraGalleryBtn" title="Choose from gallery">
-              <span class="camera-btn-icon">🖼️</span>
-              <span class="camera-btn-label">Gallery</span>
+            <button class="camera-btn camera-btn-secondary" id="cameraGalleryBtn" title="The phone's own camera (HDR, flash, zoom) or gallery">
+              <span class="camera-btn-icon">✨</span>
+              <span class="camera-btn-label">Higher quality</span>
             </button>
             <button class="camera-btn camera-btn-shutter" id="cameraShutterBtn" title="Take photo" disabled>
               <span class="camera-shutter-ring"></span>
@@ -321,24 +333,30 @@ const Photos = {
       }, { passive: false });
       previewWrap.addEventListener('touchend', () => { pinchDist0 = 0; });
 
-      // Start rear camera
-      navigator.mediaDevices.getUserMedia({
+      // Start (or restart, after Higher quality) the rear camera
+      const startCamera = () => navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 },
+          width:  { ideal: 3840 },
+          height: { ideal: 2160 },
         },
         audio: false,
       }).then(s => {
         stream = s;
         video.srcObject = stream;
-        video.addEventListener('playing', () => {
-          overlay.querySelector('#cameraHint').style.display = 'none';
-          overlay.querySelector('#cameraShutterBtn').disabled = false;
-          initZoomControls();
-        });
-      }).catch(() => {
-        // Permission denied or unsupported — fall back to file picker silently
+        // Android Chrome: full-resolution stills from the camera itself, not a preview frame.
+        const track = stream.getVideoTracks()[0];
+        imageCapture = (typeof ImageCapture !== 'undefined' && track) ? new ImageCapture(track) : null;
+        return true;
+      });
+      let imageCapture = null;
+      video.addEventListener('playing', () => {
+        overlay.querySelector('#cameraHint').style.display = 'none';
+        overlay.querySelector('#cameraShutterBtn').disabled = false;
+        initZoomControls();
+      });
+      startCamera().catch(() => {
+        // Permission denied or unsupported — the phone's own camera instead
         cleanup();
         resolve(this._pickerSeries(jobId, category));
       });
@@ -363,8 +381,8 @@ const Photos = {
             sy = Math.round((vh - sh) / 2);
           }
 
-          // Full-size (max 1920px wide) — stored as a Blob
-          const maxW = 1920;
+          // Full-size (max MAX_PHOTO_W wide) — stored as a Blob
+          const maxW = this.MAX_PHOTO_W;
           let w = sw, h = sh;
           if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
           const canvas = document.createElement('canvas');
@@ -381,7 +399,22 @@ const Photos = {
           const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
           flash.classList.remove('on'); void flash.offsetWidth; flash.classList.add('on');
-          const resized = await this._canvasToBlob(canvas, 0.85);
+          let resized = null;
+          if (imageCapture && !(zoomState.value > 1.01 && !zoomState.native)) {
+            // The camera's own still (sharper than a preview frame), sized like the rest.
+            try {
+              const still = await imageCapture.takePhoto();
+              const url = URL.createObjectURL(still);
+              try {
+                resized = (await this._resizeImageWithThumb(url, this.MAX_PHOTO_W, 300)).resized;
+              } finally {
+                URL.revokeObjectURL(url);
+              }
+            } catch (err) {
+              console.warn('Full-resolution still failed, using the preview frame', err);
+            }
+          }
+          if (!resized) resized = await this._canvasToBlob(canvas, 0.85);
           const photo = await this.savePhoto(jobId, resized, thumbnail, category, `photo_${Date.now()}.jpg`);
           taken.push(photo);
           countEl.innerHTML = `<img src="${thumbnail}" alt=""><span>${taken.length} &#10003;</span>`;
@@ -396,10 +429,28 @@ const Photos = {
       });
 
       // Gallery fallback — stop camera and use file picker instead
+      // Higher quality: the phone's own camera (or gallery), then back here to carry on.
       overlay.querySelector('#cameraGalleryBtn').addEventListener('click', async () => {
-        cleanup();
-        const res = await this._pickerSeries(jobId, category, taken);
-        resolve(res || (taken.length ? { series: true, photos: taken } : null));
+        if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+        overlay.style.display = 'none';
+        const res = await this._pickerSeries(jobId, category, taken, true);
+        if (res) {
+          taken.splice(0, taken.length, ...res.photos);
+          const last = taken[taken.length - 1];
+          if (last) {
+            countEl.innerHTML = `<img src="${last.thumbnail}" alt=""><span>${taken.length} &#10003;</span>`;
+            countEl.style.display = '';
+            overlay.querySelector('#cameraCloseBtn .camera-btn-label').textContent = 'Done';
+            overlay.querySelector('#cameraCloseBtn .camera-btn-icon').textContent = '✓';
+          }
+        }
+        overlay.style.display = '';
+        overlay.querySelector('#cameraShutterBtn').disabled = true;
+        overlay.querySelector('#cameraHint').style.display = '';
+        startCamera().catch(() => {
+          cleanup();
+          resolve(taken.length ? { series: true, photos: taken } : null);
+        });
       });
 
       // Cancel / Done
@@ -475,7 +526,7 @@ const Photos = {
         try {
           // Decode once, derive both sizes — decoding a 15-25 MB photo twice
           // doubles the peak memory use.
-          const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, 1920, 300);
+          const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, this.MAX_PHOTO_W, 300);
           const photo = await this.savePhoto(
             pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`);
           photos.push(photo);
