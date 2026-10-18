@@ -87,6 +87,38 @@ const Photos = {
   // Photos are kept up to this wide (both cameras).
   MAX_PHOTO_W: 2560,
 
+  // Holiday Lighting's proof photos get the date, time, job and address printed on them.
+  STAMP_CATS: ['before', 'problem_areas', 'damage'],
+
+  /** The stamp line for a photo of this job taken at `when` (Date), or null if it isn't stamped. */
+  _stampFor(jobId, category, when) {
+    if (!this._holiday || !this.STAMP_CATS.includes(category)) return null;
+    const job = typeof Jobs !== 'undefined' && Jobs._currentJob && Jobs._currentJob.id === jobId ? Jobs._currentJob : null;
+    const day = when.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    const time = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const where = job ? [job.street, job.city].filter(Boolean).join(', ') : '';
+    return [`${day} · ${time}`, job && job.name, where].filter(Boolean).join(' · ');
+  },
+
+  /** Print the stamp along the bottom of the picture. */
+  _drawStamp(canvas, text) {
+    if (!text) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    let size = Math.max(16, Math.round(w / 42));
+    ctx.font = `600 ${size}px -apple-system, system-ui, sans-serif`;
+    while (size > 12 && ctx.measureText(text).width > w * 0.94) {
+      size -= 1;
+      ctx.font = `600 ${size}px -apple-system, system-ui, sans-serif`;
+    }
+    const bar = Math.round(size * 1.9);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, h - bar, w, bar);
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, Math.round(size * 0.6), h - bar / 2);
+  },
+
   _escText(s) {
     const div = document.createElement('div');
     div.textContent = s == null ? '' : String(s);
@@ -388,6 +420,8 @@ const Photos = {
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+          const stamp = this._stampFor(jobId, category, new Date());
+          this._drawStamp(canvas, stamp);
 
           // Thumbnail (max 300px wide)
           const thumbW = 300;
@@ -406,7 +440,7 @@ const Photos = {
               const still = await imageCapture.takePhoto();
               const url = URL.createObjectURL(still);
               try {
-                resized = (await this._resizeImageWithThumb(url, this.MAX_PHOTO_W, 300)).resized;
+                resized = (await this._resizeImageWithThumb(url, this.MAX_PHOTO_W, 300, stamp)).resized;
               } finally {
                 URL.revokeObjectURL(url);
               }
@@ -526,7 +560,10 @@ const Photos = {
         try {
           // Decode once, derive both sizes — decoding a 15-25 MB photo twice
           // doubles the peak memory use.
-          const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, this.MAX_PHOTO_W, 300);
+          // The time the photo was taken (a gallery photo isn't from now).
+          const when = file.lastModified ? new Date(file.lastModified) : new Date();
+          const stamp = this._stampFor(pending.jobId, pending.category, when);
+          const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, this.MAX_PHOTO_W, 300, stamp);
           const photo = await this.savePhoto(
             pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`);
           photos.push(photo);
@@ -1349,7 +1386,7 @@ const Photos = {
    * thumbnail (as a data URL). The thumbnail is drawn from the already-resized
    * canvas, so the original (potentially huge) bitmap is only decoded once.
    */
-  _resizeImageWithThumb(dataUrl, maxWidth, thumbWidth) {
+  _resizeImageWithThumb(dataUrl, maxWidth, thumbWidth, stamp) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = async () => {
@@ -1364,6 +1401,7 @@ const Photos = {
           canvas.width = w;
           canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          if (stamp) this._drawStamp(canvas, stamp);
           const resized = await this._canvasToBlob(canvas, 0.85);
 
           let tw = w, th = h;
