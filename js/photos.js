@@ -118,7 +118,58 @@ const Photos = {
         navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       return this._captureWithInAppCamera(jobId, category);
     }
-    return this._captureWithFilePicker(jobId, category);
+    return this._pickerSeries(jobId, category);
+  },
+
+  /**
+   * The phone's own camera (file picker) hands back one photo and closes. After each one, offer
+   * "Take another" (one tap reopens it) and Done, so a series is still quick.
+   */
+  async _pickerSeries(jobId, category, already) {
+    const all = (already || []).slice();
+    const first = await this._captureWithFilePicker(jobId, category);
+    if (first) all.push(...first.photos);
+    if (!all.length) return null;
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const draw = () => {
+        const last = all[all.length - 1];
+        overlay.innerHTML = `<div class="modal photo-series-modal">
+            <div class="modal-body" style="text-align:center;">
+              <div class="photo-series-title">${this._escText(this.catInfo((CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === category) || { key: category, label: category }).label)}</div>
+              ${last && last.thumbnail ? `<img class="photo-series-thumb" src="${last.thumbnail}" alt="">` : ''}
+              <div class="photo-series-count">${all.length} photo${all.length === 1 ? '' : 's'} &#10003;</div>
+              <button class="btn btn-primary btn-block btn-xl" data-series="more">&#128247; Take another</button>
+              <button class="btn btn-secondary btn-block" data-series="done" style="margin-top:10px;">Done</button>
+            </div></div>`;
+      };
+      draw();
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', async (e) => {
+        const t = e.target.closest('[data-series]');
+        if (!t) return;
+        if (t.dataset.series === 'done') {
+          overlay.remove();
+          resolve({ series: true, photos: all });
+          return;
+        }
+        // Straight from the tap (the phone only opens its camera from one), and straight to the
+        // camera this time, not the camera / gallery chooser.
+        overlay.style.visibility = 'hidden';
+        this.init();
+        this._fileInput.setAttribute('capture', 'environment');
+        let more = null;
+        try {
+          more = await this._captureWithFilePicker(jobId, category);
+        } finally {
+          this._fileInput.removeAttribute('capture');
+        }
+        if (more) all.push(...more.photos);
+        overlay.style.visibility = '';
+        draw();
+      });
+    });
   },
 
   /**
@@ -289,7 +340,7 @@ const Photos = {
       }).catch(() => {
         // Permission denied or unsupported — fall back to file picker silently
         cleanup();
-        resolve(this._captureWithFilePicker(jobId, category));
+        resolve(this._pickerSeries(jobId, category));
       });
 
       // Take photos — the camera stays open for a series; each one is saved (and uploaded in the
@@ -347,9 +398,8 @@ const Photos = {
       // Gallery fallback — stop camera and use file picker instead
       overlay.querySelector('#cameraGalleryBtn').addEventListener('click', async () => {
         cleanup();
-        const more = await this._captureWithFilePicker(jobId, category);
-        const all = taken.concat(more ? more.photos : []);
-        resolve(all.length ? { series: true, photos: all } : null);
+        const res = await this._pickerSeries(jobId, category, taken);
+        resolve(res || (taken.length ? { series: true, photos: taken } : null));
       });
 
       // Cancel / Done

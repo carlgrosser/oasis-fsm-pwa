@@ -114,3 +114,9 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .damage-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
 .damage-thumbs img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; }
 .damage-safe { font-size: 13px; color: #2e7d32; margin: 8px 0 0; line-height: 1.35; }
+
+/* Photo series with the phone's own camera (js/photos.js _pickerSeries) */
+.photo-series-modal { max-width: 360px; }
+.photo-series-title { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+.photo-series-thumb { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; }
+.photo-series-count { font-size: 18px; font-weight: 700; margin: 8px 0 14px; color: var(--success-color, #2e7d32); }
