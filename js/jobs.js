@@ -623,10 +623,12 @@ const Jobs = {
     };
   },
 
-  /** Photo steps a job never asks for: Holiday Lighting jobs have no equipment to turn off. */
+  /** Photo steps a job never asks for: Holiday Lighting jobs have no equipment to turn off; damage
+   *  reports (a ticket for the office) are Holiday Lighting's. */
   _skippedPhotoCats(job) {
     const company = job && (Array.isArray(job.company_id) ? job.company_id[0] : job.company_id);
-    return company && company === CONFIG.HOLIDAY_COMPANY_ID ? ['equipment'] : [];
+    if (!company) return [];
+    return company === CONFIG.HOLIDAY_COMPANY_ID ? ['equipment'] : ['damage'];
   },
 
   /** Case-insensitive loose match used throughout for stage names. */
@@ -1514,7 +1516,7 @@ const Jobs = {
     const name = stageName.toLowerCase();
     const skip = this._skippedPhotoCats(job);
     if (name.includes('arrived')) return ['equipment', 'before'].filter(c => !skip.includes(c));
-    if (name.includes('progress')) return ['after', 'problem_areas', 'other'];
+    if (name.includes('progress')) return ['after', 'problem_areas', 'damage', 'other'].filter(c => !skip.includes(c));
     return [];
   },
 
@@ -1686,7 +1688,7 @@ const Jobs = {
         const cat = (CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === key);
         missing.push({
           category: key,
-          label: cat ? cat.label : key,
+          label: cat ? (Photos.catInfo ? Photos.catInfo(cat).label : cat.label) : key,
           have,
           need,
         });
@@ -2288,8 +2290,9 @@ const Jobs = {
    */
   _updateFooter(job) {
     this._currentJob = job;
-    // The job's company colors (Holiday / Pool), in the worker's light or dark.
+    // The job's company colors (Holiday / Pool), in the worker's light or dark; its photo step names.
     if (typeof Themes !== 'undefined') Themes.forJob(job);
+    if (typeof Photos !== 'undefined' && Photos.setJob) Photos.setJob(job);
     const hasPhone = job.phone && job.phone.trim();
     const hasMobile = job.mobile && job.mobile.trim();
     const hasAnyContact = hasPhone || hasMobile;
@@ -2616,7 +2619,7 @@ const Jobs = {
     const html = categories.map(cat => `
       <button class="contact-picker-item" data-category="${cat.key}">
         <span class="contact-picker-icon">📷</span>
-        <span class="contact-picker-label">${this._escapeHtml(cat.label)}</span>
+        <span class="contact-picker-label">${this._escapeHtml(Photos.catInfo ? Photos.catInfo(cat).label : cat.label)}</span>
       </button>
     `).join('');
 
@@ -2631,7 +2634,10 @@ const Jobs = {
         try {
           const photo = await Photos.capturePhoto(jobId, category);
           if (photo) {
-            App.showToast('Photo saved', 'success');
+            const n = photo.series ? photo.photos.length : 1;
+            App.showToast(`${n} photo${n === 1 ? '' : 's'} saved`, 'success');
+            if (!photo.series && navigator.onLine) Photos.uploadPhoto(photo).catch(() => {});
+            if (category === 'damage' && typeof DamageReport !== 'undefined') DamageReport.open(jobId);
             // Refresh work photo section if visible
             const workSection = document.getElementById('workPhotoSection');
             if (workSection) {

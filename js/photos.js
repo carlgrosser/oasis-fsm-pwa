@@ -56,12 +56,39 @@ const Photos = {
    * both Android and iOS present a native picker that includes camera as
    * an option and keeps the browser context alive.
    */
+  // Holiday Lighting names its photo steps for what they're for: proof of what was already broken.
+  HOLIDAY_LABELS: {
+    before: { label: 'Inspection: Existing Damage',
+              hint: 'On arrival and the first time up on the roof: broken roof tiles, sprinklers, landscape lights, downspouts, anything already broken.' },
+    problem_areas: { label: 'Found Later (Already There)', hint: 'Damage that was already there, noticed during the job.' },
+    damage: { label: 'Damage We Caused', hint: 'Photos, then say what happened: the office opens a ticket to follow up. Nobody gets in trouble for reporting it.' },
+  },
+  _holiday: false,
+
+  /** Which company's names to use (set when a job opens). */
+  setJob(job) {
+    const company = job && (Array.isArray(job.company_id) ? job.company_id[0] : job.company_id);
+    this._holiday = !!company && company === CONFIG.HOLIDAY_COMPANY_ID;
+  },
+
+  catInfo(cat) {
+    const over = this._holiday && this.HOLIDAY_LABELS[cat.key];
+    return { label: (over && over.label) || cat.label, hint: (over && over.hint) || '' };
+  },
+
+  _escText(s) {
+    const div = document.createElement('div');
+    div.textContent = s == null ? '' : String(s);
+    return div.innerHTML;
+  },
+
   init() {
     if (this._fileInput) return;
 
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.multiple = true;  // pick several from the gallery at once
     input.style.display = 'none';
     input.id = 'photoCaptureInput';
     document.body.appendChild(input);
@@ -107,6 +134,9 @@ const Photos = {
           <div class="camera-preview-wrap" id="cameraPreviewWrap">
             <video class="camera-preview" id="cameraPreview" autoplay playsinline muted></video>
             <div class="camera-hint" id="cameraHint">Starting camera…</div>
+            <div class="camera-title">${this._escText(this.catInfo((CONFIG.PHOTO_CATEGORIES || []).find(c => c.key === category) || { key: category, label: category }).label)}</div>
+            <div class="camera-count" id="cameraCount" style="display:none;"></div>
+            <div class="camera-flash" id="cameraFlash"></div>
             <div class="camera-zoom-label" id="cameraZoomLabel" style="display:none;"></div>
             <div class="camera-zoom-chips" id="cameraZoomChips" style="display:none;"></div>
           </div>
@@ -261,7 +291,11 @@ const Photos = {
         resolve(this._captureWithFilePicker(jobId, category));
       });
 
-      // Take photo — draw directly to scaled canvases from the live video frame
+      // Take photos — the camera stays open for a series; each one is saved (and uploaded in the
+      // background) right away, Done closes it.
+      const taken = [];
+      const countEl = overlay.querySelector('#cameraCount');
+      const flash = overlay.querySelector('#cameraFlash');
       overlay.querySelector('#cameraShutterBtn').addEventListener('click', async () => {
         if (!video.videoWidth) return; // not ready yet
 
@@ -284,7 +318,6 @@ const Photos = {
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-          const resized = await this._canvasToBlob(canvas, 0.85);
 
           // Thumbnail (max 300px wide)
           const thumbW = 300;
@@ -295,27 +328,33 @@ const Photos = {
           thumbCanvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, tw, th);
           const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-          cleanup();
-          const photo = await this.savePhoto(
-            jobId, resized, thumbnail, category, `photo_${Date.now()}.jpg`
-          );
-          resolve(photo);
+          flash.classList.remove('on'); void flash.offsetWidth; flash.classList.add('on');
+          const resized = await this._canvasToBlob(canvas, 0.85);
+          const photo = await this.savePhoto(jobId, resized, thumbnail, category, `photo_${Date.now()}.jpg`);
+          taken.push(photo);
+          countEl.innerHTML = `<img src="${thumbnail}" alt=""><span>${taken.length} &#10003;</span>`;
+          countEl.style.display = '';
+          overlay.querySelector('#cameraCloseBtn .camera-btn-label').textContent = 'Done';
+          overlay.querySelector('#cameraCloseBtn .camera-btn-icon').textContent = '✓';
+          if (navigator.onLine) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
         } catch (err) {
-          cleanup();
-          reject(err);
+          console.error('Photo capture error:', err);
+          App.showToast('That photo didn\'t save: try again', 'error');
         }
       });
 
       // Gallery fallback — stop camera and use file picker instead
-      overlay.querySelector('#cameraGalleryBtn').addEventListener('click', () => {
+      overlay.querySelector('#cameraGalleryBtn').addEventListener('click', async () => {
         cleanup();
-        resolve(this._captureWithFilePicker(jobId, category));
+        const more = await this._captureWithFilePicker(jobId, category);
+        const all = taken.concat(more ? more.photos : []);
+        resolve(all.length ? { series: true, photos: all } : null);
       });
 
-      // Cancel
+      // Cancel / Done
       overlay.querySelector('#cameraCloseBtn').addEventListener('click', () => {
         cleanup();
-        resolve(null);
+        resolve(taken.length ? { series: true, photos: taken } : null);
       });
     });
   },
@@ -369,33 +408,32 @@ const Photos = {
       this._visibilityListener = null;
     }
 
-    const file = event.target.files && event.target.files[0];
-    if (!file || !pending) {
+    const files = Array.from((event.target.files) || []);
+    if (!files.length || !pending) {
       if (pending) pending.resolve(null);
       return;
     }
 
     try {
-      // Use an object URL instead of reading the whole file as base64 first.
-      // This avoids a large memory spike (raw Android photos can be 15-25 MB
-      // in base64) — the canvas only ever holds the resized output.
-      const objectUrl = URL.createObjectURL(file);
-      try {
-        // Decode once, derive both sizes — decoding a 15-25 MB photo twice
-        // doubles the peak memory use.
-        const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, 1920, 300);
-
-        const photo = await this.savePhoto(
-          pending.jobId,
-          resized,
-          thumbnail,
-          pending.category,
-          file.name || `photo_${Date.now()}.jpg`
-        );
-        pending.resolve(photo);
-      } finally {
-        URL.revokeObjectURL(objectUrl); // release immediately
+      const photos = [];
+      for (const file of files) {
+        // Use an object URL instead of reading the whole file as base64 first.
+        // This avoids a large memory spike (raw Android photos can be 15-25 MB
+        // in base64) — the canvas only ever holds the resized output.
+        const objectUrl = URL.createObjectURL(file);
+        try {
+          // Decode once, derive both sizes — decoding a 15-25 MB photo twice
+          // doubles the peak memory use.
+          const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, 1920, 300);
+          const photo = await this.savePhoto(
+            pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`);
+          photos.push(photo);
+          if (navigator.onLine) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
+        } finally {
+          URL.revokeObjectURL(objectUrl); // release immediately
+        }
       }
+      pending.resolve({ series: true, photos });
     } catch (err) {
       console.error('Photo capture error:', err);
       pending.reject(err);
@@ -499,10 +537,35 @@ const Photos = {
    * Upload a single photo to Google Drive via the Odoo proxy.
    * On failure retries once, then falls back to ir.attachment.
    */
+  _inflight: new Set(),
+
   async uploadPhoto(photo) {
+    // Taken in a series, a photo uploads right away; sync may reach it at the same moment.
+    if (this._inflight.has(photo.temp_id)) return null;
+    this._inflight.add(photo.temp_id);
+    try {
+      const fresh = await DB.get('photos', photo.temp_id).catch(() => null);
+      if (fresh && fresh.synced) return fresh.attachment_id || fresh.gdrive_file_id || null;
+      return await this._uploadPhoto(photo);
+    } finally {
+      this._inflight.delete(photo.temp_id);
+    }
+  },
+
+  async _uploadPhoto(photo) {
     const blob = photo.data instanceof Blob
       ? photo.data
       : this._base64ToBlob(photo.data, 'image/jpeg');
+
+    // Damage photos go straight to Odoo (they go on the damage ticket).
+    if (photo.category === 'damage') {
+      const raw = photo.data instanceof Blob ? await this._blobToBase64(photo.data)
+        : (photo.data.includes(',') ? photo.data.split(',')[1] : photo.data);
+      photo.attachment_id = await OdooAPI.uploadPhoto(photo.job_id, raw, photo.filename, photo.category);
+      photo.synced = 1;
+      await DB.put('photos', photo);
+      return photo.attachment_id;
+    }
 
     // Attempt Drive upload (with one retry)
     let driveResult = null;
@@ -636,9 +699,10 @@ const Photos = {
       html += `
         <div class="photo-category">
           <div class="photo-category-header">
-            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-category-title">${this.catInfo(cat).label}</span>
             <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
           </div>
+          ${this.catInfo(cat).hint ? `<div class="photo-category-hint">${this.catInfo(cat).hint}</div>` : ''}
           <div class="photo-grid" id="photos_${cat.key}_grid">
             ${this._renderThumbnails(catPhotos)}
             ${this._renderDriveThumbnails(catDrive)}
@@ -691,7 +755,7 @@ const Photos = {
       html += `
         <div class="photo-category photo-category-readonly">
           <div class="photo-category-header">
-            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-category-title">${this.catInfo(cat).label}</span>
             <span class="photo-count complete">${catLocal.length + catDrive.length}</span>
           </div>
           <div class="photo-grid">
@@ -769,7 +833,7 @@ const Photos = {
       html += `
         <div class="photo-category">
           <div class="photo-category-header">
-            <span class="photo-category-title">${cat.label}</span>
+            <span class="photo-category-title">${this.catInfo(cat).label}</span>
             <span class="photo-count ${isComplete ? 'complete' : ''}">${countLabel}</span>
           </div>
           <div class="photo-grid" id="photos_${cat.key}_grid">
@@ -1110,6 +1174,15 @@ const Photos = {
 
           await rerender(jid);
           if (onPhotoAdded) onPhotoAdded();
+
+          if (photo.series) {
+            // Each one is already saved and uploading; sync retries any that didn't make it.
+            const n = photo.photos.length;
+            App.showToast(`${n} photo${n === 1 ? '' : 's'} saved`, 'success');
+            setTimeout(() => rerender(jid), 4000);
+            if (cat === 'damage' && typeof DamageReport !== 'undefined') DamageReport.open(jid);
+            return;
+          }
 
           if (navigator.onLine) {
             App.showToast('Photo saved — uploading…', 'info');

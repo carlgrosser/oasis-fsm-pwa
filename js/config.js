@@ -14,6 +14,7 @@ const CONFIG = {
     { key: 'before', label: 'Before Photos', required: 2 },
     { key: 'after', label: 'After Photos', required: 2 },
     { key: 'problem_areas', label: 'Problem Areas', required: 0 },
+    { key: 'damage', label: 'Damage We Caused', required: 0 },
     { key: 'other', label: 'Other', required: 0 },
   ],
   ENABLE_SMS_NOTIFICATIONS: false,
