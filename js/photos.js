@@ -527,8 +527,10 @@ const Photos = {
           // Decode once, derive both sizes — decoding a 15-25 MB photo twice
           // doubles the peak memory use.
           const { resized, thumbnail } = await this._resizeImageWithThumb(objectUrl, this.MAX_PHOTO_W, 300);
+          // When it was taken (a gallery photo isn't from now): kept with the photo, not printed on it.
+          const takenAt = file.lastModified ? new Date(file.lastModified).toISOString() : null;
           const photo = await this.savePhoto(
-            pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`);
+            pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`, takenAt);
           photos.push(photo);
           if (navigator.onLine) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
         } finally {
@@ -548,7 +550,7 @@ const Photos = {
    * storage and no giant strings in memory) or a base64 data URL (legacy).
    * `thumbnail` stays a data URL so it can go straight into <img src>.
    */
-  async savePhoto(jobId, data, thumbnail, category, filename) {
+  async savePhoto(jobId, data, thumbnail, category, filename, takenAt) {
     const photo = {
       temp_id: 'photo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       job_id: jobId,
@@ -557,6 +559,7 @@ const Photos = {
       data: data,
       thumbnail: thumbnail,
       timestamp: new Date().toISOString(),
+      taken_at: takenAt || null,
       synced: 0,
     };
 
@@ -1020,7 +1023,10 @@ const Photos = {
    * created lazily when the item is first shown (see _showLightbox).
    */
   _localLbItem(p, caption, jobId) {
-    const item = { caption, type: 'local', tempId: p.temp_id, synced: p.synced, jobId };
+    // The time it was taken, shown under the photo (never printed on it: photos go to customers as they are).
+    const when = p.taken_at || p.timestamp;
+    const at = when ? new Date(when).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const item = { caption: [caption, at].filter(Boolean).join(' · '), type: 'local', tempId: p.temp_id, synced: p.synced, jobId };
     if (p.data instanceof Blob) {
       item.blob = p.data;
     } else {
