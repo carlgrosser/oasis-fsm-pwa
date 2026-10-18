@@ -1,14 +1,17 @@
 /**
- * Holiday Lighting: the job's design on the Google satellite map (phones first).
+ * Holiday Lighting: the job's design on the Google satellite map (phones first). Kept simple: the
+ * crew marks where the lights go and their tag colors; the office makes it a full design.
  *
- * - A job with a design: its runs (numbers, tag colors, start points, feet). While the design is
- *   Ready for Install the crew tags runs, sets start points and where, and adds runs (a run added
- *   to the office's design flags it for the office).
- * - A rehang (no design): Draw run: tap the corners of each run on the satellite map, then tag
- *   it. Odoo makes it the house's design (lengths from the lines), so next season has a map.
+ *  1. Draw runs: tap the corners of a run, Next run / Done. Each run is a C9 roofline.
+ *  2. Tag colors: pick a color, tap the runs that get it.
+ *  3. Power: tap where each outlet is (tap one again to remove it).
+ *  Only if it isn't roofline: tap a run → Garland / Fence / Ground / Other (or Delete).
  *
+ * A job with the office's design shows its runs; the crew tags them and can add runs (flagged for
+ * the office). Rehangs (no design): the runs drawn here become the house's design.
  * Needs signal (Google's map); the Picking List sheet is the no-signal copy.
- * Odoo: worker_get_design_map, worker_map_save_run, worker_map_delete_run, worker_map_set_colors.
+ * Odoo: worker_get_design_map, worker_map_save_run, worker_map_delete_run, worker_map_add_power,
+ * worker_map_delete_power.
  */
 const HolidayMap = {
   COLORS: ['#f5c542', '#4fc3f7', '#81c784', '#ff8a65', '#ba68c8', '#4db6ac', '#e57373', '#7986cb'],
@@ -76,10 +79,15 @@ const HolidayMap = {
     this._run(job, overlay, data);
   },
 
+  KINDS: [
+    { key: 'roofline', label: 'Roofline' }, { key: 'garland', label: 'Garland' },
+    { key: 'fence', label: 'Fence' }, { key: 'ground', label: 'Ground' }, { key: 'other', label: 'Other' },
+  ],
+
   async _run(job, overlay, data) {
     const $ = (s) => overlay.querySelector(s);
     const g = window.google.maps;
-    const st = { data, mode: 'view', drawPts: [], drawLine: null, shapes: [] };
+    const st = { data, mode: 'view', pts: [], temp: [], shapes: [], tag: null, busy: false };
     let center = data.center;
     if (!center || !(center.lat || center.lng)) {
       const pos = await GPS.getCurrentPosition().catch(() => null);
@@ -88,63 +96,96 @@ const HolidayMap = {
     const map = new g.Map($('.ohm-map'), {
       center, zoom: data.zoom || 20, heading: data.heading || 0, tilt: 0, mapTypeId: 'satellite',
       gestureHandling: 'greedy', clickableIcons: false, disableDefaultUI: true, zoomControl: true,
-      rotateControl: false, keyboardShortcuts: false,
+      keyboardShortcuts: false,
     });
-
+    const runs = () => st.data.runs || (st.data.runs = []);
     const editable = () => (st.data.design ? st.data.design.editable : st.data.can_start);
     const ownRun = (run) => !st.data.design || st.data.design.field || run.added_on_site;
-    const colorOf = (run, i) => run.tag || this.COLORS[i % this.COLORS.length];
+    const UNTAGGED = '#ffffff';
     const sub = () => {
       const d = st.data.design;
-      const runs = st.data.runs || [];
-      const tagged = runs.filter(r => r.tag_status === 'actual').length;
-      if (!d) return st.data.can_start ? 'No design yet: tap Draw run and tap each corner of a run' : 'No design, and no house record: ask the office';
-      return `${d.name}${d.field ? ' (drawn on site)' : ''} · ${runs.length} run${runs.length === 1 ? '' : 's'} · ${tagged} tagged${d.editable ? '' : ' · locked'}`;
+      const n = runs().length;
+      const tagged = runs().filter(r => r.tag_id).length;
+      if (!d) return st.data.can_start ? 'No design yet: Draw runs, then Tag colors' : 'No design, and no house record: ask the office';
+      return `${d.name} · ${n} run${n === 1 ? '' : 's'} · ${tagged} tagged${d.editable ? '' : ' · locked'}`;
     };
 
-    const clear = () => { st.shapes.forEach(s => s.setMap(null)); st.shapes = []; };
     const draw = () => {
-      clear();
-      (st.data.runs || []).forEach((run, i) => {
+      st.shapes.forEach(s => s.setMap(null));
+      st.shapes = [];
+      runs().forEach((run) => {
         const path = (run.geometry || []).map(([lng, lat]) => ({ lat, lng }));
         if (path.length < 2) return;
-        const color = colorOf(run, i);
-        const line = new g.Polyline({ map, path, strokeColor: color, strokeWeight: 6, strokeOpacity: 0.95,
-                                      clickable: st.mode === 'view', zIndex: 2 });
-        line.addListener('click', () => runSheet(run));
-        const halo = new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 10, strokeOpacity: 0.35, clickable: false, zIndex: 1 });
-        const start = path[Math.min(run.start_index || 0, path.length - 1)];
-        const num = new g.Marker({ map, position: start, clickable: st.mode === 'view', zIndex: 3,
-          label: { text: String(run.run_no), color: '#000', fontWeight: '700', fontSize: '13px' },
-          icon: { path: g.SymbolPath.CIRCLE, scale: 12, fillColor: color, fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } });
-        num.addListener('click', () => runSheet(run));
-        st.shapes.push(line, halo, num);
+        const color = run.tag || UNTAGGED;
+        const kindDash = run.kind && run.kind !== 'roofline';
+        st.shapes.push(new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 11, strokeOpacity: 0.45, clickable: false, zIndex: 1 }));
+        st.shapes.push(new g.Polyline({ map, path, strokeColor: color, strokeWeight: 6, strokeOpacity: 1, clickable: false, zIndex: 2,
+          icons: kindDash ? [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#000', scale: 3 }, offset: '0', repeat: '14px' }] : [] }));
+        // A wide, see-through line on top: easy to tap with a finger.
+        const hit = new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 28, strokeOpacity: 0.01,
+                                     clickable: st.mode !== 'draw', zIndex: 3 });
+        hit.addListener('click', () => onRun(run));
+        st.shapes.push(hit);
+        const num = new g.Marker({ map, position: path[0], clickable: st.mode !== 'draw', zIndex: 4,
+          label: { text: String(run.run_no), color: '#000', fontWeight: '700', fontSize: '12px' },
+          icon: { path: g.SymbolPath.CIRCLE, scale: 11, fillColor: color, fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } });
+        num.addListener('click', () => onRun(run));
+        st.shapes.push(num);
       });
       (st.data.power || []).forEach(p => {
         if (!(p.lat || p.lng)) return;
-        st.shapes.push(new g.Marker({ map, position: { lat: p.lat, lng: p.lng }, clickable: false, title: p.label,
-          label: { text: p.has_timer ? '⏱' : '⚡', fontSize: '14px' },
-          icon: { path: g.SymbolPath.CIRCLE, scale: 10, fillColor: '#fff', fillOpacity: 0.9, strokeColor: '#000', strokeWeight: 1 } }));
+        const m = new g.Marker({ map, position: { lat: p.lat, lng: p.lng }, zIndex: 7, title: p.label,
+          clickable: st.mode === 'power',
+          label: { text: '⚡', fontSize: '16px' },
+          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: '#ffeb3b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } });
+        m.addListener('click', () => removePower(p));
+        st.shapes.push(m);
       });
       $('.ohu-sub').textContent = sub();
       bar();
     };
 
+    const removePower = async (p) => {
+      if (st.mode !== 'power' || st.busy || !window.confirm(`Remove outlet ${p.code || ''}?`)) return;
+      st.busy = true;
+      try {
+        await OdooAPI.callKw('fsm.order', 'worker_map_delete_power', [job.id, p.id], {});
+        st.data.power = (st.data.power || []).filter(x => x.id !== p.id);
+        draw();
+      } catch (err) {
+        App.showToast('Not removed: ' + (err.message || err), 'error');
+      }
+      st.busy = false;
+    };
+
     const bar = () => {
       const b = $('.ohm-bar');
       if (st.mode === 'draw') {
-        b.innerHTML = `<div class="ohm-hint">Tap each corner of the run, in order. ${st.drawPts.length} point${st.drawPts.length === 1 ? '' : 's'}.</div>
-          <div class="ohm-btns"><button class="btn" data-bar="undo">&#8630; Undo</button>
-          <button class="btn" data-bar="cancel">Cancel</button>
-          <button class="btn btn-primary" data-bar="done" ${st.drawPts.length < 2 ? 'disabled' : ''}>Done</button></div>`;
+        const n = st.pts.length;
+        b.innerHTML = `<div class="ohm-hint">Tap each corner of the run. ${n} point${n === 1 ? '' : 's'}.</div>
+          <div class="ohm-btns"><button class="btn" data-bar="undo" ${n ? '' : 'disabled'}>&#8630; Undo</button>
+          <button class="btn btn-primary" data-bar="next" ${n < 2 ? 'disabled' : ''}>Next run</button>
+          <button class="btn" data-bar="done">Done</button></div>`;
         return;
       }
-      const d = st.data.design;
+      if (st.mode === 'power') {
+        b.innerHTML = `<div class="ohm-hint">Tap where each outlet is. Tap an outlet to remove it.</div>
+          <div class="ohm-btns"><button class="btn btn-primary" data-bar="done">Done</button></div>`;
+        return;
+      }
+      if (st.mode === 'tag') {
+        b.innerHTML = `<div class="ohm-hint">${st.tag ? 'Tap each run that gets this tag.' : 'Pick a tag color, then tap the runs.'}</div>
+          <div class="ohm-tags">${st.data.tags.map(t => `<button class="ohm-tag${st.tag === t.id ? ' on' : ''}" data-tag="${t.id}"
+              style="background:${this._esc(t.hex)}" aria-label="${this._esc(t.name)}"><span>${this._esc(t.name)}</span></button>`).join('')}</div>
+          <div class="ohm-btns"><button class="btn btn-primary" data-bar="done">Done</button></div>`;
+        return;
+      }
       b.innerHTML = `<div class="ohm-btns">
-          ${editable() ? '<button class="btn btn-primary" data-bar="draw">&#9999;&#65039; Draw run</button>' : ''}
-          ${d && d.field ? '<button class="btn" data-bar="colors">&#127912; Colors</button>' : ''}
-          <button class="btn" data-bar="me">&#128205; Me</button></div>
-        ${(st.data.runs || []).length ? '<div class="ohm-hint">Tap a run to tag it or set its start.</div>' : ''}`;
+          ${editable() ? '<button class="btn btn-primary" data-bar="draw">&#9999;&#65039; Draw runs</button>' : ''}
+          ${editable() && runs().length ? '<button class="btn btn-primary" data-bar="tag">&#127991;&#65039; Tag colors</button>' : ''}
+          ${editable() ? '<button class="btn" data-bar="power">&#9889; Power</button>' : ''}
+          <button class="btn" data-bar="me" aria-label="Where I am">&#128205;</button></div>
+        ${editable() && runs().length ? '<div class="ohm-hint">Not roofline? Tap the run.</div>' : ''}`;
     };
 
     const save = async (values) => {
@@ -153,166 +194,138 @@ const HolidayMap = {
         [job.id, values, { lat: c.lat(), lng: c.lng(), zoom: map.getZoom() }], {});
       st.data.design = res.design;
       st.data.can_start = false;
-      const runs = st.data.runs || (st.data.runs = []);
-      const i = runs.findIndex(r => r.uid === res.run.uid);
-      if (i >= 0) runs[i] = res.run; else runs.push(res.run);
-      job.ohl_design_id = job.ohl_design_id || [res.design.id, res.design.name];
-      draw();
+      const i = runs().findIndex(r => r.uid === res.run.uid);
+      if (i >= 0) runs()[i] = res.run; else runs().push(res.run);
+      if (!job.ohl_design_id) job.ohl_design_id = [res.design.id, res.design.name];
       return res.run;
     };
 
-    // ------------------------------------------------ The run sheet: tag, start, where (and lights, clips)
-    const runSheet = (run) => {
-      if (st.mode !== 'view') return;
+    // ------------------------------------------------ Tapping a run: tag it (Tag mode) or say what it is
+    const onRun = async (run) => {
+      if (st.mode === 'draw' || st.mode === 'power' || st.busy || !editable()) return;
+      if (st.mode === 'tag') {
+        if (!st.tag) { App.showToast('Pick a tag color first', 'info'); return; }
+        st.busy = true;
+        try {
+          await save({ uid: run.uid, tag_color_id: run.tag_id === st.tag ? false : st.tag });
+          draw();
+        } catch (err) {
+          App.showToast('Not saved: ' + (err.message || err), 'error');
+        }
+        st.busy = false;
+        return;
+      }
+      if (!ownRun(run)) {
+        App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft (the office's run: tag it in Tag colors)`, 'info');
+        return;
+      }
+      kindSheet(run);
+    };
+
+    const kindSheet = (run) => {
       const box = $('.ohu-add');
-      const canEdit = editable();
-      const own = ownRun(run);
-      const pick = { tag_color_id: run.tag_id || false, product_tmpl_id: run.product_tmpl_id || false,
-                     attachment_id: run.attachment_id || false, start_index: run.start_index || 0 };
-      const corners = (run.geometry || []).length;
-      const chips = (list, key, label, swatch) => list.map(o => `<button class="ohu-chip${pick[key] === o.id ? ' on' : ''}" data-set="${key}" data-val="${o.id}">
-          ${swatch ? `<span class="ohu-swatch" style="background:${this._esc(o.hex)}"></span>` : ''}${this._esc(o[label])}</button>`).join('');
       box.innerHTML = `<div class="ohu-add-card">
-          <div class="ohu-add-title">Run ${this._esc(run.run_no)} · ${Math.round(run.feet || 0)} ft${run.product ? ' · ' + this._esc(run.product) : ''}</div>
-          ${run.attachment ? `<div class="ohm-hint">Clips: ${this._esc(run.attachment)}</div>` : ''}
-          ${canEdit ? `
-          ${st.data.tags.length ? `<div class="ohm-sec">Tag</div>${chips(st.data.tags, 'tag_color_id', 'name', true)}` : ''}
-          ${corners > 2 || corners === 2 ? `<div class="ohm-sec">Start (plug end)</div>
-            <div class="ohm-row"><button class="ohu-chip" data-start="-1">&#9664;</button>
-              <span class="ohm-start">corner ${pick.start_index + 1} of ${corners}</span>
-              <button class="ohu-chip" data-start="1">&#9654;</button></div>` : ''}
-          <div class="ohm-sec">Where</div>
-          <input type="text" class="ohu-other ohm-where" value="${this._esc(run.location || '')}" placeholder="e.g. Front gutter">
-          <div class="ohm-row">${this.WHERE.map(w => `<button class="ohu-chip" data-where="${this._esc(w)}">${this._esc(w)}</button>`).join('')}</div>
-          ${own ? `<div class="ohm-sec">Lights</div>${chips(st.data.products, 'product_tmpl_id', 'name')}
-                   <div class="ohm-sec">Clips</div>${chips(st.data.attachments, 'attachment_id', 'name')}` : ''}
-          <div class="ohm-btns" style="margin-top:12px;">
-            ${own ? '<button class="btn" data-run="delete">Delete run</button>' : ''}
-            <button class="btn" data-run="cancel">Close</button>
-            <button class="btn btn-primary" data-run="save">Save</button></div>`
-          : '<div class="ohm-btns" style="margin-top:12px;"><button class="btn" data-run="cancel">Close</button></div>'}
-        </div>`;
-      box.hidden = false;
-      // Show where the start is while choosing it.
-      let startMark = null;
-      const showStart = () => {
-        if (startMark) startMark.setMap(null);
-        const p = (run.geometry || [])[pick.start_index];
-        if (p) startMark = new g.Marker({ map, position: { lat: p[1], lng: p[0] }, zIndex: 5,
-          icon: { path: g.SymbolPath.CIRCLE, scale: 8, fillColor: '#fff', fillOpacity: 1, strokeColor: '#e53935', strokeWeight: 4 } });
-        const label = box.querySelector('.ohm-start');
-        if (label) label.textContent = `corner ${pick.start_index + 1} of ${corners}`;
-      };
-      if (canEdit) showStart();
-      const close = () => { box.hidden = true; if (startMark) startMark.setMap(null); };
-      box.onclick = async (e) => {
-        const t = e.target.closest('button');
-        if (!t) return;
-        if (t.dataset.set) {
-          const v = parseInt(t.dataset.val, 10);
-          pick[t.dataset.set] = pick[t.dataset.set] === v ? false : v;
-          box.querySelectorAll(`[data-set="${t.dataset.set}"]`).forEach(x => x.classList.toggle('on', parseInt(x.dataset.val, 10) === pick[t.dataset.set]));
-        }
-        if (t.dataset.start) {
-          pick.start_index = (pick.start_index + parseInt(t.dataset.start, 10) + corners) % corners;
-          showStart();
-        }
-        if (t.dataset.where) box.querySelector('.ohm-where').value = t.dataset.where;
-        if (t.dataset.run === 'cancel') close();
-        if (t.dataset.run === 'delete' && window.confirm(`Delete run ${run.run_no}?`)) {
-          try {
-            await OdooAPI.callKw('fsm.order', 'worker_map_delete_run', [job.id, run.uid], {});
-            st.data.runs = st.data.runs.filter(r => r.uid !== run.uid);
-            close(); draw();
-          } catch (err) { App.showToast('Not deleted: ' + (err.message || err), 'error'); }
-        }
-        if (t.dataset.run === 'save') {
-          t.disabled = true;
-          const values = { uid: run.uid, tag_color_id: pick.tag_color_id, start_index: pick.start_index,
-                           location: box.querySelector('.ohm-where').value.trim() };
-          if (own) Object.assign(values, { product_tmpl_id: pick.product_tmpl_id, attachment_id: pick.attachment_id });
-          try {
-            await save(values);
-            close();
-            App.showToast(`Run ${run.run_no} saved`, 'success');
-          } catch (err) {
-            App.showToast('Not saved: ' + (err.message || err), 'error');
-            t.disabled = false;
-          }
-        }
-      };
-    };
-
-    const colorsSheet = () => {
-      const box = $('.ohu-add');
-      const current = st.data.design && st.data.design.pattern_id;
-      box.innerHTML = `<div class="ohu-add-card"><div class="ohu-add-title">House colors (C7 / C9)</div>
-          ${st.data.patterns.map(p => `<button class="ohu-chip${p.id === current ? ' on' : ''}" data-pattern="${p.id}">
-            ${p.colors.slice(0, 4).map(c => `<span class="ohu-swatch" style="background:${this._esc(c)}"></span>`).join('')}${this._esc(p.name)}</button>`).join('')}
-          <div class="ohm-btns" style="margin-top:12px;"><button class="btn" data-close-sheet>Close</button></div></div>`;
+          <div class="ohu-add-title">Run ${this._esc(run.run_no)} · ${Math.round(run.feet || 0)} ft</div>
+          <div class="ohm-row">${this.KINDS.map(k => `<button class="ohu-chip${(run.kind || 'roofline') === k.key ? ' on' : ''}" data-kind="${k.key}">${k.label}</button>`).join('')}</div>
+          <div class="ohm-btns" style="margin-top:14px;"><button class="btn" data-sheet="delete">Delete run</button>
+            <button class="btn btn-primary" data-sheet="close">Close</button></div></div>`;
       box.hidden = false;
       box.onclick = async (e) => {
         const t = e.target.closest('button');
-        if (!t) return;
-        if (t.hasAttribute('data-close-sheet')) { box.hidden = true; return; }
-        if (t.dataset.pattern) {
-          try {
-            await OdooAPI.callKw('fsm.order', 'worker_map_set_colors', [job.id, parseInt(t.dataset.pattern, 10)], {});
-            st.data.design.pattern_id = parseInt(t.dataset.pattern, 10);
+        if (!t || st.busy) return;
+        if (t.dataset.sheet === 'close') { box.hidden = true; return; }
+        st.busy = true;
+        try {
+          if (t.dataset.kind && t.dataset.kind !== (run.kind || 'roofline')) {
+            await save({ uid: run.uid, kind: t.dataset.kind });
             box.hidden = true;
-            App.showToast('Colors saved', 'success');
-          } catch (err) { App.showToast('Not saved: ' + (err.message || err), 'error'); }
+            draw();
+          } else if (t.dataset.kind) {
+            box.hidden = true;
+          }
+          if (t.dataset.sheet === 'delete' && window.confirm(`Delete run ${run.run_no}?`)) {
+            await OdooAPI.callKw('fsm.order', 'worker_map_delete_run', [job.id, run.uid], {});
+            st.data.runs = runs().filter(r => r.uid !== run.uid);
+            box.hidden = true;
+            draw();
+          }
+        } catch (err) {
+          App.showToast('Not saved: ' + (err.message || err), 'error');
         }
+        st.busy = false;
       };
     };
 
-    // ------------------------------------------------ Drawing a run
-    const redrawTemp = () => {
-      if (st.drawLine) st.drawLine.setMap(null);
-      st.drawLine = new g.Polyline({ map, path: st.drawPts, strokeColor: '#ffeb3b', strokeWeight: 5, clickable: false, zIndex: 4,
-        icons: [{ icon: { path: g.SymbolPath.CIRCLE, scale: 4, fillColor: '#ffeb3b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 1 }, offset: '0', repeat: '0' }] });
-      st.drawDots = (st.drawDots || []).filter(m => { m.setMap(null); return false; });
-      st.drawPts.forEach(p => st.drawDots.push(new g.Marker({ map, position: p, clickable: false, zIndex: 4,
-        icon: { path: g.SymbolPath.CIRCLE, scale: 6, fillColor: '#ffeb3b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } })));
+    // ------------------------------------------------ Drawing
+    const drawTemp = () => {
+      st.temp.forEach(s => s.setMap(null));
+      st.temp = [];
+      if (st.pts.length) {
+        st.temp.push(new g.Polyline({ map, path: st.pts, strokeColor: '#ffeb3b', strokeWeight: 5, clickable: false, zIndex: 5 }));
+        st.pts.forEach(p => st.temp.push(new g.Marker({ map, position: p, clickable: false, zIndex: 6,
+          icon: { path: g.SymbolPath.CIRCLE, scale: 6, fillColor: '#ffeb3b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } })));
+      }
       bar();
     };
-    const endDraw = () => {
-      st.mode = 'view';
-      if (st.drawLine) st.drawLine.setMap(null);
-      (st.drawDots || []).forEach(m => m.setMap(null));
-      st.drawPts = [];
-      draw();
+    const saveCurrent = async () => {
+      if (st.pts.length < 2) return true;
+      st.busy = true;
+      try {
+        const run = await save({ geometry: st.pts.map(p => [p.lng, p.lat]) });
+        App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft`, 'success');
+        st.pts = [];
+        drawTemp();
+        draw();
+        return true;
+      } catch (err) {
+        App.showToast('Not saved: ' + (err.message || err), 'error');
+        return false;
+      } finally {
+        st.busy = false;
+      }
     };
-    map.addListener('click', (e) => {
+    map.addListener('click', async (e) => {
+      if (st.busy) return;
+      if (st.mode === 'power') {
+        st.busy = true;
+        try {
+          const c = map.getCenter();
+          const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_power',
+            [job.id, e.latLng.lat(), e.latLng.lng(), { lat: c.lat(), lng: c.lng(), zoom: map.getZoom() }], {});
+          (st.data.power = st.data.power || []).push(res.power);
+          st.data.design = res.design;
+          st.data.can_start = false;
+          if (!job.ohl_design_id) job.ohl_design_id = [res.design.id, res.design.name];
+          draw();
+        } catch (err) {
+          App.showToast('Not saved: ' + (err.message || err), 'error');
+        }
+        st.busy = false;
+        return;
+      }
       if (st.mode !== 'draw') return;
-      st.drawPts.push({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-      redrawTemp();
+      st.pts.push({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      drawTemp();
     });
+
     $('.ohm-bar').addEventListener('click', async (e) => {
-      const t = e.target.closest('[data-bar]');
-      if (!t) return;
+      const t = e.target.closest('button');
+      if (!t || st.busy) return;
+      if (t.dataset.tag) { st.tag = parseInt(t.dataset.tag, 10); bar(); return; }
       const act = t.dataset.bar;
-      if (act === 'draw') { st.mode = 'draw'; draw(); redrawTemp(); }
-      if (act === 'undo') { st.drawPts.pop(); redrawTemp(); }
-      if (act === 'cancel') endDraw();
-      if (act === 'colors') colorsSheet();
+      if (act === 'draw') { st.mode = 'draw'; st.pts = []; draw(); drawTemp(); }
+      if (act === 'tag') { st.mode = 'tag'; draw(); }
+      if (act === 'power') { st.mode = 'power'; draw(); }
+      if (act === 'undo') { st.pts.pop(); drawTemp(); }
+      if (act === 'next') await saveCurrent();
+      if (act === 'done') {
+        if (st.mode === 'draw' && !(await saveCurrent())) return;
+        st.mode = 'view'; st.pts = []; drawTemp(); draw();
+      }
       if (act === 'me') {
         const pos = await GPS.getCurrentPosition().catch(() => null);
         if (pos) map.panTo({ lat: pos.lat, lng: pos.lon });
         else App.showToast('No GPS fix', 'error');
-      }
-      if (act === 'done' && st.drawPts.length >= 2) {
-        t.disabled = true;
-        const geometry = st.drawPts.map(p => [p.lng, p.lat]);
-        try {
-          const run = await save({ geometry });
-          endDraw();
-          App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft`, 'success');
-          runSheet(run);
-        } catch (err) {
-          App.showToast('Not saved: ' + (err.message || err), 'error');
-          t.disabled = false;
-        }
       }
     });
     draw();

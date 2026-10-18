@@ -51,6 +51,12 @@
 .ohm-sec { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #666); margin: 12px 0 6px; }
 .ohm-start { min-width: 110px; text-align: center; font-size: 15px; }
 .ohm-overlay .ohu-add { z-index: 2; }
+.ohm-tags { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; -webkit-overflow-scrolling: touch; }
+.ohm-tag { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 26px; border: 2px solid rgba(0, 0, 0, .35);
+  position: relative; touch-action: manipulation; }
+.ohm-tag span { position: absolute; left: 50%; bottom: -2px; transform: translateX(-50%); font-size: 10px;
+  background: rgba(255, 255, 255, .85); color: #000; border-radius: 6px; padding: 0 4px; white-space: nowrap; }
+.ohm-tag.on { outline: 4px solid var(--primary-color, #1976d2); outline-offset: 2px; }
 
 /* Google review QR (js/reviews.js) */
 .review-overlay { position: fixed; inset: 0; z-index: 9500; background: #fff; color: #111; display: flex;
