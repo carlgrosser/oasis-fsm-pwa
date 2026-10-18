@@ -79,6 +79,54 @@ const Photos = {
     return { label: (over && over.label) || cat.label, hint: (over && over.hint) || '' };
   },
 
+  /** A quick GPS fix for the photos about to be taken (a series isn't held up waiting for one). */
+  _warmGps() {
+    if (typeof GPS === 'undefined' || !GPS.getQuickPosition) return;
+    if (this._lastPos && Date.now() - this._lastPos.at < 60000) return;
+    GPS.getQuickPosition().then(p => { if (p) this._lastPos = Object.assign({ at: Date.now() }, p); }).catch(() => {});
+  },
+
+  _freshPos() {
+    return this._lastPos && Date.now() - this._lastPos.at < 300000 ? this._lastPos : null;
+  },
+
+  async _sha256(blob) {
+    if (!(window.crypto && crypto.subtle && blob && blob.arrayBuffer)) return '';
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  },
+
+  /** The photo's record in Odoo (oasis_photo_proof): when, where, who, and its fingerprint. */
+  async _sendRecord(photo) {
+    if (photo.proof_sent) return;
+    const blob = photo.data instanceof Blob ? photo.data : this._base64ToBlob(photo.data, 'image/jpeg');
+    const vals = {
+      category: photo.category, filename: photo.filename,
+      taken_at: photo.taken_at || photo.timestamp, picked_at: photo.picked_at || false,
+      latitude: photo.lat || 0, longitude: photo.lon || 0, accuracy: photo.accuracy || 0,
+      sha256: await this._sha256(blob),
+      attachment_id: photo.attachment_id || false, gdrive_file_id: photo.gdrive_file_id || false,
+    };
+    try {
+      await OdooAPI.callKw('oasis.photo.record', 'worker_record_photo', [photo.job_id, vals], {});
+      photo.proof_sent = true;
+    } catch (err) {
+      // Odoo without the module: don't keep trying. Otherwise sync tries again.
+      if (/oasis\.photo\.record|does not exist|Object .* doesn't exist/i.test(String(err.message || err))) photo.proof_sent = 'skip';
+      else console.warn('Photo record not sent yet:', err);
+    }
+    const fresh = (await DB.get('photos', photo.temp_id).catch(() => null)) || photo;
+    fresh.proof_sent = photo.proof_sent;
+    await DB.put('photos', fresh).catch(() => {});
+  },
+
+  /** Photos uploaded whose record didn't reach Odoo yet. */
+  async flushRecords() {
+    if (!navigator.onLine) return;
+    const all = await DB.getAll('photos').catch(() => []);
+    for (const p of all.filter(x => x.synced && !x.proof_sent)) await this._sendRecord(p);
+  },
+
   _isIOS() {
     return /iPad|iPhone|iPod/.test(navigator.userAgent)
       || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -123,6 +171,7 @@ const Photos = {
    */
   capturePhoto(jobId, category) {
     this.init();
+    this._warmGps();
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       return this._captureWithInAppCamera(jobId, category);
@@ -530,7 +579,7 @@ const Photos = {
           // When it was taken (a gallery photo isn't from now): kept with the photo, not printed on it.
           const takenAt = file.lastModified ? new Date(file.lastModified).toISOString() : null;
           const photo = await this.savePhoto(
-            pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`, takenAt);
+            pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`, takenAt, true);
           photos.push(photo);
           if (navigator.onLine) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
         } finally {
@@ -550,7 +599,8 @@ const Photos = {
    * storage and no giant strings in memory) or a base64 data URL (legacy).
    * `thumbnail` stays a data URL so it can go straight into <img src>.
    */
-  async savePhoto(jobId, data, thumbnail, category, filename, takenAt) {
+  async savePhoto(jobId, data, thumbnail, category, filename, takenAt, picked) {
+    const pos = this._freshPos();
     const photo = {
       temp_id: 'photo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       job_id: jobId,
@@ -560,6 +610,10 @@ const Photos = {
       thumbnail: thumbnail,
       timestamp: new Date().toISOString(),
       taken_at: takenAt || null,
+      picked_at: picked ? new Date().toISOString() : null,
+      lat: pos ? pos.lat : null,
+      lon: pos ? pos.lon : null,
+      accuracy: pos ? pos.accuracy : null,
       synced: 0,
     };
 
@@ -651,7 +705,10 @@ const Photos = {
     try {
       const fresh = await DB.get('photos', photo.temp_id).catch(() => null);
       if (fresh && fresh.synced) return fresh.attachment_id || fresh.gdrive_file_id || null;
-      return await this._uploadPhoto(photo);
+      const result = await this._uploadPhoto(photo);
+      const done = (await DB.get('photos', photo.temp_id).catch(() => null)) || photo;
+      if (done.synced) await this._sendRecord(done);
+      return result;
     } finally {
       this._inflight.delete(photo.temp_id);
     }
@@ -729,6 +786,8 @@ const Photos = {
         failed++;
       }
     }
+    // Records (when, where, fingerprint) that didn't reach Odoo with their photo.
+    await this.flushRecords().catch(() => {});
 
     return { uploaded, failed };
   },
