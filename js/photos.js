@@ -56,10 +56,11 @@ const Photos = {
    * both Android and iOS present a native picker that includes camera as
    * an option and keeps the browser context alive.
    */
-  // Holiday Lighting names its photo steps for what they're for: proof of what was already broken.
+  // Holiday Lighting names its photo steps for what they're for: how the place looked when we came,
+  // and what was already broken.
   HOLIDAY_LABELS: {
-    before: { label: 'Inspection: Existing Damage',
-              hint: 'On arrival and the first time up on the roof: broken roof tiles, sprinklers, landscape lights, downspouts, anything already broken.' },
+    before: { label: 'Walk-Through Inspection',
+              hint: 'On arrival and the first time up on the roof, a series around the house: the whole scene and yard, where cars are parked, anything worth noting, and anything already broken (roof tiles, sprinklers, landscape lights, downspouts).' },
     problem_areas: { label: 'Found Later (Already There)', hint: 'Damage that was already there, noticed during the job.' },
     damage: { label: 'Damage We Caused', hint: 'Photos, then say what happened: the office opens a ticket to follow up. Nobody gets in trouble for reporting it.' },
   },
