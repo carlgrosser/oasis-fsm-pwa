@@ -65,6 +65,17 @@
 .ohm-seg { display: flex; border: 1px solid var(--border-color, #ccc); border-radius: 10px; overflow: hidden; margin-bottom: 6px; }
 .ohm-seg button { flex: 1; min-height: 40px; border: 0; background: none; font-size: 14px; color: inherit; }
 .ohm-seg button.on { background: var(--primary-color, #1976d2); color: #fff; font-weight: 600; }
+.ohm-pill { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; border: 0;
+  background: #fff3e0; color: #e65100; font-weight: 700; font-size: 14px; padding: 8px 14px; border-radius: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35); touch-action: manipulation; }
+.ohm-pill[hidden] { display: none; }
+.ohm-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 10px; margin-bottom: 6px;
+  border: 1px solid var(--border-color, #ccc); border-radius: 10px; background: var(--bg-secondary, #f6f6f6);
+  color: inherit; font-size: 15px; text-align: left; }
+.ohm-item.on { border-color: var(--primary-color, #1976d2); background: #e3f2fd; font-weight: 600; }
+.ohm-item.placed { opacity: .65; }
+.ohm-item-label { flex: 1; min-width: 0; }
+.ohm-item-state { font-size: 12px; color: var(--text-muted, #777); white-space: nowrap; }
 .ohm-pad { position: absolute; inset: 0; z-index: 5; touch-action: none; cursor: crosshair; }
 
 /* Google review QR (js/reviews.js) */

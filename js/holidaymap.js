@@ -90,6 +90,8 @@ const HolidayMap = {
     { key: 'other', label: '⭐ Other', color: '#ab47bc' },
   ],
   CORD_COLOR: '#ff9800',
+  // Runs tool: a C9 bulb on a green wire.
+  RUN_ICON: '<svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M1 8 Q8 4 16 8 T31 8" stroke="#2e7d32" stroke-width="2.6" fill="none" stroke-linecap="round"/><rect x="12.5" y="8" width="7" height="5.5" rx="1.2" fill="#1b5e20"/><path d="M16 13.5 C9.5 17.5 10.5 27 16 29.5 C21.5 27 22.5 17.5 16 13.5 Z" fill="#ffca28" stroke="#f57f17" stroke-width="1.1"/><path d="M14 18 C13 20 13.2 23 14.3 25" stroke="#fff8e1" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>',
 
   /** Ramer–Douglas–Peucker: a finger stroke (pixels) down to the points that matter. */
   _simplify(pts, tol) {
@@ -137,7 +139,7 @@ const HolidayMap = {
       return `${d.name} · ${n} run${n === 1 ? '' : 's'} · ${tagged} tagged · ${list('cords').length} cord${list('cords').length === 1 ? '' : 's'}${d.editable ? '' : ' · locked'}`;
     };
     const live = (m) => st.mode === m;
-    const tappable = () => st.mode !== 'draw' && st.mode !== 'power' && st.mode !== 'items';
+    const tappable = () => live('view') || live('tag');
 
     const pathOf = (geometry) => (geometry || []).map(([lng, lat]) => ({ lat, lng }));
     const draw = () => {
@@ -176,11 +178,12 @@ const HolidayMap = {
       list('features').forEach((f) => {
         if (!(f.lat || f.lng)) return;
         const kind = this.ITEMS.find(i => i.key === f.kind) || this.ITEMS[2];
-        const m = new g.Marker({ map, position: { lat: f.lat, lng: f.lng }, zIndex: 6, title: f.label,
+        const loose = st.data.design && st.data.design.field && !f.item_key && list('items').length;
+        const m = new g.Marker({ map, position: { lat: f.lat, lng: f.lng }, zIndex: 6, title: f.item_label || f.label,
           clickable: st.mode === 'items' || st.mode === 'view',
-          label: { text: f.code || kind.label.slice(0, 2), color: '#fff', fontWeight: '700', fontSize: '11px' },
-          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 } });
-        m.addListener('click', () => removeFeature(f));
+          label: { text: (f.code || kind.label.slice(0, 2)) + (loose ? '?' : ''), color: '#fff', fontWeight: '700', fontSize: '11px' },
+          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: loose ? '#ffeb3b' : '#fff', strokeWeight: loose ? 3 : 2 } });
+        m.addListener('click', () => featureSheet(f));
         st.shapes.push(m);
       });
       list('power').forEach(p => {
@@ -193,6 +196,7 @@ const HolidayMap = {
       });
       $('.ohu-sub').textContent = sub();
       bar();
+      updatePill();
     };
 
     const bar = () => {
@@ -213,9 +217,14 @@ const HolidayMap = {
         b.innerHTML = `<div class="ohm-hint">Tap where each outlet is. Tap an outlet to remove it.</div><div class="ohm-btns">${done}</div>`;
         return;
       }
+      if (live('place')) {
+        b.innerHTML = `<div class="ohm-hint">Tap the map where it is: <b>${this._esc(st.placing ? st.placing.label : '')}</b></div>
+          <div class="ohm-btns"><button class="btn" data-bar="done">Cancel</button></div>`;
+        return;
+      }
       if (live('items')) {
         b.innerHTML = `<div class="ohm-row">${this.ITEMS.map(i => `<button class="ohu-chip${st.item === i.key ? ' on' : ''}" data-item="${i.key}">${i.label}</button>`).join('')}</div>
-          <div class="ohm-hint">Tap where each one is. Tap one to remove it.</div><div class="ohm-btns">${done}</div>`;
+          <div class="ohm-hint">Tap where each one is. Tap one to assign it to the order's items, or delete it.</div><div class="ohm-btns">${done}</div>`;
         return;
       }
       if (live('tag')) {
@@ -231,9 +240,53 @@ const HolidayMap = {
       }
       const tool = (act, icon, label) => `<button class="ohm-tool" data-bar="${act}"><span>${icon}</span>${label}</button>`;
       b.innerHTML = `<div class="ohm-tools5">
-          ${tool('runs', '&#9999;&#65039;', 'Runs')}${tool('cords', '&#128268;', 'Cords')}${tool('items', '&#127795;', 'Items')}
+          ${tool('runs', this.RUN_ICON, 'Runs')}${tool('cords', '&#128268;', 'Cords')}${tool('items', '&#127795;', 'Items')}
           ${tool('tag', '&#127991;&#65039;', 'Tags')}${tool('power', '&#9889;', 'Power')}</div>
         ${list('runs').length ? '<div class="ohm-hint">Not roofline? Tap the run.</div>' : ''}`;
+    };
+
+    // A full map state from Odoo (after placing / assigning items): take it all.
+    const applyState = (state) => {
+      if (!state) return;
+      for (const k of ['runs', 'cords', 'features', 'power', 'items']) if (state[k]) st.data[k] = state[k];
+      if ('unassigned' in state) st.data.unassigned = state.unassigned;
+      if (state.design) { st.data.design = state.design; st.data.can_start = false; }
+      if (state.design && !job.ohl_design_id) job.ohl_design_id = [state.design.id, state.design.name];
+    };
+    const pill = document.createElement('button');
+    pill.className = 'ohm-pill';
+    pill.hidden = true;
+    $('.ohm-map').appendChild(pill);
+    const updatePill = () => {
+      const n = st.data.unassigned || 0;
+      pill.hidden = !(n > 0 && editable() && (live('view') || live('items')));
+      pill.innerHTML = `&#9888;&#65039; ${n} unassigned`;
+    };
+    pill.addEventListener('click', () => itemsList());
+
+    const KIND_ICON = { tree: '🌳', bush: '🌿', other: '⭐' };
+    const itemsList = () => {
+      const box = $('.ohu-add');
+      const items = list('items');
+      box.innerHTML = `<div class="ohu-add-card">
+          <div class="ohu-add-title">Items on this job</div>
+          <div class="ohm-hint">Tap one, then tap the map where it is.</div>
+          ${items.map(i => `<button class="ohm-item${i.placed ? ' placed' : ''}" data-place="${this._esc(i.key)}">
+              <span>${KIND_ICON[i.kind] || '⭐'}</span><span class="ohm-item-label">${this._esc(i.label)}</span>
+              <span class="ohm-item-state">${i.placed ? `&#10003; on the map${i.placed > 1 ? ' ×' + i.placed : ''}` : 'unassigned'}</span></button>`).join('')
+            || '<p>No trees, bushes or other items on this order.</p>'}
+          <div class="ohm-btns" style="margin-top:12px;"><button class="btn btn-primary" data-sheet="close">Close</button></div></div>`;
+      box.hidden = false;
+      box.onclick = (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+        box.hidden = true;
+        if (t.dataset.place) {
+          st.placing = items.find(i => i.key === t.dataset.place);
+          st.mode = 'place';
+          draw();
+        }
+      };
     };
 
     const center3 = () => { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng(), zoom: map.getZoom() }; };
@@ -294,17 +347,49 @@ const HolidayMap = {
         draw();
       }
     });
-    const removeFeature = (f) => guard(async () => {
-      if (!(live('items') || live('view')) || !editable()) return;
-      if (!(f.added_on_site || (st.data.design && st.data.design.field))) {
-        App.showToast(`${f.code || f.label}: the office's item`, 'info');
-        return;
-      }
-      if (!window.confirm(`Remove ${f.code || f.label}?`)) return;
-      await OdooAPI.callKw('fsm.order', 'worker_map_delete_feature', [job.id, f.id], {});
-      st.data.features = list('features').filter(x => x.id !== f.id);
-      draw();
-    });
+    // A tree / bush on the map: assign it to one of the order's items, unassign it, or delete it.
+    const featureSheet = (f) => {
+      if (!(live('items') || live('view')) || !editable() || st.busy) return;
+      const field = !!(st.data.design && st.data.design.field);
+      const own = field || f.added_on_site;
+      const current = field ? f.item_key : (f.added_on_site ? false : `f:${f.id}`);
+      const items = list('items');
+      const box = $('.ohu-add');
+      box.innerHTML = `<div class="ohu-add-card">
+          <div class="ohu-add-title">${KIND_ICON[f.kind] || '⭐'} ${this._esc(f.code || f.label)}${current ? '' : ' · unassigned'}</div>
+          ${items.length ? `<div class="ohm-sec">Assign to</div>
+            ${items.map(i => `<button class="ohm-item${i.key === current ? ' on' : ''}" data-assign="${this._esc(i.key)}">
+              <span>${KIND_ICON[i.kind] || '⭐'}</span><span class="ohm-item-label">${this._esc(i.label)}</span>
+              <span class="ohm-item-state">${i.key === current ? '&#10003;' : (i.placed ? 'on the map' : 'unassigned')}</span></button>`).join('')}`
+            : '<div class="ohm-hint">No trees or bushes on this order to assign it to.</div>'}
+          <div class="ohm-btns" style="margin-top:12px;">
+            ${current ? '<button class="btn" data-sheet="unassign">Unassign</button>' : ''}
+            ${own ? '<button class="btn" data-sheet="delete">Delete</button>' : ''}
+            <button class="btn btn-primary" data-sheet="close">Close</button></div></div>`;
+      box.hidden = false;
+      box.onclick = (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+        if (t.dataset.sheet === 'close') { box.hidden = true; return; }
+        guard(async () => {
+          let state = null;
+          if (t.dataset.assign && t.dataset.assign !== current) {
+            state = await OdooAPI.callKw('fsm.order', 'worker_map_assign_feature', [job.id, f.id, t.dataset.assign], {});
+          } else if (t.dataset.sheet === 'unassign') {
+            state = await OdooAPI.callKw('fsm.order', 'worker_map_assign_feature', [job.id, f.id, false], {});
+          } else if (t.dataset.sheet === 'delete') {
+            if (!window.confirm(`Delete ${f.code || f.label}?`)) return;
+            state = await OdooAPI.callKw('fsm.order', 'worker_map_delete_feature', [job.id, f.id], {});
+          } else if (t.dataset.assign) {
+            box.hidden = true;
+            return;
+          }
+          box.hidden = true;
+          applyState(state);
+          draw();
+        });
+      };
+    };
     const removePower = (p) => guard(async () => {
       if (!live('power') || !window.confirm(`Remove outlet ${p.code || ''}?`)) return;
       await OdooAPI.callKw('fsm.order', 'worker_map_delete_power', [job.id, p.id], {});
@@ -424,7 +509,13 @@ const HolidayMap = {
         draw();
       } else if (live('items')) {
         const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_feature', [job.id, st.item, e.latLng.lat(), e.latLng.lng(), center3()], {});
-        took(res); list('features').push(res.feature);
+        took(res); applyState(res.state);
+        draw();
+      } else if (live('place') && st.placing) {
+        const state = await OdooAPI.callKw('fsm.order', 'worker_map_place_item',
+          [job.id, st.placing.key, e.latLng.lat(), e.latLng.lng(), center3()], {});
+        applyState(state);
+        st.mode = 'view'; st.placing = null;
         draw();
       } else if (live('draw') && !st.free) {
         st.pts.push({ lat: e.latLng.lat(), lng: e.latLng.lng() });
