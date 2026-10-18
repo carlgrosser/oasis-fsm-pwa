@@ -75,6 +75,10 @@ const App = {
     // Init sync
     Sync.init();
 
+    // A new version of the app: check on every open, and reload once it takes over (otherwise the
+    // phone keeps showing the old copy until the next refresh).
+    this._watchForUpdates();
+
     // Init themes (local, no network) — do this before the first paint so
     // there's no flash of the wrong theme.
     if (typeof Themes !== 'undefined') {
@@ -502,6 +506,23 @@ const App = {
         </div>
       `;
     }
+  },
+
+  _watchForUpdates() {
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // The first install isn't an update; and reload at most once a minute (never in a loop).
+      if (!hadController) return;
+      let last = 0;
+      try { last = parseInt(sessionStorage.getItem('pwa_sw_reload') || '0', 10); } catch (e) { /* ignore */ }
+      if (Date.now() - last < 60000) return;
+      try { sessionStorage.setItem('pwa_sw_reload', String(Date.now())); } catch (e) { /* ignore */ }
+      window.location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(err => {
+      console.warn('SW update check failed:', err);
+    });
   },
 
   /**

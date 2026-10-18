@@ -623,6 +623,12 @@ const Jobs = {
     };
   },
 
+  /** Photo steps a job never asks for: Holiday Lighting jobs have no equipment to turn off. */
+  _skippedPhotoCats(job) {
+    const company = job && (Array.isArray(job.company_id) ? job.company_id[0] : job.company_id);
+    return company && company === CONFIG.HOLIDAY_COMPANY_ID ? ['equipment'] : [];
+  },
+
   /** Case-insensitive loose match used throughout for stage names. */
   _stageMatches(a, b) {
     const x = (a || '').toLowerCase().trim();
@@ -1382,7 +1388,7 @@ const Jobs = {
     // otherwise the toggle would resurrect a section the profile removed.
     const allCats = prof.photos.mode === 'hidden'
       ? []
-      : (CONFIG.PHOTO_CATEGORIES || []).map(c => c.key);
+      : (CONFIG.PHOTO_CATEGORIES || []).map(c => c.key).filter(c => !this._skippedPhotoCats(job).includes(c));
     const cats = this._showAllSteps ? allCats : stageCats;
     const showMaterials = prof.materials.mode !== 'hidden' && (
                           this._showAllSteps ||
@@ -1431,7 +1437,7 @@ const Jobs = {
     const earlierCats = (prof.photos.mode !== 'hidden'
       && !this._showAllSteps
       && stageName.toLowerCase().includes('progress'))
-      ? ['equipment', 'before']
+      ? ['equipment', 'before'].filter(c => !this._skippedPhotoCats(job).includes(c))
       : [];
 
     return `
@@ -1454,7 +1460,7 @@ const Jobs = {
       ${earlierCats.length > 0 ? `
       <details class="detail-section earlier-steps-section" id="earlierStepsSection" data-cats="${earlierCats.join(',')}">
         <summary class="earlier-steps-summary">
-          <span class="earlier-steps-title">📷 Earlier Steps — Equipment &amp; Before Photos</span>
+          <span class="earlier-steps-title">📷 Earlier Steps — ${earlierCats.includes('equipment') ? 'Equipment &amp; ' : ''}Before Photos</span>
           <span class="earlier-steps-chevron">›</span>
         </summary>
         <div id="earlierPhotoSection">
@@ -1506,7 +1512,8 @@ const Jobs = {
     // A template with photos hidden gets no photo sections at all.
     if (job && this._profileFor(job).photos.mode === 'hidden') return [];
     const name = stageName.toLowerCase();
-    if (name.includes('arrived')) return ['equipment', 'before'];
+    const skip = this._skippedPhotoCats(job);
+    if (name.includes('arrived')) return ['equipment', 'before'].filter(c => !skip.includes(c));
     if (name.includes('progress')) return ['after', 'problem_areas', 'other'];
     return [];
   },
@@ -1669,7 +1676,9 @@ const Jobs = {
     const counts = await Photos.getPhotoCountsByCategory(job.id);
     const missing = [];
 
+    const skip = this._skippedPhotoCats(job);
     for (const key of gatedCategories) {
+      if (skip.includes(key)) continue;
       const need = prof.photos[key] || 0;
       if (need <= 0) continue;
       const have = counts[key] || 0;
@@ -2600,7 +2609,8 @@ const Jobs = {
     const picker = document.getElementById('categoryPicker');
     if (!picker) return;
 
-    const categories = CONFIG.PHOTO_CATEGORIES || [];
+    const skip = this._skippedPhotoCats(this._currentJob);
+    const categories = (CONFIG.PHOTO_CATEGORIES || []).filter(c => !skip.includes(c.key));
     const jobId = this._currentJob.id;
 
     const html = categories.map(cat => `
