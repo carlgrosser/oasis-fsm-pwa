@@ -84,10 +84,10 @@
     </p>
   </div>
 
-  <script src="js/config.js"></script>
-  <script src="js/odoo-api.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/auth.js"></script>
+  <script src="js/config.js?v=120"></script>
+  <script src="js/odoo-api.js?v=120"></script>
+  <script src="js/db.js?v=120"></script>
+  <script src="js/auth.js?v=120"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       // Init DB
@@ -170,6 +170,12 @@
       const fail = (msg) => { errorEl.textContent = msg; errorEl.style.display = 'block'; };
       const sendCode = async (btn) => {
         errorEl.style.display = 'none';
+        if (typeof Auth.sendCode !== 'function') {
+          // An older copy of the app's scripts is still saved on this phone: get the new ones.
+          fail('Updating the app… one moment.');
+          setTimeout(() => window.location.reload(), 800);
+          return;
+        }
         const phone = phoneEl.value.trim();
         if (phone.replace(/\D/g, '').length < 10) { fail('Enter your 10-digit mobile number'); return; }
         btn.disabled = true;
@@ -235,9 +241,18 @@
       });
     });
 
-    // Register service worker
+    // Register service worker; a new version reloads this page once (so the page and its scripts match).
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(err => {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return;
+        let last = 0;
+        try { last = parseInt(sessionStorage.getItem('pwa_sw_reload') || '0', 10); } catch (e) { /* ignore */ }
+        if (Date.now() - last < 60000) return;
+        try { sessionStorage.setItem('pwa_sw_reload', String(Date.now())); } catch (e) { /* ignore */ }
+        window.location.reload();
+      });
+      navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(err => {
         console.warn('SW registration failed:', err);
       });
     }
