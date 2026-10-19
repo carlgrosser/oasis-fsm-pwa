@@ -46,6 +46,37 @@ const Auth = {
    * Login with username and password.
    * Returns { success, error, user }.
    */
+  /** Text me a code: the employee with this mobile gets a 6-digit code. */
+  async sendCode(phone) {
+    try {
+      const res = await OdooAPI.rpc('/oasis/login/send_code', { phone });
+      if (res && res.ok) return { success: true, to: res.to };
+      const why = {
+        unknown: 'That number isn\'t on file for an employee. Ask the office to add your mobile number.',
+        rate_limited: 'Too many codes in the last hour. Wait a bit, or use your password.',
+        send_failed: 'The text didn\'t go out. Try again in a minute.',
+      }[res && res.error] || 'Couldn\'t send a code.';
+      return { success: false, error: why };
+    } catch (err) {
+      return { success: false, error: 'Cannot connect to server. Check your internet connection.' };
+    }
+  },
+
+  /** Sign in with the texted code (an Odoo session, as with a password). */
+  async loginWithCode(phone, code) {
+    try {
+      const result = await OdooAPI.rpc('/oasis/login/verify', { phone, code });
+      if (!result || !result.ok || !result.uid) {
+        return { success: false, error: result && result.error === 'unknown'
+          ? 'That number isn\'t on file for an employee.' : 'That code didn\'t work (or it expired). Send a new one.' };
+      }
+      OdooAPI._sessionId = result.session_id;
+      return await this._finishLogin(result, result.username, true);
+    } catch (err) {
+      return { success: false, error: 'Cannot connect to server. Check your internet connection.' };
+    }
+  },
+
   async login(username, password, remember) {
     try {
       const result = await OdooAPI.authenticate(username, password);
@@ -53,6 +84,15 @@ const Auth = {
       if (!result || !result.uid) {
         return { success: false, error: 'Invalid username or password' };
       }
+      return await this._finishLogin(result, username, remember);
+    } catch (err) {
+      return this._loginError(err);
+    }
+  },
+
+  /** After the server said yes (password or code): the worker profile, the employee, the settings. */
+  async _finishLogin(result, username, remember) {
+    try {
 
       // Get fsm.person for this user (match via partner_id from session)
       const person = await OdooAPI.getMyPersonId(result.uid, result.partner_id);
@@ -108,6 +148,12 @@ const Auth = {
 
       return { success: true, user: sessionData };
     } catch (err) {
+      return this._loginError(err);
+    }
+  },
+
+  _loginError(err) {
+    {
       const rawMsg = (err && err.message) ? err.message : '';
       // TODO(PWA-AUTH-LEAK-001): Remove detailed server errors and revert to generic codes/messages.
       const sanitizeError = (msg) => {

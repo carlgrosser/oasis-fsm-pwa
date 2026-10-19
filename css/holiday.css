@@ -171,3 +171,17 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .ohu-clipsel { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 4px 0; }
 .ohu-clipsel select { flex: 1; height: 44px; font-size: 16px; border-radius: 8px; padding: 0 8px; }
 .ohu-other-name { flex: 1; min-width: 0; height: 44px; font-size: 16px; padding: 0 10px; border: 1px solid var(--border-color, #ccc); border-radius: 8px; }
+
+/* The clock card at the top of Today (js/timetracking.js renderCard) */
+.clock-card { margin: 8px 12px; padding: 14px; border-radius: 14px; background: var(--card-background, #fff);
+  box-shadow: var(--shadow-md, 0 2px 8px rgba(0,0,0,.12)); border: 2px solid var(--border-color, #ddd); }
+.clock-card.state-in { border-color: var(--success-color, #2e7d32); }
+.clock-card.state-break { border-color: var(--warning-color, #f39c12); }
+.clock-card-hello { font-size: 20px; font-weight: 700; }
+.clock-card-sub { font-size: 15px; color: var(--text-secondary, #555); margin: 2px 0 12px; font-weight: 600; }
+.clock-card-main { width: 100%; min-height: 64px; font-size: 22px; font-weight: 700; border-radius: 12px; border: 0; color: #fff; }
+.clock-card-main.clock-on { background: var(--success-color, #2e7d32); }
+.clock-card-main.clock-off { background: #c62828; }
+.clock-card-row { display: flex; gap: 10px; }
+.clock-card-row .clock-card-main { flex: 2; }
+.clock-card-side { flex: 1; min-height: 64px; font-size: 18px; border-radius: 12px; }

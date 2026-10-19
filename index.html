@@ -26,7 +26,24 @@
 
       <div id="loginError" class="alert alert-error" style="display:none;"></div>
 
-      <form id="loginForm" autocomplete="on">
+      <!-- Sign in with your phone: a code by text (no password to remember) -->
+      <div id="codeLogin">
+        <div class="form-group" id="phoneStep">
+          <label for="loginPhone">Your mobile number</label>
+          <input type="tel" id="loginPhone" class="form-input" placeholder="916 555 0123" autocomplete="tel" inputmode="tel">
+          <button type="button" id="sendCodeBtn" class="btn btn-primary btn-block btn-lg" style="margin-top:var(--spacing-md);">Text me a code</button>
+        </div>
+        <div class="form-group" id="codeStep" style="display:none;">
+          <label for="loginCode">The 6-digit code we texted <span id="codeTo"></span></label>
+          <input type="text" id="loginCode" class="form-input" placeholder="123456" autocomplete="one-time-code"
+                 inputmode="numeric" maxlength="6" style="font-size:24px;letter-spacing:6px;text-align:center;">
+          <button type="button" id="codeSignInBtn" class="btn btn-primary btn-block btn-lg" style="margin-top:var(--spacing-md);">Sign In</button>
+          <button type="button" id="resendCodeBtn" class="install-link" style="margin-top:var(--spacing-sm);">Send a new code</button>
+        </div>
+        <button type="button" id="usePasswordBtn" class="install-link" style="margin-top:var(--spacing-sm);">Use a username and password instead</button>
+      </div>
+
+      <form id="loginForm" autocomplete="on" style="display:none;">
         <div class="form-group">
           <label for="username">Username</label>
           <input type="text" id="username" class="form-input" placeholder="Your Odoo username"
@@ -46,6 +63,7 @@
             Sign In
           </button>
         </div>
+        <button type="button" id="useCodeBtn" class="install-link" style="margin-top:var(--spacing-sm);">Sign in with a texted code instead</button>
       </form>
 
       <div id="loginStatus" style="text-align:center; margin-top:var(--spacing-md); display:none;">
@@ -133,6 +151,58 @@
         }
         installHelp.style.display = 'block';
       });
+
+      // Code by text (the default), or username and password (remembered: the last way used).
+      const codeBox = document.getElementById('codeLogin');
+      const showWay = (way) => {
+        codeBox.style.display = way === 'password' ? 'none' : '';
+        form.style.display = way === 'password' ? '' : 'none';
+        try { localStorage.setItem('login_way', way); } catch (e) { /* private mode */ }
+        errorEl.style.display = 'none';
+      };
+      let lastWay = 'code';
+      try { lastWay = localStorage.getItem('login_way') || 'code'; } catch (e) { /* private mode */ }
+      showWay(lastWay);
+      document.getElementById('usePasswordBtn').addEventListener('click', () => showWay('password'));
+      document.getElementById('useCodeBtn').addEventListener('click', () => showWay('code'));
+      const phoneEl = document.getElementById('loginPhone');
+      const codeEl = document.getElementById('loginCode');
+      const fail = (msg) => { errorEl.textContent = msg; errorEl.style.display = 'block'; };
+      const sendCode = async (btn) => {
+        errorEl.style.display = 'none';
+        const phone = phoneEl.value.trim();
+        if (phone.replace(/\D/g, '').length < 10) { fail('Enter your 10-digit mobile number'); return; }
+        btn.disabled = true;
+        const res = await Auth.sendCode(phone);
+        btn.disabled = false;
+        if (!res.success) { fail(res.error); return; }
+        document.getElementById('codeTo').textContent = res.to ? `(to …${res.to})` : '';
+        document.getElementById('phoneStep').style.display = 'none';
+        document.getElementById('codeStep').style.display = '';
+        codeEl.value = '';
+        codeEl.focus();
+      };
+      document.getElementById('sendCodeBtn').addEventListener('click', (e) => sendCode(e.currentTarget));
+      document.getElementById('resendCodeBtn').addEventListener('click', (e) => sendCode(e.currentTarget));
+      phoneEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendCode(document.getElementById('sendCodeBtn')); });
+      const codeSignIn = async () => {
+        errorEl.style.display = 'none';
+        const code = codeEl.value.replace(/\D/g, '');
+        if (code.length !== 6) { fail('Enter the 6-digit code from the text'); return; }
+        const btn = document.getElementById('codeSignInBtn');
+        btn.style.display = 'none';
+        statusEl.style.display = 'block';
+        const result = await Auth.loginWithCode(phoneEl.value.trim(), code);
+        if (result.success) {
+          window.location.href = 'app.html';
+        } else {
+          fail(result.error);
+          btn.style.display = 'flex';
+          statusEl.style.display = 'none';
+        }
+      };
+      document.getElementById('codeSignInBtn').addEventListener('click', codeSignIn);
+      codeEl.addEventListener('input', () => { if (codeEl.value.replace(/\D/g, '').length === 6) codeSignIn(); });
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

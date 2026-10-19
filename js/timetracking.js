@@ -491,6 +491,7 @@ const TimeTracking = {
    * On break:   shows the break timer (existing behavior).
    */
   _renderHeaderButton() {
+    this._renderCard();
     const btn = document.getElementById('clockBtn');
     const timer = document.getElementById('lunchTimer');
     if (!btn) return;
@@ -515,6 +516,66 @@ const TimeTracking = {
       if (timer) timer.style.display = '';
       this._stopWorkTimer();
       this._stopGeofenceMonitor();
+    }
+  },
+
+  // ========== THE CLOCK CARD (top of Today: the main thing for most of the crew) ==========
+
+  /** The big clock card at the top of the Today list. */
+  renderCard(container) {
+    if (!container) return;
+    let card = document.getElementById('clockCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'clockCard';
+      card.className = 'clock-card';
+      card.addEventListener('click', (e) => this._onCardClick(e));
+    }
+    container.insertBefore(card, container.firstChild);
+    this._renderCard();
+  },
+
+  _renderCard() {
+    const card = document.getElementById('clockCard');
+    if (!card) return;
+    const user = typeof Auth !== 'undefined' && Auth.getUser ? Auth.getUser() : null;
+    const first = user && user.name ? String(user.name).split(' ')[0] : '';
+    const hour = new Date().getHours();
+    const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    const esc = (t) => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+    card.className = `clock-card state-${this._status}`;
+    if (this._status === 'out') {
+      card.innerHTML = `<div class="clock-card-hello">${esc(hello)}${first ? ', ' + esc(first) : ''}</div>
+        <div class="clock-card-sub">${esc(today)}</div>
+        <button class="btn clock-card-main clock-on" data-clock="in">&#9654; Clock On</button>`;
+    } else if (this._status === 'in') {
+      card.innerHTML = `<div class="clock-card-sub" id="clockCardTime">On the clock</div>
+        <div class="clock-card-row">
+          <button class="btn clock-card-side" data-clock="lunch">&#127828; Lunch</button>
+          <button class="btn clock-card-main clock-off" data-clock="off">&#9632; Clock Off</button>
+        </div>`;
+      this._updateWorkTimer();
+    } else if (this._status === 'break') {
+      card.innerHTML = `<div class="clock-card-sub" id="clockCardTime">On lunch</div>
+        <button class="btn clock-card-main clock-on" data-clock="endlunch">&#9654; End Lunch</button>`;
+      this._updateLunchTimer();
+    } else {
+      card.innerHTML = '';
+    }
+  },
+
+  async _onCardClick(e) {
+    const t = e.target.closest('[data-clock]');
+    if (!t || t.disabled) return;
+    t.disabled = true;
+    try {
+      if (t.dataset.clock === 'in') await this.clockIn();
+      else if (t.dataset.clock === 'off') this.showClockOffDialog();
+      else if (t.dataset.clock === 'lunch') await this.startLunch();
+      else if (t.dataset.clock === 'endlunch') await this.endLunch();
+    } finally {
+      t.disabled = false;
     }
   },
 
@@ -754,6 +815,8 @@ const TimeTracking = {
     });
 
     el.textContent = `${since} · ${h}h ${String(m).padStart(2, '0')}m`;
+    const card = document.getElementById('clockCardTime');
+    if (card) card.textContent = `On the clock since ${since} · ${h}h ${String(m).padStart(2, '0')}m`;
     el.title = `Clocked on at ${since} — ${h}h ${m}m worked` +
       (this._lunchDeductMs ? ' (lunch deducted)' : '');
     el.style.display = '';
@@ -785,6 +848,8 @@ const TimeTracking = {
     const secs = elapsed % 60;
     timer.textContent = mins + ':' + String(secs).padStart(2, '0');
     timer.style.display = '';
+    const card = document.getElementById('clockCardTime');
+    if (card) card.textContent = `On lunch · ${mins} min`;
   },
 
   // ========== STATE PERSISTENCE ==========
