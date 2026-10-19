@@ -123,12 +123,52 @@ const HolidayUsed = {
       return;
     }
     const rows = (data.rows || []).map(r => Object.assign({}, r));
+    const catalog = data.catalog || { groups: [], bulb_types: [], colors: [], strand_types: [], attachments: [], extras: [] };
     // C9 / C7: one total per pattern (Odoo splits it across the colors).
     const bulbGroups = (data.bulb_groups || []).map(g => Object.assign({}, g, { odd: Object.assign({}, g.odd || {}),
       uneven: Object.keys(g.odd || {}).length > 0 }));
     const patterns = data.patterns || [];
     const patternOf = (id) => patterns.find(p => p.id === id);
-    const catalog = data.catalog || { groups: [], bulb_types: [], colors: [], strand_types: [], attachments: [], extras: [] };
+    // Clips: worked out from the bulbs (one roof clip per bulb, less the special clips), stakes for ground runs.
+    const clipCat = catalog.clips || null;
+    const clip = { main: data.main_clip_id || (clipCat && clipCat.main[0] ? clipCat.main[0].id : false),
+                   mainQty: null, groundQty: null, special: {}, more: false };
+    if (clipCat) {
+      const managed = new Set([...clipCat.main.map(c => c.code), ...(clipCat.ground ? [clipCat.ground.code] : []),
+                               ...clipCat.special.map(c => c.code)]);
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i];
+        const code = r.attachment_code || ((catalog.attachments || []).find(a => a.id === r.attachment_id) || {}).code
+          || (/magnet/i.test(r.label) && r.group === 'attachment' ? 'magnetic_clip' : null);
+        if (r.group !== 'attachment' || !code || !managed.has(code)) continue;
+        if (clipCat.main.some(c => c.code === code)) {
+          clip.main = clipCat.main.find(c => c.code === code).id;
+          if (data.source === 'saved') clip.mainQty = r.qty;
+        } else if (clipCat.ground && code === clipCat.ground.code) {
+          if (data.source === 'saved') clip.groundQty = r.qty;
+        } else {
+          clip.special[code] = r.qty;
+        }
+        rows.splice(i, 1);
+      }
+    }
+    const perBulbSpecial = () => clipCat ? clipCat.special.filter(c => c.usage !== 'per_ft' && c.code !== 'hot_glue')
+      .reduce((a, c) => a + (clip.special[c.code] || 0), 0) : 0;
+    const roofBulbs = () => bulbGroups.filter(g => !g.ground).reduce((a, g) => a + (g.total || 0), 0);
+    const groundBulbs = () => bulbGroups.filter(g => g.ground).reduce((a, g) => a + (g.total || 0), 0);
+    const mainAuto = () => Math.max(roofBulbs() - perBulbSpecial(), 0);
+    const clipRows = () => {
+      if (!clipCat) return [];
+      const out = [];
+      const main = clipCat.main.find(c => c.id === clip.main);
+      const mainQty = clip.mainQty != null ? clip.mainQty : mainAuto();
+      if (main && mainQty > 0) out.push({ group: 'attachment', label: main.name, qty: mainQty, attachment_id: main.id });
+      const gq = clip.groundQty != null ? clip.groundQty : groundBulbs();
+      if (clipCat.ground && gq > 0) out.push({ group: 'attachment', label: clipCat.ground.name, qty: gq, attachment_id: clipCat.ground.id });
+      clipCat.special.forEach(c => { if ((clip.special[c.code] || 0) > 0) out.push({ group: 'attachment', label: c.name, qty: clip.special[c.code],
+        unit: c.usage === 'per_ft' ? 'ft' : '', attachment_id: c.id }); });
+      return out;
+    };
     $('.ohu-sub').textContent = this._sourceText(data);
     $('[data-act="save"]').disabled = false;
 
@@ -144,7 +184,8 @@ const HolidayUsed = {
             <div class="ohu-bulbs-head"><b>${this._esc(bulbName(g.bulb_type_id))}</b>
               ${bulbGroups.length > 1 ? `<button class="btn btn-sm btn-ghost" data-g-del="${gi}">Remove</button>` : ''}</div>
             <div class="ohu-patterns">${patterns.map(p => `<button class="ohu-chip${p.id === g.pattern_id ? ' on' : ''}" data-g-pat="${gi}:${p.id}">
-              ${p.colors.slice(0, 4).map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>`).join('')}${this._esc(p.name)}</button>`).join('')}</div>
+              ${p.colors.slice(0, 4).map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>`).join('')}${this._esc(p.name)}</button>`).join('')}
+              <button class="ohu-chip" data-g-custom="${gi}">&#10133; Custom</button></div>
             <div class="ohu-row">
               <div class="ohu-label">Total bulbs${g.planned ? `<div class="ohu-plan">plan ${g.planned}</div>` : ''}</div>
               <button class="ohu-btn" data-g-step="${gi}:-1" aria-label="Less">&minus;</button>
@@ -153,6 +194,7 @@ const HolidayUsed = {
               <button class="btn btn-sm" data-g-step="${gi}:25">+25</button>
             </div>
             <label class="ohu-uneven"><input type="checkbox" data-g-uneven="${gi}" ${g.uneven ? 'checked' : ''}> Not an even split</label>
+            <label class="ohu-uneven"><input type="checkbox" data-g-ground="${gi}" ${g.ground ? 'checked' : ''}> Ground run (stakes)</label>
             ${g.uneven ? `<div class="ohu-odd">${uniq.map(c => `<label class="ohu-odd-row"><span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>${this._esc(c.name)}
                 <input type="number" inputmode="numeric" min="0" placeholder="the rest" value="${g.odd[c.id] != null ? g.odd[c.id] : ''}" data-g-odd="${gi}:${c.id}"></label>`).join('')}
               <div class="ohu-plan">Leave the main color empty: it gets the rest.</div></div>` : ''}
@@ -161,9 +203,87 @@ const HolidayUsed = {
       }).join('') + '<button class="btn btn-sm" data-g-add>&#10133; Another pattern</button>';
     };
 
+    const clipVal = (key) => key === 'main' ? (clip.mainQty != null ? clip.mainQty : mainAuto())
+      : key === 'ground' ? (clip.groundQty != null ? clip.groundQty : groundBulbs()) : (clip.special[key] || 0);
+    const setClip = (key, v) => {
+      if (key === 'main') clip.mainQty = v;
+      else if (key === 'ground') clip.groundQty = v;
+      else clip.special[key] = v;
+    };
+    // A custom pattern: tap the colors in order (e.g. red, green, blue).
+    const customPattern = (gi) => {
+      if (!navigator.onLine) { App.showToast('A new pattern needs signal', 'error'); return; }
+      const picked = [];
+      const box = $('.ohu-add');
+      const draw = () => {
+        box.innerHTML = `<div class="ohu-add-card"><div class="ohu-add-title">Custom pattern: tap the colors in order</div>
+            <div class="ohu-custom-seq">${picked.map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>`).join('') || '<span class="ohu-plan">e.g. red, green, blue</span>'}</div>
+            <div class="ohu-patterns" style="flex-wrap:wrap;">${(catalog.colors || []).map(c => `<button class="ohu-chip" data-cc="${c.id}"><span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>${this._esc(c.name)}</button>`).join('')}</div>
+            <div class="ohm-btns" style="margin-top:12px;display:flex;gap:8px;"><button class="btn" data-cc-undo ${picked.length ? '' : 'disabled'}>&#8630; Undo</button>
+              <button class="btn" data-add-cancel>Cancel</button>
+              <button class="btn btn-primary" data-cc-save ${picked.length ? '' : 'disabled'}>Save pattern</button></div></div>`;
+      };
+      draw();
+      box.hidden = false;
+      box.onclick = async (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+        e.stopPropagation();
+        if (t.hasAttribute('data-add-cancel')) { box.hidden = true; box.onclick = null; return; }
+        if (t.dataset.cc) { picked.push((catalog.colors || []).find(c => String(c.id) === t.dataset.cc)); draw(); return; }
+        if (t.hasAttribute('data-cc-undo')) { picked.pop(); draw(); return; }
+        if (t.hasAttribute('data-cc-save')) {
+          try {
+            const pat = await OdooAPI.callKw('fsm.order', 'worker_create_pattern', [job.id, picked.map(c => c.id)], {});
+            if (!patterns.find(p => p.id === pat.id)) patterns.push(pat);
+            bulbGroups[gi].pattern_id = pat.id;
+            bulbGroups[gi].odd = {};
+            box.hidden = true; box.onclick = null;
+            render();
+          } catch (err) {
+            App.showToast('Not saved: ' + (err.message || err), 'error');
+          }
+        }
+      };
+    };
+    const clipRowHtml = (key, label, qty, hint) => `<div class="ohu-row" data-clip="${key}">
+        <div class="ohu-label">${this._esc(label)}${hint ? `<div class="ohu-plan">${hint}</div>` : ''}</div>
+        <button class="ohu-btn" data-clip-step="${key}:-1" aria-label="Less">&minus;</button>
+        <input class="ohu-qty ohu-clipqty" type="number" inputmode="numeric" min="0" value="${qty}" data-clip-qty="${key}">
+        <button class="ohu-btn" data-clip-step="${key}:1" aria-label="More">+</button>
+        <span class="ohu-unit"></span></div>`;
+    const renderClips = () => {
+      if (!clipCat) return '';
+      const auto = mainAuto();
+      const main = clipCat.main.find(c => c.id === clip.main) || clipCat.main[0];
+      const special = perBulbSpecial();
+      let html = '<div class="ohu-group">Clips</div>';
+      html += `<div class="ohu-patterns">${clipCat.main.map(c => `<button class="ohu-chip${c.id === clip.main ? ' on' : ''}" data-clip-main="${c.id}">${this._esc(c.name)}</button>`).join('')}</div>`;
+      if (main) {
+        html += clipRowHtml('main', main.name, clip.mainQty != null ? clip.mainQty : auto,
+          clip.mainQty != null ? `typed in · from bulbs: ${auto} <button class="btn btn-sm btn-ghost" data-clip-auto>use ${auto}</button>`
+            : `${roofBulbs()} roof bulbs${special ? ` − ${special} special clips` : ''}`);
+      }
+      if (clipCat.ground && (groundBulbs() > 0 || clip.groundQty)) {
+        html += clipRowHtml('ground', clipCat.ground.name, clip.groundQty != null ? clip.groundQty : groundBulbs(), 'one per bulb on ground runs');
+      }
+      clipCat.special.forEach(c => {
+        if (c.code === 'magnetic_clip' || (clip.special[c.code] || 0) > 0 || clip.special[c.code] === 0) {
+          html += clipRowHtml(c.code, c.name, clip.special[c.code] || 0, c.code === 'magnetic_clip' ? 'counted as you go' : (c.usage === 'per_ft' ? 'feet' : ''));
+        }
+      });
+      const others = clipCat.special.filter(c => c.code !== 'magnetic_clip' && clip.special[c.code] == null);
+      if (others.length) {
+        html += clip.more
+          ? `<div class="ohu-patterns">${others.map(c => `<button class="ohu-chip" data-clip-add="${c.code}">${this._esc(c.name)}</button>`).join('')}</div>`
+          : '<button class="btn btn-sm" data-clip-more>&#10133; More clips</button>';
+      }
+      return html;
+    };
+
     const render = () => {
       const groups = (catalog.groups.length ? catalog.groups : [{ key: 'other', title: 'Items' }]);
-      let html = renderBulbs();
+      let html = renderBulbs() + renderClips();
       groups.forEach(g => {
         if (g.key === 'bulb' && bulbGroups.length) return;  // counted above, by pattern
         const list = rows.map((r, i) => [r, i]).filter(([r]) => (r.group || 'other') === g.key);
@@ -202,6 +322,30 @@ const HolidayUsed = {
         g.uneven = t.checked;
         if (!g.uneven) g.odd = {};
         render();
+      } else if (t.dataset.gGround) {
+        bulbGroups[parseInt(t.dataset.gGround, 10)].ground = t.checked;
+        render();
+      } else if (t.dataset.gCustom) {
+        customPattern(parseInt(t.dataset.gCustom, 10));
+      } else if (t.dataset.clipMain) {
+        clip.main = parseInt(t.dataset.clipMain, 10);
+        render();
+      } else if (t.dataset.clipStep) {
+        const [key, d] = t.dataset.clipStep.split(':');
+        setClip(key, Math.max(0, clipVal(key) + parseInt(d, 10)));
+        render();
+      } else if (t.hasAttribute('data-clip-auto')) {
+        clip.mainQty = null;
+        render();
+      } else if (t.hasAttribute('data-clip-more')) {
+        clip.more = true;
+        render();
+      } else if (t.dataset.clipAdd) {
+        clip.special[t.dataset.clipAdd] = 0;
+        clip.more = false;
+        render();
+        const input = overlay.querySelector(`[data-clip-qty="${t.dataset.clipAdd}"]`);
+        if (input) { input.focus(); input.select(); }
       } else if (t.dataset.gDel) {
         bulbGroups.splice(parseInt(t.dataset.gDel, 10), 1);
         render();
@@ -216,6 +360,7 @@ const HolidayUsed = {
     $('.ohu-body').addEventListener('change', (e) => {
       const t = e.target;
       if (t.dataset.gTotal) { bulbGroups[parseInt(t.dataset.gTotal, 10)].total = Math.max(0, t.valueAsNumber || 0); render(); }
+      if (t.dataset.clipQty) { setClip(t.dataset.clipQty, Math.max(0, t.valueAsNumber || 0)); render(); }
       if (t.dataset.gOdd) {
         const [gi, cid] = t.dataset.gOdd.split(':');
         const g = bulbGroups[parseInt(gi, 10)];
@@ -233,7 +378,7 @@ const HolidayUsed = {
       render();
     });
     $('.ohu-body').addEventListener('change', (e) => {
-      if (!e.target.classList.contains('ohu-qty') || e.target.dataset.gTotal) return;
+      if (!e.target.classList.contains('ohu-qty') || e.target.dataset.gTotal || e.target.dataset.clipQty) return;
       const i = parseInt(e.target.closest('.ohu-row').dataset.i, 10);
       rows[i].qty = Math.max(0, e.target.valueAsNumber || 0);
       render();
@@ -337,19 +482,24 @@ const HolidayUsed = {
       if (act.dataset.act === 'add') showAdd('kind');
       if (act.dataset.act === 'save') {
         // An input still being typed in: take its value.
-        overlay.querySelectorAll('.ohu-qty:not(.ohu-total)').forEach(inp => {
+        overlay.querySelectorAll('.ohu-qty:not(.ohu-total):not(.ohu-clipqty)').forEach(inp => {
           const i = parseInt(inp.closest('.ohu-row').dataset.i, 10);
           rows[i].qty = Math.max(0, inp.valueAsNumber || 0);
         });
         overlay.querySelectorAll('[data-g-total]').forEach(inp => {
           bulbGroups[parseInt(inp.dataset.gTotal, 10)].total = Math.max(0, inp.valueAsNumber || 0);
         });
+        overlay.querySelectorAll('[data-clip-qty]').forEach(inp => {
+          const key = inp.dataset.clipQty;
+          const v = Math.max(0, inp.valueAsNumber || 0);
+          if (v !== clipVal(key)) setClip(key, v);
+        });
         const groupsOut = bulbGroups.filter(g => g.total > 0 && g.pattern_id).map(g => ({
-          bulb_type_id: g.bulb_type_id, pattern_id: g.pattern_id, total: g.total, odd: g.uneven ? g.odd : {} }));
+          bulb_type_id: g.bulb_type_id, pattern_id: g.pattern_id, total: g.total, odd: g.uneven ? g.odd : {}, ground: !!g.ground }));
         act.disabled = true;
         try {
           // Added and left at 0: not used. A planned item at 0 stays (the plan was wrong).
-          await this.save(job.id, rows.filter(r => (r.qty || 0) > 0 || (r.planned || 0) > 0), data,
+          await this.save(job.id, rows.filter(r => (r.qty || 0) > 0 || (r.planned || 0) > 0).concat(clipRows()), data,
             data.bulb_groups ? groupsOut : null);
           overlay.remove();
           if (onClose) onClose();

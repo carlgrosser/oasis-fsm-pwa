@@ -161,6 +161,11 @@ const HolidayMap = {
         st.shapes.push(new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 11, strokeOpacity: 0.45, clickable: false, zIndex: 1 }));
         st.shapes.push(new g.Polyline({ map, path, strokeColor: color, strokeWeight: 6, strokeOpacity: 1, clickable: false, zIndex: 2,
           icons: dashed ? [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#000', scale: 3 }, offset: '0', repeat: '14px' }] : [] }));
+        if (run.tag2) {
+          // Double tag: stripes of the second color over the first.
+          st.shapes.push(new g.Polyline({ map, path, strokeOpacity: 0, clickable: false, zIndex: 2,
+            icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: run.tag2, strokeWeight: 6, scale: 4 }, offset: '0', repeat: '20px' }] }));
+        }
         hitLine(path, () => onRun(run));
         const num = new g.Marker({ map, position: path[0], clickable: tappable(), zIndex: 4,
           label: { text: String(run.run_no), color: '#000', fontWeight: '700', fontSize: '12px' },
@@ -175,6 +180,10 @@ const HolidayMap = {
         st.shapes.push(new g.Polyline({ map, path, strokeColor: '#000', strokeWeight: 6, strokeOpacity: 0.5, clickable: false, zIndex: 1 }));
         st.shapes.push(new g.Polyline({ map, path, strokeOpacity: 0, clickable: false, zIndex: 2,
           icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: color, strokeWeight: 4, scale: 3 }, offset: '0', repeat: '9px' }] }));
+        if (cord.tag2) {
+          st.shapes.push(new g.Polyline({ map, path, strokeOpacity: 0, clickable: false, zIndex: 2,
+            icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: cord.tag2, strokeWeight: 4, scale: 3 }, offset: '9px', repeat: '18px' }] }));
+        }
         hitLine(path, () => onCord(cord));
       });
       list('features').forEach((f) => {
@@ -230,8 +239,16 @@ const HolidayMap = {
         return;
       }
       if (live('tag')) {
-        b.innerHTML = `<div class="ohm-hint">${st.tag ? 'Tap each run or cord that gets this tag.' : 'Pick a tag color, then tap the runs and cords.'}</div>
-          <div class="ohm-tags">${st.data.tags.map(t => `<button class="ohm-tag${st.tag === t.id ? ' on' : ''}" data-tag="${t.id}"
+        const tagOf = (id) => st.data.tags.find(t => t.id === id);
+        const t1 = tagOf(st.tag), t2 = tagOf(st.tag2);
+        const sel = t1 ? `<div class="ohm-tagsel"><span class="ohm-tagdot" style="background:${this._esc(t1.hex)}"></span>${this._esc(t1.name)}
+            ${t2 ? ` + <span class="ohm-tagdot" style="background:${this._esc(t2.hex)}"></span>${this._esc(t2.name)}
+              <button class="btn btn-sm btn-ghost" data-bar="tag2off" aria-label="One color only">&times;</button>`
+              : `<button class="btn btn-sm" data-bar="tag2">+ 2nd color</button>`}</div>` : '';
+        const hint = st.pick2 ? 'Pick the second color.'
+          : st.tag ? 'Tap each run or cord that gets this tag.' : 'Pick a tag color, then tap the runs and cords.';
+        b.innerHTML = `<div class="ohm-hint">${hint}</div>${sel}
+          <div class="ohm-tags">${st.data.tags.map(t => `<button class="ohm-tag${st.tag === t.id || st.tag2 === t.id ? ' on' : ''}" data-tag="${t.id}"
               style="background:${this._esc(t.hex)}" aria-label="${this._esc(t.name)}"><span>${this._esc(t.name)}</span></button>`).join('')}</div>
           <div class="ohm-btns">${done}</div>`;
         return;
@@ -324,7 +341,8 @@ const HolidayMap = {
       if (!editable()) return;
       if (live('tag')) {
         if (!st.tag) { App.showToast('Pick a tag color first', 'info'); return; }
-        await saveRun({ uid: run.uid, tag_color_id: run.tag_id === st.tag ? false : st.tag });
+        const same = run.tag_id === st.tag && (run.tag2_id || false) === (st.tag2 || false);
+        await saveRun({ uid: run.uid, tag_color_id: same ? false : st.tag, tag_color2_id: same ? false : (st.tag2 || false) });
         draw();
         return;
       }
@@ -339,7 +357,8 @@ const HolidayMap = {
       if (!editable()) return;
       if (live('tag')) {
         if (!st.tag) { App.showToast('Pick a tag color first', 'info'); return; }
-        await saveCord({ uid: cord.uid, tag_color_id: cord.tag_id === st.tag ? false : st.tag });
+        const same = cord.tag_id === st.tag && (cord.tag2_id || false) === (st.tag2 || false);
+        await saveCord({ uid: cord.uid, tag_color_id: same ? false : st.tag, tag_color2_id: same ? false : (st.tag2 || false) });
         draw();
         return;
       }
@@ -528,7 +547,14 @@ const HolidayMap = {
     $('.ohm-bar').addEventListener('click', async (e) => {
       const t = e.target.closest('button');
       if (!t || st.busy) return;
-      if (t.dataset.tag) { st.tag = parseInt(t.dataset.tag, 10); bar(); return; }
+      if (t.dataset.tag) {
+        const id = parseInt(t.dataset.tag, 10);
+        if (st.pick2 && st.tag && id !== st.tag) { st.tag2 = id; st.pick2 = false; } else { st.tag = id; st.tag2 = null; st.pick2 = false; }
+        bar();
+        return;
+      }
+      if (t.dataset.bar === 'tag2') { st.pick2 = true; bar(); return; }
+      if (t.dataset.bar === 'tag2off') { st.tag2 = null; st.pick2 = false; bar(); return; }
       if (t.dataset.item) { st.item = t.dataset.item; bar(); return; }
       const act = t.dataset.bar;
       if (act === 'runs' || act === 'cords') {

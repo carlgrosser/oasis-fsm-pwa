@@ -165,3 +165,6 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .ohu-odd-row { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .ohu-odd-row input { width: 90px; height: 40px; font-size: 16px; margin-left: auto; }
 .ohu-split { font-size: 13px; color: var(--success-color, #2e7d32); font-weight: 600; }
+.ohm-tagsel { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; margin: 2px 0 4px; flex-wrap: wrap; }
+.ohm-tagdot { width: 18px; height: 18px; border-radius: 9px; border: 1px solid rgba(0, 0, 0, .35); display: inline-block; }
+.ohu-custom-seq { display: flex; gap: 4px; min-height: 22px; margin-bottom: 8px; flex-wrap: wrap; }
