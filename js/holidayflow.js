@@ -351,8 +351,11 @@ const HolidayFlow = {
     const row = (s) => {
       const state = s.done ? '<span class="ohf-st ok">&#10003;</span>' : s.skipped ? '<span class="ohf-st skip">&#8631;</span>' : '<span class="ohf-st todo">&#9675;</span>';
       const sub = s.skipped ? `Skipped: ${this._esc(s.reason)}` : this._esc(s.detail || (s.required ? '' : 'optional'));
+      // Done: a tick can be undone; a count, the map or photos can be opened again to change or add.
+      const reopen = { used: 'Edit', map: 'Edit', photos_before: '+ Photos', photos_after: '+ Photos' }[s.type];
       const act = s.done
-        ? (s.type === 'tick' ? `<button class="btn btn-sm btn-ghost" data-ohf-undo="${this._esc(s.code)}">Undo</button>` : '')
+        ? (s.type === 'tick' ? `<button class="btn btn-sm btn-ghost" data-ohf-undo="${this._esc(s.code)}">Undo</button>`
+          : reopen ? `<button class="btn btn-sm btn-ghost" data-ohf-do="${this._esc(s.code)}">${reopen}</button>` : '')
         : `<button class="btn btn-sm" data-ohf-do="${this._esc(s.code)}">${this._actionLabel(s)}</button>
            ${s.skipped ? '' : `<button class="btn btn-sm btn-ghost" data-ohf-skip="${this._esc(s.code)}">Skip</button>`}`;
       return `<div class="ohf-row">${state}<div class="ohf-row-main"><div>${this._esc(s.name)}</div>
