@@ -120,3 +120,48 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .photo-series-title { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
 .photo-series-thumb { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; }
 .photo-series-count { font-size: 18px; font-weight: 700; margin: 8px 0 14px; color: var(--success-color, #2e7d32); }
+
+/* Holiday job flow (js/holidayflow.js) */
+.ohf-top { padding: 8px 12px 0; }
+.ohf-card { border: 2px solid var(--primary-color, #1976d2); border-radius: 12px; padding: 10px 12px; background: var(--bg-primary, #fff); }
+.ohf-card.ohf-done { border-color: var(--success-color, #2e7d32); }
+.ohf-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ohf-label { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #777); }
+.ohf-title { font-size: 19px; font-weight: 700; margin: 4px 0 2px; }
+.ohf-help { font-size: 14px; color: var(--text-secondary, #555); line-height: 1.35; }
+.ohf-detail { font-size: 13px; color: var(--success-color, #2e7d32); margin-top: 2px; }
+.ohf-actions { display: flex; gap: 8px; margin-top: 10px; }
+.ohf-actions .btn-primary { flex: 1; min-height: 48px; font-size: 17px; }
+.ohf-quick { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ohf-quick > .btn { min-height: 44px; }
+.ohf-tally { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 14px; flex-wrap: wrap; }
+.ohf-tally .btn { min-width: 44px; min-height: 40px; }
+.ohf-tally-big { margin-top: 14px; font-size: 15px; }
+.ohf-phase { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #777); margin: 12px 0 4px; }
+.ohf-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-color, #eee); }
+.ohf-row-main { flex: 1; min-width: 0; font-size: 15px; }
+.ohf-row-sub { font-size: 12px; color: var(--text-muted, #777); }
+.ohf-row-act { display: flex; gap: 4px; }
+.ohf-st { width: 26px; height: 26px; border-radius: 13px; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+.ohf-st.ok { background: #e8f5e9; color: #2e7d32; }
+.ohf-st.skip { background: #fff3e0; color: #e65100; }
+.ohf-st.todo { background: var(--bg-secondary, #f2f2f2); color: var(--text-muted, #999); }
+.ohf-billstate { margin-top: 12px; padding: 10px; border-radius: 8px; background: var(--bg-secondary, #f4f4f4); font-size: 14px; }
+.ohf-pay summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.ohf-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.ohf-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 76px; justify-content: center;
+  border: 1px solid var(--border-color, #ddd); border-radius: 12px; background: var(--bg-secondary, #f6f6f6); font-size: 14px; color: inherit; }
+.ohf-tile span { font-size: 26px; line-height: 1; }
+.ohf-sop-body { font-size: 16px; line-height: 1.5; }
+.ohf-sop-body li { margin-bottom: 8px; }
+
+/* Actual Used: bulbs by pattern (js/holidayused.js) */
+.ohu-bulbs { border: 1px solid var(--border-color, #ddd); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.ohu-bulbs-head { display: flex; justify-content: space-between; align-items: center; }
+.ohu-patterns { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; }
+.ohu-patterns .ohu-chip { margin: 0; flex-shrink: 0; }
+.ohu-uneven { display: block; font-size: 14px; margin: 6px 0; }
+.ohu-odd { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 6px; }
+.ohu-odd-row { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.ohu-odd-row input { width: 90px; height: 40px; font-size: 16px; margin-left: auto; }
+.ohu-split { font-size: 13px; color: var(--success-color, #2e7d32); font-weight: 600; }

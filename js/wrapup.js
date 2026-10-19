@@ -73,6 +73,10 @@ const WrapUp = {
    * @param {boolean} editMode - true when re-opening a previously closed job
    */
   async show(job, editMode = false) {
+    // Holiday jobs: the required field steps first (do them or skip them with a reason).
+    if (!editMode && typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job)) {
+      if (!(await HolidayFlow.beforeClose(job))) return;
+    }
     this._currentJob = job;
 
     const customerName = Array.isArray(job.location_id) ? job.location_id[1] : (job.location_id || '');
@@ -811,6 +815,19 @@ const WrapUp = {
       // No sales order — nothing to check
       statusInfo.innerHTML = '';
       checkbox.disabled = false;
+      return;
+    }
+
+    // Holiday jobs: the crew doesn't collect (the card on file or the office takes care of the balance).
+    if (typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job)) {
+      const flow = HolidayFlow._data && HolidayFlow._data[job.id];
+      const bill = (flow && flow.bill) || {};
+      statusInfo.innerHTML = bill.ok_to_bill
+        ? `<span class="wrapup-status-paid">✓ OK to bill${bill.invoice ? ' — ' + this._esc(bill.invoice) : ''}: ${bill.state === 'scheduled' ? 'the card on file is charged tomorrow morning' : 'the office takes care of the balance'}</span>`
+        : '<span class="wrapup-status-unpaid">Not marked OK to bill: the office follows up on the balance.</span>';
+      checkbox.checked = false;
+      checkbox.disabled = true;
+      payNotice.style.display = 'none';
       return;
     }
 

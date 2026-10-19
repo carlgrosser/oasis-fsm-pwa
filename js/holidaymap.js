@@ -47,7 +47,7 @@ const HolidayMap = {
     return this._gLoading;
   },
 
-  async open(job) {
+  async open(job, onClose) {
     const overlay = document.createElement('div');
     overlay.className = 'ohu-overlay ohm-overlay';
     overlay.innerHTML = `
@@ -61,7 +61,9 @@ const HolidayMap = {
       <div class="ohu-add" hidden></div>`;
     document.body.appendChild(overlay);
     const $ = (s) => overlay.querySelector(s);
-    overlay.addEventListener('click', (e) => { if (e.target.closest('[data-act="close"]')) overlay.remove(); });
+    overlay.addEventListener('click', (e) => {
+      if (e.target.closest('[data-act="close"]')) { overlay.remove(); if (onClose) onClose(); }
+    });
     const fail = (msg) => {
       $('.ohu-sub').textContent = '';
       $('.ohm-map').innerHTML = `<div class="empty-state" style="padding:24px;text-align:center;">

@@ -51,7 +51,7 @@ const HolidayUsed = {
     if (!ids.length) return;
     for (const id of ids) {
       try {
-        await OdooAPI.callKw('fsm.order', 'worker_save_used', [parseInt(id, 10), pending[id].rows], {});
+        await OdooAPI.callKw('fsm.order', 'worker_save_used', [parseInt(id, 10), pending[id].rows, pending[id].groups || null], {});
         delete pending[id];
         await DB.setState(this._key(id), null).catch(() => {});
       } catch (err) {
@@ -79,7 +79,25 @@ const HolidayUsed = {
     return (row.unit === 'ft' || Math.max(row.planned || 0, row.qty || 0) >= 100) ? 10 : 1;
   },
 
-  async open(job) {
+  /** {color id: bulbs} for a pattern's total (as Odoo splits it: odd colors as entered, the rest shared,
+   *  a leftover bulb each on the remaining colors). */
+  split(total, pattern, odd) {
+    const weights = new Map();
+    (pattern ? pattern.colors : []).forEach(c => weights.set(c.id, (weights.get(c.id) || 0) + 1));
+    const out = {};
+    let used = 0;
+    Object.entries(odd || {}).forEach(([cid, q]) => { if (q > 0) { out[cid] = q; used += q; } });
+    const rest = Math.max((total || 0) - used, 0);
+    const restColors = [...weights.keys()].filter(c => !(String(c) in out));
+    if (!restColors.length) return out;
+    const totalW = restColors.reduce((a, c) => a + weights.get(c), 0);
+    let left = rest;
+    restColors.forEach(c => { out[c] = Math.floor(rest * weights.get(c) / totalW); left -= out[c]; });
+    for (const c of restColors) { if (left <= 0) break; out[c] += 1; left -= 1; }
+    return out;
+  },
+
+  async open(job, onClose) {
     const overlay = document.createElement('div');
     overlay.className = 'ohu-overlay';
     overlay.innerHTML = `
@@ -105,14 +123,49 @@ const HolidayUsed = {
       return;
     }
     const rows = (data.rows || []).map(r => Object.assign({}, r));
+    // C9 / C7: one total per pattern (Odoo splits it across the colors).
+    const bulbGroups = (data.bulb_groups || []).map(g => Object.assign({}, g, { odd: Object.assign({}, g.odd || {}),
+      uneven: Object.keys(g.odd || {}).length > 0 }));
+    const patterns = data.patterns || [];
+    const patternOf = (id) => patterns.find(p => p.id === id);
     const catalog = data.catalog || { groups: [], bulb_types: [], colors: [], strand_types: [], attachments: [], extras: [] };
     $('.ohu-sub').textContent = this._sourceText(data);
     $('[data-act="save"]').disabled = false;
 
+    const bulbName = (id) => ((catalog.bulb_types || []).find(b => b.id === id) || {}).name || 'C9';
+    const renderBulbs = () => {
+      if (!bulbGroups.length) return '';
+      return `<div class="ohu-group">Bulbs (C9 / C7)</div>` + bulbGroups.map((g, gi) => {
+        const pat = patternOf(g.pattern_id);
+        const parts = this.split(g.total, pat, g.uneven ? g.odd : {});
+        const uniq = pat ? [...new Map(pat.colors.map(c => [c.id, c])).values()] : [];
+        const preview = uniq.map(c => `${this._esc(c.name)} ${parts[c.id] || 0}`).join(' · ');
+        return `<div class="ohu-bulbs" data-g="${gi}">
+            <div class="ohu-bulbs-head"><b>${this._esc(bulbName(g.bulb_type_id))}</b>
+              ${bulbGroups.length > 1 ? `<button class="btn btn-sm btn-ghost" data-g-del="${gi}">Remove</button>` : ''}</div>
+            <div class="ohu-patterns">${patterns.map(p => `<button class="ohu-chip${p.id === g.pattern_id ? ' on' : ''}" data-g-pat="${gi}:${p.id}">
+              ${p.colors.slice(0, 4).map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>`).join('')}${this._esc(p.name)}</button>`).join('')}</div>
+            <div class="ohu-row">
+              <div class="ohu-label">Total bulbs${g.planned ? `<div class="ohu-plan">plan ${g.planned}</div>` : ''}</div>
+              <button class="ohu-btn" data-g-step="${gi}:-1" aria-label="Less">&minus;</button>
+              <input class="ohu-qty ohu-total" type="number" inputmode="numeric" min="0" value="${g.total || 0}" data-g-total="${gi}">
+              <button class="ohu-btn" data-g-step="${gi}:1" aria-label="More">+</button>
+              <button class="btn btn-sm" data-g-step="${gi}:25">+25</button>
+            </div>
+            <label class="ohu-uneven"><input type="checkbox" data-g-uneven="${gi}" ${g.uneven ? 'checked' : ''}> Not an even split</label>
+            ${g.uneven ? `<div class="ohu-odd">${uniq.map(c => `<label class="ohu-odd-row"><span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>${this._esc(c.name)}
+                <input type="number" inputmode="numeric" min="0" placeholder="the rest" value="${g.odd[c.id] != null ? g.odd[c.id] : ''}" data-g-odd="${gi}:${c.id}"></label>`).join('')}
+              <div class="ohu-plan">Leave the main color empty: it gets the rest.</div></div>` : ''}
+            ${pat && g.total ? `<div class="ohu-split">${preview}</div>` : ''}
+          </div>`;
+      }).join('') + '<button class="btn btn-sm" data-g-add>&#10133; Another pattern</button>';
+    };
+
     const render = () => {
       const groups = (catalog.groups.length ? catalog.groups : [{ key: 'other', title: 'Items' }]);
-      let html = '';
+      let html = renderBulbs();
       groups.forEach(g => {
+        if (g.key === 'bulb' && bulbGroups.length) return;  // counted above, by pattern
         const list = rows.map((r, i) => [r, i]).filter(([r]) => (r.group || 'other') === g.key);
         if (!list.length) return;
         html += `<div class="ohu-group">${this._esc(g.title)}</div>`;
@@ -132,6 +185,45 @@ const HolidayUsed = {
     };
     render();
 
+    // The bulb totals by pattern
+    $('.ohu-body').addEventListener('click', (e) => {
+      const t = e.target.closest('button, input[type="checkbox"]');
+      if (!t) return;
+      if (t.dataset.gPat) {
+        const [gi, pid] = t.dataset.gPat.split(':').map(Number);
+        bulbGroups[gi].pattern_id = pid; bulbGroups[gi].odd = {};
+        render();
+      } else if (t.dataset.gStep) {
+        const [gi, d] = t.dataset.gStep.split(':').map(Number);
+        bulbGroups[gi].total = Math.max(0, (bulbGroups[gi].total || 0) + d);
+        render();
+      } else if (t.dataset.gUneven) {
+        const g = bulbGroups[parseInt(t.dataset.gUneven, 10)];
+        g.uneven = t.checked;
+        if (!g.uneven) g.odd = {};
+        render();
+      } else if (t.dataset.gDel) {
+        bulbGroups.splice(parseInt(t.dataset.gDel, 10), 1);
+        render();
+      } else if (t.hasAttribute('data-g-add')) {
+        const last = bulbGroups[bulbGroups.length - 1] || {};
+        bulbGroups.push({ bulb_type_id: last.bulb_type_id || ((catalog.bulb_types || [])[0] || {}).id || false,
+                          pattern_id: (patterns.find(p => p.id !== last.pattern_id) || patterns[0] || {}).id || false,
+                          total: 0, planned: 0, odd: {}, uneven: false });
+        render();
+      }
+    });
+    $('.ohu-body').addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.dataset.gTotal) { bulbGroups[parseInt(t.dataset.gTotal, 10)].total = Math.max(0, t.valueAsNumber || 0); render(); }
+      if (t.dataset.gOdd) {
+        const [gi, cid] = t.dataset.gOdd.split(':');
+        const g = bulbGroups[parseInt(gi, 10)];
+        if (t.value === '') delete g.odd[cid]; else g.odd[cid] = Math.max(0, t.valueAsNumber || 0);
+        render();
+      }
+    });
+
     $('.ohu-body').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-step]');
       if (!btn) return;
@@ -141,7 +233,7 @@ const HolidayUsed = {
       render();
     });
     $('.ohu-body').addEventListener('change', (e) => {
-      if (!e.target.classList.contains('ohu-qty')) return;
+      if (!e.target.classList.contains('ohu-qty') || e.target.dataset.gTotal) return;
       const i = parseInt(e.target.closest('.ohu-row').dataset.i, 10);
       rows[i].qty = Math.max(0, e.target.valueAsNumber || 0);
       render();
@@ -199,6 +291,13 @@ const HolidayUsed = {
       if (t.dataset.kind) { showAdd(t.dataset.kind, { group: t.dataset.kind === 'other' ? $('.ohu-add').dataset.step : t.dataset.kind }); return; }
       if (t.dataset.bulb) {
         bulbPicked = catalog.bulb_types.find(b => String(b.id) === t.dataset.bulb);
+        if (patterns.length) {
+          // Bulbs are counted as a total per pattern.
+          bulbGroups.push({ bulb_type_id: bulbPicked.id, pattern_id: patterns[0].id, total: 0, planned: 0, odd: {}, uneven: false });
+          $('.ohu-add').hidden = true;
+          render();
+          return;
+        }
         showAdd('color', bulbPicked);
         return;
       }
@@ -234,19 +333,26 @@ const HolidayUsed = {
     overlay.addEventListener('click', async (e) => {
       const act = e.target.closest('[data-act]');
       if (!act) return;
-      if (act.dataset.act === 'close') overlay.remove();
+      if (act.dataset.act === 'close') { overlay.remove(); if (onClose) onClose(); }
       if (act.dataset.act === 'add') showAdd('kind');
       if (act.dataset.act === 'save') {
         // An input still being typed in: take its value.
-        overlay.querySelectorAll('.ohu-qty').forEach(inp => {
+        overlay.querySelectorAll('.ohu-qty:not(.ohu-total)').forEach(inp => {
           const i = parseInt(inp.closest('.ohu-row').dataset.i, 10);
           rows[i].qty = Math.max(0, inp.valueAsNumber || 0);
         });
+        overlay.querySelectorAll('[data-g-total]').forEach(inp => {
+          bulbGroups[parseInt(inp.dataset.gTotal, 10)].total = Math.max(0, inp.valueAsNumber || 0);
+        });
+        const groupsOut = bulbGroups.filter(g => g.total > 0 && g.pattern_id).map(g => ({
+          bulb_type_id: g.bulb_type_id, pattern_id: g.pattern_id, total: g.total, odd: g.uneven ? g.odd : {} }));
         act.disabled = true;
         try {
           // Added and left at 0: not used. A planned item at 0 stays (the plan was wrong).
-          await this.save(job.id, rows.filter(r => (r.qty || 0) > 0 || (r.planned || 0) > 0), data);
+          await this.save(job.id, rows.filter(r => (r.qty || 0) > 0 || (r.planned || 0) > 0), data,
+            data.bulb_groups ? groupsOut : null);
           overlay.remove();
+          if (onClose) onClose();
         } catch (err) {
           App.showToast('Not saved: ' + (err.message || err), 'error');
           act.disabled = false;
@@ -255,11 +361,12 @@ const HolidayUsed = {
     });
   },
 
-  async save(jobId, rows, data) {
+  async save(jobId, rows, data, groups) {
     if (navigator.onLine) {
       try {
-        await OdooAPI.callKw('fsm.order', 'worker_save_used', [jobId, rows], {});
-        await DB.setState(this._key(jobId), Object.assign({}, data, { rows, source: 'saved', saved_at: '' })).catch(() => {});
+        await OdooAPI.callKw('fsm.order', 'worker_save_used', [jobId, rows, groups || null], {});
+        await DB.setState(this._key(jobId), Object.assign({}, data, { rows, bulb_groups: groups || data.bulb_groups,
+          source: 'saved', saved_at: '' })).catch(() => {});
         App.showToast('Count saved', 'success');
         return;
       } catch (err) {
@@ -267,7 +374,7 @@ const HolidayUsed = {
       }
     }
     const pending = await this._pending();
-    pending[jobId] = { rows, at: Date.now() };
+    pending[jobId] = { rows, groups: groups || null, at: Date.now() };
     await DB.setState(this.PENDING_KEY, pending);
     App.showToast('Saved on this phone: it goes to the office when there\'s signal', 'success');
   },

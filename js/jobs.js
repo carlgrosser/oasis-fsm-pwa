@@ -901,6 +901,8 @@ const Jobs = {
     const statusClass = this.getStatusClass(stageName);
 
     const isComplete = statusClass === 'complete';
+    // Holiday installs and takedowns: the Next step card, Finish and Map & Count tabs (js/holidayflow.js).
+    const holidayFlow = typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job);
     const wrapupPlacement = (typeof WrapUp !== 'undefined') ? WrapUp.getPlacement() : 'above_tabs';
     const showInlineBanner = isComplete && wrapupPlacement === 'above_tabs';
 
@@ -941,14 +943,16 @@ const Jobs = {
         <button class="btn btn-sm" id="requestCancelBtn" style="flex:1;">Can't Do This Job</button>`}
       </div>`}
 
+      ${holidayFlow ? HolidayFlow.topHtml(job) : `
       ${typeof InstallMap !== 'undefined' ? InstallMap.buttonHtml(job) : ''}
-      ${typeof HolidayCrew !== 'undefined' && !isComplete ? HolidayCrew.buttonsHtml(job) : ''}
+      ${typeof HolidayCrew !== 'undefined' && !isComplete ? HolidayCrew.buttonsHtml(job) : ''}`}
 
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
-        <button class="detail-tab" data-tab="2">Sales</button>
-        <button class="detail-tab" data-tab="3">Options <span class="options-tab-badge" id="optionsTabBadge" style="display:none;"></span></button>
+        ${holidayFlow ? `<button class="detail-tab" data-tab="2">Finish</button>
+        <button class="detail-tab" data-tab="3">Map &amp; Count</button>` : `<button class="detail-tab" data-tab="2">Sales</button>
+        <button class="detail-tab" data-tab="3">Options <span class="options-tab-badge" id="optionsTabBadge" style="display:none;"></span></button>`}
       </div>
 
       <div class="detail-panels" id="detailPanels">
@@ -959,10 +963,12 @@ const Jobs = {
           ${this._renderWorkPanel(job, stageName)}
         </div>
         <div class="detail-panel" data-panel="2">
-          ${this._renderSalesPanel(job)}
+          ${holidayFlow ? `<div class="detail-section"><h3>Finish</h3><div id="ohfFinish"><div class="loading"><div class="spinner"></div></div></div></div>
+          <details class="detail-section ohf-pay"><summary>&#128181; Collect a payment in the field (check, Venmo…)</summary>
+            ${this._renderSalesPanel(job)}</details>` : this._renderSalesPanel(job)}
         </div>
         <div class="detail-panel" data-panel="3">
-          <div id="optionsTabContent"></div>
+          ${holidayFlow ? '<div class="detail-section"><h3>Map &amp; Count</h3><div id="ohfMapCount"></div></div>' : '<div id="optionsTabContent"></div>'}
         </div>
       </div>
     `;
@@ -971,8 +977,12 @@ const Jobs = {
     document.getElementById('backToList').addEventListener('click', () => {
       App.showJobList();
     });
-    if (typeof InstallMap !== 'undefined') InstallMap.bind(job);
-    if (typeof HolidayCrew !== 'undefined') HolidayCrew.bind(job);
+    if (holidayFlow) {
+      HolidayFlow.bind(job);
+    } else {
+      if (typeof InstallMap !== 'undefined') InstallMap.bind(job);
+      if (typeof HolidayCrew !== 'undefined') HolidayCrew.bind(job);
+    }
 
     // Bind Close Job / Edit Closed Job buttons (visible when job is complete)
     const closeJobBtn = document.getElementById('closeJobBtn');
