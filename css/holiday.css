@@ -168,3 +168,6 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .ohm-tagsel { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; margin: 2px 0 4px; flex-wrap: wrap; }
 .ohm-tagdot { width: 18px; height: 18px; border-radius: 9px; border: 1px solid rgba(0, 0, 0, .35); display: inline-block; }
 .ohu-custom-seq { display: flex; gap: 4px; min-height: 22px; margin-bottom: 8px; flex-wrap: wrap; }
+.ohu-clipsel { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 4px 0; }
+.ohu-clipsel select { flex: 1; height: 44px; font-size: 16px; border-radius: 8px; padding: 0 8px; }
+.ohu-other-name { flex: 1; min-width: 0; height: 44px; font-size: 16px; padding: 0 10px; border: 1px solid var(--border-color, #ccc); border-radius: 8px; }

@@ -132,7 +132,7 @@ const HolidayUsed = {
     // Clips: worked out from the bulbs (one roof clip per bulb, less the special clips), stakes for ground runs.
     const clipCat = catalog.clips || null;
     const clip = { main: data.main_clip_id || (clipCat && clipCat.main[0] ? clipCat.main[0].id : false),
-                   mainQty: null, groundQty: null, special: {}, more: false };
+                   mainQty: null, groundQty: null, special: {}, more: false, others: [] };
     if (clipCat) {
       const managed = new Set([...clipCat.main.map(c => c.code), ...(clipCat.ground ? [clipCat.ground.code] : []),
                                ...clipCat.special.map(c => c.code)]);
@@ -140,7 +140,13 @@ const HolidayUsed = {
         const r = rows[i];
         const code = r.attachment_code || ((catalog.attachments || []).find(a => a.id === r.attachment_id) || {}).code
           || (/magnet/i.test(r.label) && r.group === 'attachment' ? 'magnetic_clip' : null);
-        if (r.group !== 'attachment' || !code || !managed.has(code)) continue;
+        if (r.group !== 'attachment') continue;
+        if (!code || !managed.has(code)) {
+          // A clip typed in by name (Other): kept with the clips.
+          clip.others.push({ label: r.label, qty: r.qty || 0 });
+          rows.splice(i, 1);
+          continue;
+        }
         if (clipCat.main.some(c => c.code === code)) {
           clip.main = clipCat.main.find(c => c.code === code).id;
           if (data.source === 'saved') clip.mainQty = r.qty;
@@ -153,7 +159,7 @@ const HolidayUsed = {
       }
     }
     const perBulbSpecial = () => clipCat ? clipCat.special.filter(c => c.usage !== 'per_ft' && c.code !== 'hot_glue')
-      .reduce((a, c) => a + (clip.special[c.code] || 0), 0) : 0;
+      .reduce((a, c) => a + (clip.special[c.code] || 0), 0) + clip.others.reduce((a, o) => a + (o.qty || 0), 0) : 0;
     const roofBulbs = () => bulbGroups.filter(g => !g.ground).reduce((a, g) => a + (g.total || 0), 0);
     const groundBulbs = () => bulbGroups.filter(g => g.ground).reduce((a, g) => a + (g.total || 0), 0);
     const mainAuto = () => Math.max(roofBulbs() - perBulbSpecial(), 0);
@@ -167,6 +173,7 @@ const HolidayUsed = {
       if (clipCat.ground && gq > 0) out.push({ group: 'attachment', label: clipCat.ground.name, qty: gq, attachment_id: clipCat.ground.id });
       clipCat.special.forEach(c => { if ((clip.special[c.code] || 0) > 0) out.push({ group: 'attachment', label: c.name, qty: clip.special[c.code],
         unit: c.usage === 'per_ft' ? 'ft' : '', attachment_id: c.id }); });
+      clip.others.forEach(o => { if ((o.label || '').trim() && (o.qty || 0) > 0) out.push({ group: 'attachment', label: o.label.trim(), qty: o.qty }); });
       return out;
     };
     $('.ohu-sub').textContent = this._sourceText(data);
@@ -258,7 +265,8 @@ const HolidayUsed = {
       const main = clipCat.main.find(c => c.id === clip.main) || clipCat.main[0];
       const special = perBulbSpecial();
       let html = '<div class="ohu-group">Clips</div>';
-      html += `<div class="ohu-patterns">${clipCat.main.map(c => `<button class="ohu-chip${c.id === clip.main ? ' on' : ''}" data-clip-main="${c.id}">${this._esc(c.name)}</button>`).join('')}</div>`;
+      html += `<label class="ohu-clipsel">Roof clips <select data-clip-select>${clipCat.main.map(c =>
+        `<option value="${c.id}"${c.id === clip.main ? ' selected' : ''}>${this._esc(c.name)}</option>`).join('')}</select></label>`;
       if (main) {
         html += clipRowHtml('main', main.name, clip.mainQty != null ? clip.mainQty : auto,
           clip.mainQty != null ? `typed in · from bulbs: ${auto} <button class="btn btn-sm btn-ghost" data-clip-auto>use ${auto}</button>`
@@ -272,12 +280,20 @@ const HolidayUsed = {
           html += clipRowHtml(c.code, c.name, clip.special[c.code] || 0, c.code === 'magnetic_clip' ? 'counted as you go' : (c.usage === 'per_ft' ? 'feet' : ''));
         }
       });
-      const others = clipCat.special.filter(c => c.code !== 'magnetic_clip' && clip.special[c.code] == null);
-      if (others.length) {
-        html += clip.more
-          ? `<div class="ohu-patterns">${others.map(c => `<button class="ohu-chip" data-clip-add="${c.code}">${this._esc(c.name)}</button>`).join('')}</div>`
-          : '<button class="btn btn-sm" data-clip-more>&#10133; More clips</button>';
-      }
+      clip.others.forEach((o, oi) => {
+        html += `<div class="ohu-row" data-other="${oi}">
+            <input type="text" class="ohu-other-name" placeholder="What clip?" value="${this._esc(o.label || '')}" data-other-name="${oi}">
+            <button class="ohu-btn" data-other-step="${oi}:-1" aria-label="Less">&minus;</button>
+            <input class="ohu-qty ohu-clipqty" type="number" inputmode="numeric" min="0" value="${o.qty || 0}" data-other-qty="${oi}">
+            <button class="ohu-btn" data-other-step="${oi}:1" aria-label="More">+</button>
+            <span class="ohu-unit"></span></div>`;
+      });
+      // More: the two that come up (shingle tabs, ridge clips) and Other (type it in).
+      const more = clipCat.special.filter(c => ['shingle_tab', 'ridge_clip'].includes(c.code) && clip.special[c.code] == null);
+      html += clip.more
+        ? `<div class="ohu-patterns">${more.map(c => `<button class="ohu-chip" data-clip-add="${c.code}">${this._esc(c.name)}</button>`).join('')}
+            <button class="ohu-chip" data-clip-other>Other…</button></div>`
+        : '<button class="btn btn-sm" data-clip-more>&#10133; More clips</button>';
       return html;
     };
 
@@ -340,6 +356,16 @@ const HolidayUsed = {
       } else if (t.hasAttribute('data-clip-more')) {
         clip.more = true;
         render();
+      } else if (t.hasAttribute('data-clip-other')) {
+        clip.others.push({ label: '', qty: 0 });
+        clip.more = false;
+        render();
+        const input = overlay.querySelector(`[data-other-name="${clip.others.length - 1}"]`);
+        if (input) input.focus();
+      } else if (t.dataset.otherStep) {
+        const [oi, d] = t.dataset.otherStep.split(':').map(Number);
+        clip.others[oi].qty = Math.max(0, (clip.others[oi].qty || 0) + d);
+        render();
       } else if (t.dataset.clipAdd) {
         clip.special[t.dataset.clipAdd] = 0;
         clip.more = false;
@@ -361,6 +387,9 @@ const HolidayUsed = {
       const t = e.target;
       if (t.dataset.gTotal) { bulbGroups[parseInt(t.dataset.gTotal, 10)].total = Math.max(0, t.valueAsNumber || 0); render(); }
       if (t.dataset.clipQty) { setClip(t.dataset.clipQty, Math.max(0, t.valueAsNumber || 0)); render(); }
+      if (t.hasAttribute('data-clip-select')) { clip.main = parseInt(t.value, 10); render(); }
+      if (t.dataset.otherName) { clip.others[parseInt(t.dataset.otherName, 10)].label = t.value; }
+      if (t.dataset.otherQty) { clip.others[parseInt(t.dataset.otherQty, 10)].qty = Math.max(0, t.valueAsNumber || 0); render(); }
       if (t.dataset.gOdd) {
         const [gi, cid] = t.dataset.gOdd.split(':');
         const g = bulbGroups[parseInt(gi, 10)];
@@ -378,7 +407,8 @@ const HolidayUsed = {
       render();
     });
     $('.ohu-body').addEventListener('change', (e) => {
-      if (!e.target.classList.contains('ohu-qty') || e.target.dataset.gTotal || e.target.dataset.clipQty) return;
+      if (!e.target.classList.contains('ohu-qty') || e.target.dataset.gTotal || e.target.dataset.clipQty
+          || e.target.dataset.otherQty) return;
       const i = parseInt(e.target.closest('.ohu-row').dataset.i, 10);
       rows[i].qty = Math.max(0, e.target.valueAsNumber || 0);
       render();
@@ -489,6 +519,8 @@ const HolidayUsed = {
         overlay.querySelectorAll('[data-g-total]').forEach(inp => {
           bulbGroups[parseInt(inp.dataset.gTotal, 10)].total = Math.max(0, inp.valueAsNumber || 0);
         });
+        overlay.querySelectorAll('[data-other-name]').forEach(inp => { clip.others[parseInt(inp.dataset.otherName, 10)].label = inp.value; });
+        overlay.querySelectorAll('[data-other-qty]').forEach(inp => { clip.others[parseInt(inp.dataset.otherQty, 10)].qty = Math.max(0, inp.valueAsNumber || 0); });
         overlay.querySelectorAll('[data-clip-qty]').forEach(inp => {
           const key = inp.dataset.clipQty;
           const v = Math.max(0, inp.valueAsNumber || 0);
