@@ -478,6 +478,7 @@ const Jobs = {
       `;
       if (typeof HolidayCrew !== 'undefined') HolidayCrew.renderPool(container);
       if (typeof TimeTracking !== 'undefined') TimeTracking.renderCard(container);
+      if (typeof YardSigns !== 'undefined') YardSigns.renderTile(container);
       return;
     }
 
@@ -512,6 +513,7 @@ const Jobs = {
     }
     // The clock card goes on top of everything (the main thing for most of the crew).
     if (typeof TimeTracking !== 'undefined') TimeTracking.renderCard(container);
+    if (typeof YardSigns !== 'undefined') YardSigns.renderTile(container);
   },
 
   /**
