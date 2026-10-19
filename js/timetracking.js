@@ -197,7 +197,7 @@ const TimeTracking = {
 
     if (navigator.onLine && this._attendanceId) {
       try {
-        const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy, appendEta);
+        const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy, appendEta, options.atTime || null);
         // Tolerate "already clocked out" (e.g. crew clock-off raced us) —
         // the attendance is closed either way, so reset local state.
         if (result && !result.success && /already clocked out/i.test(result.error || '')) {
@@ -254,7 +254,7 @@ const TimeTracking = {
         gps: gpsCoords,
         gps_accuracy: gpsAccuracy,
         append_eta: appendEta ? 1 : 0,
-        timestamp: new Date().toISOString(),
+        timestamp: options.atTime || new Date().toISOString(),
         synced: 0,
       });
       this._stopLunchTimer();
@@ -436,8 +436,16 @@ const TimeTracking = {
         </div>
         <div class="modal-body">
           <div style="display:flex; flex-direction:column; gap:var(--spacing-sm);">
+            <button class="btn btn-danger btn-block btn-lg" id="clockOffBtn">Clock Off now</button>
             <button class="btn btn-warning btn-block btn-lg" id="clockLunchBtn">Lunch Break</button>
-            <button class="btn btn-danger btn-block btn-lg" id="clockOffBtn">Clock Off</button>
+          </div>
+          <div class="clock-forgot">
+            <div class="clock-forgot-title">Forgot to clock off? I stopped working:</div>
+            <div class="clock-forgot-chips">
+              ${[15, 30, 45, 60, 90].map(m => `<button class="btn btn-sm" data-ago="${m}">${m} min ago</button>`).join('')}
+            </div>
+            <div class="clock-forgot-other"><input type="number" id="clockAgoMin" class="form-input" inputmode="numeric"
+              min="1" placeholder="minutes"> <button class="btn btn-sm" id="clockAgoBtn">min ago</button></div>
           </div>
         </div>
       </div>
@@ -461,6 +469,21 @@ const TimeTracking = {
       await this.startLunch();
       close();
     });
+
+    // Forgot to clock off: the time they really stopped (minutes ago).
+    const offAgo = async (minutes) => {
+      const worked = this._clockInTime ? Math.floor((Date.now() - this._clockInTime.getTime()) / 60000) : 0;
+      if (!(minutes > 0)) { App.showToast('How many minutes ago?', 'error'); return; }
+      if (worked && minutes >= worked) { App.showToast(`You clocked on ${worked} min ago: pick less than that`, 'error'); return; }
+      const at = new Date(Date.now() - minutes * 60000);
+      const label = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (!window.confirm(`Clock off at ${label}?`)) return;
+      overlay.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      await this.clockOut({ atTime: at.toISOString(), skipEtaQuestion: true });
+      close();
+    };
+    overlay.querySelectorAll('[data-ago]').forEach(b => b.addEventListener('click', () => offAgo(parseInt(b.dataset.ago, 10))));
+    overlay.querySelector('#clockAgoBtn').addEventListener('click', () => offAgo(overlay.querySelector('#clockAgoMin').valueAsNumber));
 
     document.getElementById('clockOffBtn').addEventListener('click', async () => {
       const btn = document.getElementById('clockOffBtn');
@@ -550,7 +573,10 @@ const TimeTracking = {
         <div class="clock-card-sub">${esc(today)}</div>
         <button class="btn clock-card-main clock-on" data-clock="in">&#9654; Clock On</button>`;
     } else if (this._status === 'in') {
-      card.innerHTML = `<div class="clock-card-sub" id="clockCardTime">On the clock</div>
+      const jobs = (typeof Jobs !== 'undefined' && Jobs._jobs) || [];
+      const allDone = jobs.length > 0 && jobs.every(j => j.wrapup_submitted || (Jobs._isCompletedJob && Jobs._isCompletedJob(j)));
+      card.innerHTML = `${allDone ? '<div class="clock-card-done">&#10003; All jobs done. Clock off when you\'re back at the shop.</div>' : ''}
+        <div class="clock-card-sub" id="clockCardTime">On the clock</div>
         <div class="clock-card-row">
           <button class="btn clock-card-side" data-clock="lunch">&#127828; Lunch</button>
           <button class="btn clock-card-main clock-off" data-clock="off">&#9632; Clock Off</button>
@@ -803,7 +829,7 @@ const TimeTracking = {
 
   _updateWorkTimer() {
     const el = document.getElementById('workTimer');
-    if (!el || !this._clockInTime) return;
+    if (!this._clockInTime) return;
 
     const workedMs = Math.max(0,
       Date.now() - this._clockInTime.getTime() - this._lunchDeductMs);
@@ -814,9 +840,10 @@ const TimeTracking = {
       hour: 'numeric', minute: '2-digit',
     });
 
-    el.textContent = `${since} · ${h}h ${String(m).padStart(2, '0')}m`;
     const card = document.getElementById('clockCardTime');
     if (card) card.textContent = `On the clock since ${since} · ${h}h ${String(m).padStart(2, '0')}m`;
+    if (!el) return;
+    el.textContent = `${since} · ${h}h ${String(m).padStart(2, '0')}m`;
     el.title = `Clocked on at ${since} — ${h}h ${m}m worked` +
       (this._lunchDeductMs ? ' (lunch deducted)' : '');
     el.style.display = '';
@@ -841,15 +868,16 @@ const TimeTracking = {
 
   _updateLunchTimer() {
     const timer = document.getElementById('lunchTimer');
-    if (!timer || !this._lunchStartTime) return;
+    if (!this._lunchStartTime) return;
 
     const elapsed = Math.floor((Date.now() - this._lunchStartTime.getTime()) / 1000);
     const mins = Math.floor(elapsed / 60);
     const secs = elapsed % 60;
-    timer.textContent = mins + ':' + String(secs).padStart(2, '0');
-    timer.style.display = '';
     const card = document.getElementById('clockCardTime');
     if (card) card.textContent = `On lunch · ${mins} min`;
+    if (!timer) return;
+    timer.textContent = mins + ':' + String(secs).padStart(2, '0');
+    timer.style.display = '';
   },
 
   // ========== STATE PERSISTENCE ==========

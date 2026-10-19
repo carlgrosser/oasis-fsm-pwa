@@ -719,54 +719,37 @@ const WrapUp = {
    * @param {string} gps
    * @param {number} gpsAccuracy
    */
+  /**
+   * After Close Job: the job is done, the worker stays on the clock (they clock off back at the shop).
+   * Clocking off now is their own choice (driving themselves, done for the day): never the whole crew.
+   */
   _showClockOffPrompt(job, workerCount, alreadyClockedOut, gps, gpsAccuracy) {
+    const clockedIn = typeof TimeTracking !== 'undefined' && TimeTracking.isClockedIn();
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-
-    const showClockAllOff = workerCount > 1 && alreadyClockedOut === 0;
-    const clockAllLabel = workerCount > 1
-      ? `Clock all ${workerCount} workers off this job`
-      : 'Clock off';
-
     overlay.innerHTML = `
       <div class="modal modal-clockoff">
         <div class="modal-header">
           <h3>✓ Job Closed</h3>
         </div>
         <div class="modal-body">
-          ${alreadyClockedOut > 0
-            ? `<p class="clockoff-note">${alreadyClockedOut} worker${alreadyClockedOut !== 1 ? 's' : ''} clocked off.</p>`
-            : ''}
-          ${showClockAllOff ? `
-          <label class="wrapup-check-label" style="margin-bottom:var(--spacing-md);">
-            <input type="checkbox" id="clockAllOffCheck" checked>
-            <span>${this._esc(clockAllLabel)}</span>
-          </label>` : ''}
+          ${clockedIn ? '<p class="clockoff-note">You\'re still on the clock: clock off when you\'re back at the shop.</p>' : ''}
         </div>
         <div class="modal-footer wrapup-footer">
-          <button class="btn btn-primary btn-block btn-xl" id="clockOffBtn">
-            Clock Off
-          </button>
-          <button class="btn btn-secondary btn-block" id="keepClockedInBtn">
-            I Have Another Job / After-Work Duties
-          </button>
+          <button class="btn btn-primary btn-block btn-xl" id="keepClockedInBtn">Back to my jobs</button>
+          ${clockedIn ? `<button class="btn btn-secondary btn-block" id="clockOffBtn">
+            Clock off now (driving myself / done for the day)</button>` : ''}
         </div>
       </div>
     `;
-
     document.body.appendChild(overlay);
 
-    // Clock Off
-    overlay.querySelector('#clockOffBtn').addEventListener('click', async () => {
-      const clockAll = showClockAllOff && overlay.querySelector('#clockAllOffCheck')?.checked;
+    overlay.querySelector('#clockOffBtn')?.addEventListener('click', async () => {
       overlay.remove();
-      await this._handleClockOff(job, clockAll, gps, gpsAccuracy);
+      await this._handleClockOff(job, false, gps, gpsAccuracy);
     });
-
-    // Stay clocked in
     overlay.querySelector('#keepClockedInBtn').addEventListener('click', () => {
       overlay.remove();
-      App.showToast('Still clocked in. Good luck on the next one!', 'info');
     });
   },
 

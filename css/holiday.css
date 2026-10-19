@@ -185,3 +185,10 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .clock-card-row { display: flex; gap: 10px; }
 .clock-card-row .clock-card-main { flex: 2; }
 .clock-card-side { flex: 1; min-height: 64px; font-size: 18px; border-radius: 12px; }
+.clock-card-done { font-size: 16px; font-weight: 700; color: var(--success-color, #2e7d32); margin-bottom: 4px; }
+.clock-forgot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color, #ddd); }
+.clock-forgot-title { font-weight: 600; margin-bottom: 8px; }
+.clock-forgot-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.clock-forgot-chips .btn { min-height: 44px; }
+.clock-forgot-other { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.clock-forgot-other input { width: 110px; height: 44px; }
