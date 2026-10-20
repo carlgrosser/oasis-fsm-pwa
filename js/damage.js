@@ -2,7 +2,8 @@
  * Damage we caused (Holiday Lighting): after the crew's "Damage We Caused" photos, say what happened.
  * Odoo (ohl_helpdesk: worker_report_damage) opens a helpdesk ticket with the photos and the note, and
  * the office gets a to-do to assign the follow-up. Without signal the report waits on the phone and
- * goes when the signal is back (its photos first).
+ * goes when the signal is back (its photos first). Where it is: 📍 Mark on map (js/holidaymap.js), or
+ * started from the map's ⚠️ Damage tool; the job's map then shows a pin with the photos.
  */
 const DamageReport = {
   PENDING_KEY: 'damage_pending',
@@ -19,8 +20,11 @@ const DamageReport = {
     return photos.filter(p => p.category === 'damage' && !p.damage_reported);
   },
 
-  async open(jobId) {
+  /** opts.spot {lat, lng}: where it is on the map; opts.onDone(): after it's sent or put off. */
+  async open(jobId, opts) {
+    opts = opts || {};
     const photos = await this._unreported(jobId);
+    const done = () => { if (opts.onDone) opts.onDone(); };
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `<div class="modal" style="max-width:460px;">
@@ -30,6 +34,8 @@ const DamageReport = {
           <p style="margin:6px 0 4px;"><b>${photos.length} photo${photos.length === 1 ? '' : 's'}.</b> What happened?</p>
           <textarea class="damage-note" rows="4" style="width:100%;font-size:16px;"
             placeholder="e.g. Cracked a roof tile above the garage stepping off the ladder"></textarea>
+          <p class="damage-spot">${opts.spot ? '&#128205; Marked on the map'
+            : (typeof HolidayMap !== 'undefined' ? '<button class="btn btn-sm" data-dmg="map">&#128205; Mark where on the map</button>' : '')}</p>
           <p class="damage-safe">Thanks for reporting it. You won't get in trouble: the office follows up with the
             customer and gets it fixed.</p>
         </div>
@@ -49,13 +55,26 @@ const DamageReport = {
       if (t.dataset.dmg === 'later') {
         overlay.remove();
         App.showToast('Damage photos saved. Report it from "Damage We Caused" before you leave.', 'info');
+        done();
+        return;
+      }
+      if (t.dataset.dmg === 'map') {
+        const text = note.value;
+        const job = await DB.get('jobs', jobId).catch(() => null);
+        if (!job) { App.showToast('Open the job first', 'error'); return; }
+        overlay.remove();
+        HolidayMap.open(job, null, { pickDamage: async (spot) => {
+          await this.open(jobId, Object.assign({}, opts, spot ? { spot } : {}));
+          const again = document.querySelector('.damage-note');
+          if (again && text) { again.value = text; again.dispatchEvent(new Event('input')); }
+        } });
         return;
       }
       if (t.dataset.dmg === 'more') {
         const text = note.value;
         overlay.remove();
         await Photos.capturePhoto(jobId, 'damage');
-        await this.open(jobId);
+        await this.open(jobId, opts);
         // Keep what they'd already typed.
         const again = document.querySelector('.damage-note');
         if (again && text) { again.value = text; again.dispatchEvent(new Event('input')); }
@@ -64,8 +83,9 @@ const DamageReport = {
       if (t.dataset.dmg === 'send') {
         t.disabled = true;
         try {
-          await this.send(jobId, note.value.trim());
+          await this.send(jobId, note.value.trim(), opts.spot);
           overlay.remove();
+          done();
         } catch (err) {
           App.showToast('Not sent: ' + (err.message || err), 'error');
           t.disabled = false;
@@ -75,9 +95,9 @@ const DamageReport = {
   },
 
   /** Upload the photos (if they aren't yet), then the report; without signal, keep it for later. */
-  async send(jobId, note) {
+  async send(jobId, note, spot) {
     if (!navigator.onLine) {
-      await this._keep(jobId, note);
+      await this._keep(jobId, note, spot);
       App.showToast('Saved on this phone: it goes to the office when there\'s signal', 'success');
       return;
     }
@@ -92,7 +112,8 @@ const DamageReport = {
       }
       if (id) ids.push(id);
     }
-    const res = await OdooAPI.callKw('fsm.order', 'worker_report_damage', [jobId, note, ids], {});
+    const res = await OdooAPI.callKw('fsm.order', 'worker_report_damage',
+      [jobId, note, ids, spot ? spot.lat : false, spot ? spot.lng : false], {});
     for (const p of photos) {
       const fresh = (await DB.get('photos', p.temp_id)) || p;
       fresh.damage_reported = true;
@@ -101,9 +122,9 @@ const DamageReport = {
     App.showToast(`Sent to the office (${res.ticket})`, 'success');
   },
 
-  async _keep(jobId, note) {
+  async _keep(jobId, note, spot) {
     const pending = (await DB.getState(this.PENDING_KEY).catch(() => null)) || [];
-    pending.push({ jobId, note, at: Date.now() });
+    pending.push({ jobId, note, spot: spot || null, at: Date.now() });
     await DB.setState(this.PENDING_KEY, pending);
   },
 
@@ -113,7 +134,7 @@ const DamageReport = {
     const left = [];
     for (const item of pending) {
       try {
-        await this.send(item.jobId, item.note);
+        await this.send(item.jobId, item.note, item.spot);
       } catch (err) {
         console.warn('Damage report: still not sent', err);
         left.push(item);

@@ -8,12 +8,16 @@
  *  🌳 Items: trees, bushes, other (wreaths…): tap where they are.
  *  🏷️ Tags:  pick a color, tap the runs and cords that get it.
  *  ⚡ Power: tap where each outlet is.
+ *  ⚠️ Damage: tap where it is, take the photos, say what happened (a damage report for the office);
+ *           damage reported at this house before shows too (red pins: tap for the photos).
+ *  Turn the map with two fingers or ↺ ↻ (N puts north back up), when Odoo has a Google map ID.
  *
  * A job with the office's design shows it; things added on site are flagged for the office.
  * Rehangs (no design): this makes the house's design. Needs signal (Google's map); the Picking List
  * sheet is the no-signal copy. Odoo: worker_get_design_map, worker_map_save_run / _delete_run,
  * worker_map_save_cord / _delete_cord, worker_map_add_feature / _delete_feature,
- * worker_map_add_power / _delete_power.
+ * worker_map_add_power / _delete_power; ohl_helpdesk: worker_damage_spots, worker_damage_set_spot,
+ * worker_report_damage (js/damage.js).
  */
 const HolidayMap = {
   COLORS: ['#f5c542', '#4fc3f7', '#81c784', '#ff8a65', '#ba68c8', '#4db6ac', '#e57373', '#7986cb'],
@@ -47,7 +51,8 @@ const HolidayMap = {
     return this._gLoading;
   },
 
-  async open(job, onClose) {
+  /** opts.pickDamage(spot): open to tap where the damage is (from the damage report), then close. */
+  async open(job, onClose, opts) {
     const overlay = document.createElement('div');
     overlay.className = 'ohu-overlay ohm-overlay';
     overlay.innerHTML = `
@@ -62,7 +67,11 @@ const HolidayMap = {
     document.body.appendChild(overlay);
     const $ = (s) => overlay.querySelector(s);
     overlay.addEventListener('click', (e) => {
-      if (e.target.closest('[data-act="close"]')) { overlay.remove(); if (onClose) onClose(); }
+      if (e.target.closest('[data-act="close"]')) {
+        overlay.remove();
+        if (opts && opts.pickDamage) opts.pickDamage(null);
+        if (onClose) onClose();
+      }
     });
     const fail = (msg) => {
       $('.ohu-sub').textContent = '';
@@ -80,7 +89,7 @@ const HolidayMap = {
       fail((err && err.message) || 'The map didn\'t load.');
       return;
     }
-    this._run(job, overlay, data);
+    this._run(job, overlay, data, opts || {}, () => { overlay.remove(); if (onClose) onClose(); });
   },
 
   KINDS: [
@@ -109,21 +118,54 @@ const HolidayMap = {
     return this._simplify(pts.slice(0, at + 1), tol).slice(0, -1).concat(this._simplify(pts.slice(at), tol));
   },
 
-  async _run(job, overlay, data) {
+  async _run(job, overlay, data, opts, closeMap) {
     const $ = (s) => overlay.querySelector(s);
     const g = window.google.maps;
-    const st = { data, mode: 'view', what: 'run', free: false, pts: [], temp: [], shapes: [], tag: null,
-                 item: 'tree', busy: false };
+    const st = { data, mode: opts.pickDamage ? 'pickdamage' : 'view', what: 'run', free: false, pts: [], temp: [],
+                 shapes: [], tag: null, item: 'tree', busy: false, damage: [], moving: null };
     let center = data.center;
     if (!center || !(center.lat || center.lng)) {
       const pos = await GPS.getCurrentPosition().catch(() => null);
       center = pos ? { lat: pos.lat, lng: pos.lon } : { lat: 38.58157, lng: -121.4944 };
     }
+    // Turning the map needs a vector map (Odoo's Google map ID, as the design app uses). The turn is kept per job.
+    const vector = !!(data.map_id && g.RenderingType);
+    const headingKey = 'ohm_heading_' + job.id;
+    let heading = data.heading || 0;
+    try { const kept = localStorage.getItem(headingKey); if (kept !== null && vector) heading = parseFloat(kept) || 0; } catch (e) { /* ignore */ }
     const map = new g.Map($('.ohm-map'), {
-      center, zoom: data.zoom || 20, heading: data.heading || 0, tilt: 0, mapTypeId: 'satellite',
+      center, zoom: data.zoom || 20, heading, tilt: 0, mapTypeId: 'satellite',
       gestureHandling: 'greedy', clickableIcons: false, disableDefaultUI: true, zoomControl: true,
       keyboardShortcuts: false,
+      ...(vector ? { mapId: data.map_id, renderingType: g.RenderingType.VECTOR,
+                     headingInteractionEnabled: true, tiltInteractionEnabled: false } : {}),
     });
+    if (vector) {
+      // Vector maps can drop the heading while loading: put it back once.
+      g.event.addListenerOnce(map, 'idle', () => {
+        if (heading && Math.abs((map.getHeading() || 0) - heading) > 0.5) map.setHeading(heading);
+      });
+      const turn = document.createElement('div');
+      turn.className = 'ohm-turn';
+      turn.innerHTML = `<button data-turn="-15" aria-label="Turn left">&#8634;</button>
+        <button data-turn="0" aria-label="North up" class="ohm-north"><span>&#11014;</span><small>N</small></button>
+        <button data-turn="15" aria-label="Turn right">&#8635;</button>`;
+      $('.ohm-map').appendChild(turn);
+      const needle = turn.querySelector('.ohm-north span');
+      const showHeading = () => {
+        const h = map.getHeading() || 0;
+        needle.style.transform = `rotate(${-h}deg)`;
+        try { localStorage.setItem(headingKey, String(Math.round(h * 10) / 10)); } catch (e) { /* ignore */ }
+      };
+      map.addListener('heading_changed', showHeading);
+      showHeading();
+      turn.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-turn]');
+        if (!b) return;
+        const step = parseFloat(b.dataset.turn);
+        map.setHeading(step ? ((map.getHeading() || 0) + step + 360) % 360 : 0);
+      });
+    }
     // Pixels ↔ map, for freehand strokes.
     const proj = new g.OverlayView();
     proj.onAdd = () => {}; proj.draw = () => {}; proj.onRemove = () => {};
@@ -197,6 +239,15 @@ const HolidayMap = {
         m.addListener('click', () => featureSheet(f));
         st.shapes.push(m);
       });
+      st.damage.forEach(d => {
+        if (!(d.lat || d.lng)) return;
+        const m = new g.Marker({ map, position: { lat: d.lat, lng: d.lng }, zIndex: 8, title: d.note || d.name,
+          clickable: live('view') || live('damage'), label: { text: '!', color: '#fff', fontWeight: '900', fontSize: '15px' },
+          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: d.this_job ? '#d32f2f' : '#8d6e63', fillOpacity: 1,
+                  strokeColor: '#fff', strokeWeight: 3 } });
+        m.addListener('click', () => damageSheet(d));
+        st.shapes.push(m);
+      });
       list('power').forEach(p => {
         if (!(p.lat || p.lng)) return;
         const m = new g.Marker({ map, position: { lat: p.lat, lng: p.lng }, zIndex: 7, title: p.label,
@@ -222,6 +273,16 @@ const HolidayMap = {
             ${n ? `${n} point${n === 1 ? '' : 's'}.` : ''}</div>
           <div class="ohm-btns"><button class="btn" data-bar="undo" ${n ? '' : 'disabled'}>&#8630; ${st.free ? 'Clear' : 'Undo'}</button>
           <button class="btn btn-primary" data-bar="next" ${n < 2 ? 'disabled' : ''}>Next ${what}</button>${done}</div>`;
+        return;
+      }
+      if (live('pickdamage') || live('damage') || live('movedamage')) {
+        const unplaced = live('damage') ? st.damage.filter(d => d.this_job && !(d.lat || d.lng)) : [];
+        b.innerHTML = `<div class="ohm-hint">${live('movedamage') ? `Tap where it is: <b>${this._esc(st.moving ? st.moving.note || st.moving.name : '')}</b>`
+            : '&#9888;&#65039; Tap the map where the damage is. Then take the photos and say what happened.'}</div>
+          ${unplaced.length ? `<div class="ohm-sec">Reported, not on the map yet</div>${unplaced.map(d => `
+            <button class="ohm-item" data-placedmg="${d.id}"><span>&#9888;&#65039;</span><span class="ohm-item-label">${this._esc(d.note || d.name)}</span>
+              <span class="ohm-item-state">&#128205; Place</span></button>`).join('')}` : ''}
+          <div class="ohm-btns"><button class="btn" data-bar="${live('pickdamage') ? 'cancelpick' : 'done'}">Cancel</button></div>`;
         return;
       }
       if (live('power')) {
@@ -253,15 +314,16 @@ const HolidayMap = {
           <div class="ohm-btns">${done}</div>`;
         return;
       }
+      const tool = (act, icon, label) => `<button class="ohm-tool" data-bar="${act}"><span>${icon}</span>${label}</button>`;
+      const damageTool = `<button class="btn btn-sm ohm-damage-btn" data-bar="damage">&#9888;&#65039; Damage: mark where</button>`;
       if (!editable()) {
-        b.innerHTML = '<div class="ohm-hint">This design is locked: ask the office for changes.</div>';
+        b.innerHTML = `<div class="ohm-hint">This design is locked: ask the office for changes.</div><div class="ohm-btns">${damageTool}</div>`;
         return;
       }
-      const tool = (act, icon, label) => `<button class="ohm-tool" data-bar="${act}"><span>${icon}</span>${label}</button>`;
       b.innerHTML = `<div class="ohm-tools5">
           ${tool('runs', this.RUN_ICON, 'Runs')}${tool('cords', '&#128268;', 'Cords')}${tool('items', '&#127795;', 'Items')}
           ${tool('tag', '&#127991;&#65039;', 'Tags')}${tool('power', '&#9889;', 'Power')}</div>
-        ${list('runs').length ? '<div class="ohm-hint">Not roofline? Tap the run.</div>' : ''}`;
+        <div class="ohm-btns">${list('runs').length ? '<div class="ohm-hint" style="flex:1;">Not roofline? Tap the run.</div>' : ''}${damageTool}</div>`;
     };
 
     // A full map state from Odoo (after placing / assigning items): take it all.
@@ -446,6 +508,54 @@ const HolidayMap = {
       };
     };
 
+    // ------------------------------------------------ Damage (ohl_helpdesk): pins with the photos
+    const loadDamage = async () => {
+      try {
+        st.damage = (await OdooAPI.callKw('fsm.order', 'worker_damage_spots', [job.id], {})) || [];
+      } catch (err) {
+        st.damage = [];  // Odoo without damage spots: no pins
+      }
+    };
+    const img = (id, size) => `${CONFIG.ODOO_URL || ''}/web/image/${id}/${size}`;
+    const damageSheet = (d) => {
+      if (!(live('view') || live('damage')) || st.busy) return;
+      const box = $('.ohu-add');
+      box.innerHTML = `<div class="ohu-add-card">
+          <div class="ohu-add-title">&#9888;&#65039; ${this._esc(d.note || 'Damage')}</div>
+          <div class="ohm-hint">${this._esc(d.name)} · ${this._esc(d.date)}${d.this_job ? ' · this job' : ` · ${this._esc(d.job)}`}${d.closed ? ' · taken care of' : ''}</div>
+          <div class="ohm-dmg-big" hidden></div>
+          <div class="damage-thumbs">${(d.photo_ids || []).map(id => `<img src="${img(id, '160x160')}" data-big="${id}" alt="">`).join('')
+            || '<span class="ohm-hint">No photos</span>'}</div>
+          <div class="ohm-btns" style="margin-top:12px;">
+            <button class="btn" data-sheet="move">&#128205; Move pin</button>
+            <button class="btn btn-primary" data-sheet="close">Close</button></div></div>`;
+      box.hidden = false;
+      box.onclick = (e) => {
+        const big = e.target.closest('[data-big]');
+        if (big) {
+          const holder = box.querySelector('.ohm-dmg-big');
+          holder.innerHTML = `<img src="${img(big.dataset.big, '1024x1024')}" alt="" style="width:100%;border-radius:8px;">`;
+          holder.hidden = false;
+          return;
+        }
+        const t = e.target.closest('button');
+        if (!t) return;
+        box.hidden = true;
+        if (t.dataset.sheet === 'move') { st.moving = d; st.mode = 'movedamage'; draw(); }
+      };
+    };
+    // Tapped where the damage is: photos and the report (the map waits underneath, then comes back).
+    const reportDamageAt = async (spot) => {
+      overlay.style.display = 'none';
+      await Photos.capturePhoto(job.id, 'damage').catch(() => {});
+      DamageReport.open(job.id, { spot, onDone: async () => {
+        overlay.style.display = '';
+        await loadDamage();
+        st.mode = 'view';
+        draw();
+      } });
+    };
+
     // ------------------------------------------------ Drawing runs and cords (corners or freehand)
     const drawTemp = () => {
       st.temp.forEach(s => s.setMap(null));
@@ -524,6 +634,26 @@ const HolidayMap = {
     };
 
     map.addListener('click', (e) => guard(async () => {
+      const spot = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      if (live('pickdamage')) {
+        closeMap();
+        opts.pickDamage(spot);
+        return;
+      }
+      if (live('damage')) {
+        st.mode = 'view';
+        draw();
+        await reportDamageAt(spot);
+        return;
+      }
+      if (live('movedamage') && st.moving) {
+        await OdooAPI.callKw('fsm.order', 'worker_damage_set_spot', [job.id, st.moving.id, spot.lat, spot.lng], {});
+        Object.assign(st.moving, spot);
+        st.moving = null; st.mode = 'view';
+        App.showToast('Damage pin saved', 'success');
+        draw();
+        return;
+      }
       if (live('power')) {
         const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_power', [job.id, e.latLng.lat(), e.latLng.lng(), center3()], {});
         took(res); list('power').push(res.power);
@@ -556,6 +686,13 @@ const HolidayMap = {
       if (t.dataset.bar === 'tag2') { st.pick2 = true; bar(); return; }
       if (t.dataset.bar === 'tag2off') { st.tag2 = null; st.pick2 = false; bar(); return; }
       if (t.dataset.item) { st.item = t.dataset.item; bar(); return; }
+      if (t.dataset.placedmg) {
+        st.moving = st.damage.find(d => String(d.id) === t.dataset.placedmg);
+        st.mode = 'movedamage'; draw();
+        return;
+      }
+      if (t.dataset.bar === 'damage') { st.mode = 'damage'; draw(); return; }
+      if (t.dataset.bar === 'cancelpick') { closeMap(); opts.pickDamage(null); return; }
       const act = t.dataset.bar;
       if (act === 'runs' || act === 'cords') {
         st.mode = 'draw'; st.what = act === 'cords' ? 'cord' : 'run'; st.pts = [];
@@ -568,11 +705,12 @@ const HolidayMap = {
       if (act === 'next') await saveCurrent();
       if (act === 'done') {
         if (live('draw') && !(await saveCurrent())) return;
-        st.mode = 'view'; st.pts = [];
+        st.mode = 'view'; st.pts = []; st.moving = null;
         pad.hidden = true; map.setOptions({ gestureHandling: 'greedy' });
         drawTemp(); draw();
       }
     });
     draw();
+    loadDamage().then(() => draw());
   },
 };

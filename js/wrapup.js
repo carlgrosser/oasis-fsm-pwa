@@ -76,6 +76,15 @@ const WrapUp = {
     // Holiday jobs: the required field steps first (do them or skip them with a reason).
     if (!editMode && typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job)) {
       if (!(await HolidayFlow.beforeClose(job))) return;
+      // No Close Job form on Holiday jobs: the Finish steps already have it all (no money in the field),
+      // so it closes straight away, then the rating.
+      this._currentJob = job;
+      App.showToast('Closing the job…', 'info');
+      await this._submitFull(document.createElement('div'), job, job.worker_count || 1, {
+        edit_mode: false, job_complete: true, return_trip_note: '', payment_not_collected: false,
+        payment_followup_note: '', office_note: '', resolution: (job.resolution || '').trim(),
+      });
+      return;
     }
     this._currentJob = job;
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v121';
+const CACHE_NAME = 'fsm-pwa-v122';
 const STATIC_ASSETS = [
   './',
   'index.html',
