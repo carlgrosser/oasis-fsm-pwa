@@ -29,6 +29,14 @@ const HolidayFlow = {
 
   _key(jobId) { return 'ohf_' + jobId; },
 
+  /** Photo kinds whose step was skipped on the Next step card (the stage button's photo check honors it). */
+  skippedPhotoCats(job) {
+    const data = job && this._data && this._data[job.id];
+    if (!data || !data.steps) return [];
+    return data.steps.filter(s => s.skipped && (s.type === 'photos_before' || s.type === 'photos_after'))
+      .map(s => (s.type === 'photos_before' ? 'before' : 'after'));
+  },
+
   /** The job's flow from Odoo (kept on the phone), with ticks / skips made offline applied on top. */
   async load(job, fresh) {
     let data = null;
@@ -240,7 +248,19 @@ const HolidayFlow = {
     const step = data && data.steps.find(s => s.code === code);
     const type = step ? step.type : code;
     const after = () => this.refresh(job);
-    if (code === '_start') { document.getElementById('nextStageBtn')?.click(); return; }
+    if (code === '_start') {
+      const btn = document.getElementById('nextStageBtn');
+      if (btn && btn.disabled && typeof Jobs !== 'undefined') await Jobs._updateStageGate(job, btn.dataset.nextStage);
+      if (!btn) {
+        App.showToast('Open the Work tab to start the install', 'error');
+      } else if (btn.disabled) {
+        App.showToast('Photos are still needed first: take them, or tick "Bypass photo requirement" below', 'error');
+        btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        btn.click();
+      }
+      return;
+    }
     if (code === '_close' || type === 'rating') { if (typeof WrapUp !== 'undefined') WrapUp.show(job); return; }
     if (type === 'tick') { await this.setStep(job, code, 'done'); return after(); }
     if (type === 'photos_before' || type === 'photos_after') {

@@ -1693,7 +1693,8 @@ const Jobs = {
     const counts = await Photos.getPhotoCountsByCategory(job.id);
     const missing = [];
 
-    const skip = this._skippedPhotoCats(job);
+    const skip = this._skippedPhotoCats(job)
+      .concat(typeof HolidayFlow !== 'undefined' && HolidayFlow.skippedPhotoCats ? HolidayFlow.skippedPhotoCats(job) : []);
     for (const key of gatedCategories) {
       if (skip.includes(key)) continue;
       const need = prof.photos[key] || 0;
