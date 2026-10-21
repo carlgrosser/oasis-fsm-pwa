@@ -2257,6 +2257,7 @@ const Jobs = {
   _bindEnRouteSmsButton(job) {
     const btn = document.getElementById('enRouteSmsBtn');
     if (!btn) return;
+    this._autoFillEta(job.id, 'enRouteSmsEta');
 
     btn.addEventListener('click', async () => {
       const phone = (job.mobile && job.mobile.trim()) || (job.phone && job.phone.trim());
