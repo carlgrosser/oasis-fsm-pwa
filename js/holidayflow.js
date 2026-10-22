@@ -24,7 +24,7 @@ const HolidayFlow = {
   isHoliday(job) {
     const company = job && (Array.isArray(job.company_id) ? job.company_id[0] : job.company_id);
     return !!company && company === CONFIG.HOLIDAY_COMPANY_ID
-      && (job.ohl_job_kind === 'install' || job.ohl_job_kind === 'takedown');
+      && ['install', 'takedown', 'greenery'].includes(job.ohl_job_kind);
   },
 
   _key(jobId) { return 'ohf_' + jobId; },
