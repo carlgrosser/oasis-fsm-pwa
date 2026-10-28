@@ -552,7 +552,7 @@ const HolidayUsed = {
         App.showToast('Count saved', 'success');
         return;
       } catch (err) {
-        if (navigator.onLine && !/network|fetch|timeout/i.test(String(err.message || err))) throw err;
+        if (navigator.onLine && !OdooAPI.isOffline(err)) throw err;
       }
     }
     const pending = await this._pending();

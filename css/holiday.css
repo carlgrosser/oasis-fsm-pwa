@@ -124,6 +124,7 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 /* Holiday job flow (js/holidayflow.js) */
 .ohf-top { padding: 8px 12px 0; }
 .ohf-card { border: 2px solid var(--primary-color, #1976d2); border-radius: 12px; padding: 10px 12px; background: var(--bg-primary, #fff); }
+.ohf-gate { margin-bottom: 8px; padding: 8px 10px; border-radius: 8px; background: #fff4e5; border: 1px solid #e0a800; color: #7a5200; font-weight: 600; }
 .ohf-card.ohf-done { border-color: var(--success-color, #2e7d32); }
 .ohf-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ohf-label { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #777); }

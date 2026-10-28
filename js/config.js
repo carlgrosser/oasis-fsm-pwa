@@ -95,6 +95,7 @@ const CONFIG = {
   FSM_ORDER_OPTIONAL_FIELDS: [
     'ticket_id', 'is_callback',
     'ohl_job_kind', 'ohl_design_id',  // Holiday Lighting: install map (ohl_design)
+    'ohl_agreement_state', 'ohl_deposit_state',  // Holiday Lighting: install gate warning (ohl_contract)
   ],
 
   // Set to true after installing the custom Odoo modules
@@ -167,6 +168,13 @@ const CONFIG = {
     console.warn('Failed to load pwa_settings from localStorage:', e);
   }
 })();
+
+// The app is served by Odoo's own server (/pwa on www.oasispooltilecleaning.com and on
+// system.oasisholidaylighting.com): talk to the address it was opened from. Another address is another site
+// to the browser (no login cookie, no cross-site calls), so the app would sign in nowhere.
+if (location.protocol === 'https:' && /^\/pwa/.test(location.pathname)) {
+  CONFIG.ODOO_URL = location.origin;
+}
 
 // Staging copy (https://…:8443/pwa/): the staging Odoo and database (after saved settings, so a
 // saved live address can't win), and a red strip so nobody mistakes it for the live app.

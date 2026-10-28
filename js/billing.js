@@ -141,6 +141,8 @@ const Billing = {
   // ========== STATE 2: SO LINES VIEW ==========
 
   _renderSOView(job, data, container) {
+    // Holiday jobs are billed with OK to bill (Finish tab); here the crew only collects a payment.
+    const holiday = typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job);
     const so = data.sale_order;
     const lines = data.lines || [];
     const changeOrders = data.change_orders || [];
@@ -204,7 +206,7 @@ const Billing = {
     }
 
     // Change order threshold alert
-    if (so.state === 'sale' && changeOrders.length === 0) {
+    if (!holiday && so.state === 'sale' && changeOrders.length === 0) {
       const onSiteTotal = lines
         .filter(l => l.x_added_on_site)
         .reduce((sum, l) => sum + l.price_subtotal, 0);
@@ -225,7 +227,7 @@ const Billing = {
     }
 
     // Create Invoice / Ready to Invoice buttons
-    if (so.invoice_status === 'to invoice') {
+    if (!holiday && so.invoice_status === 'to invoice') {
       html += `
         <div class="detail-section">
           <button class="btn btn-success btn-block btn-lg" id="createInvoiceBtn">

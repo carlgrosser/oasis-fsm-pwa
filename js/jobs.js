@@ -928,7 +928,7 @@ const Jobs = {
         <button class="btn btn-close-job btn-block btn-xl" id="closeJobBtn">Close Job</button>
       </div>`) : ''}
 
-      ${(isComplete || statusClass === 'cancelled' || job.wrapup_submitted) ? '' : `
+      ${(isComplete || statusClass === 'cancelled' || job.wrapup_submitted || holidayFlow) ? '' : `
       ${job.cancel_requested ? `
       <div class="cancel-request-banner" id="cancelRequestBanner"
            style="margin:8px 12px;padding:10px 12px;border-radius:6px;
@@ -968,9 +968,7 @@ const Jobs = {
           ${this._renderWorkPanel(job, stageName)}
         </div>
         <div class="detail-panel" data-panel="2">
-          ${holidayFlow ? `<div class="detail-section"><h3>Finish</h3><div id="ohfFinish"><div class="loading"><div class="spinner"></div></div></div></div>
-          <details class="detail-section ohf-pay"><summary>&#128181; Collect a payment in the field (check, Venmo…)</summary>
-            ${this._renderSalesPanel(job)}</details>` : this._renderSalesPanel(job)}
+          ${holidayFlow ? `<div class="detail-section"><h3>Finish</h3><div id="ohfFinish"><div class="loading"><div class="spinner"></div></div></div></div>` : this._renderSalesPanel(job)}
         </div>
         <div class="detail-panel" data-panel="3">
           ${holidayFlow ? '<div class="detail-section"><h3>Map &amp; Count</h3><div id="ohfMapCount"></div></div>' : '<div id="optionsTabContent"></div>'}
@@ -1407,7 +1405,8 @@ const Jobs = {
       ? []
       : (CONFIG.PHOTO_CATEGORIES || []).map(c => c.key).filter(c => !this._skippedPhotoCats(job).includes(c));
     const cats = this._showAllSteps ? allCats : stageCats;
-    const showMaterials = prof.materials.mode !== 'hidden' && (
+    const showMaterials = prof.materials.mode !== 'hidden'
+                          && !(typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job)) && (
                           this._showAllSteps ||
                           stageName.toLowerCase().includes('progress') ||
                           stageName.toLowerCase().includes('complete'));
@@ -3206,9 +3205,17 @@ const Jobs = {
     // Stage changes affect overdue/not-closed lists
     this._historyFetchCache = null;
 
-    if (navigator.onLine) {
-      // Push stage change immediately — backend automations depend on this
-      await OdooAPI.updateOrderStage(job.id, stage.id, extraValues);
+    let queued = !navigator.onLine;
+    if (!queued) {
+      try {
+        // Push stage change immediately — backend automations depend on this
+        await OdooAPI.updateOrderStage(job.id, stage.id, extraValues);
+      } catch (err) {
+        if (!OdooAPI.isOffline(err)) throw err;
+        queued = true; // weak signal: kept on the phone, like no signal
+      }
+    }
+    if (!queued) {
 
       // Log stage change to System tab (fire-and-forget)
       const workerName = (typeof Auth !== 'undefined' && Auth.getUser()) ? Auth.getUser().name : '';

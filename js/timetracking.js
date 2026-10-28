@@ -110,7 +110,8 @@ const TimeTracking = {
       }
     }
 
-    if (navigator.onLine) {
+    let queue = !navigator.onLine;
+    if (!queue) {
       try {
         const result = await OdooAPI.clockIn(employeeId, gpsCoords, gpsAccuracy, payCategory);
         if (result && result.success) {
@@ -134,10 +135,14 @@ const TimeTracking = {
           return false;
         }
       } catch (err) {
-        App.showToast('Clock on failed: ' + err.message, 'error');
-        return false;
+        if (!OdooAPI.isOffline(err)) {
+          App.showToast('Clock on failed: ' + err.message, 'error');
+          return false;
+        }
+        queue = true; // weak signal: kept on the phone, like no signal
       }
-    } else {
+    }
+    if (queue) {
       // Queue for sync
       await DB.put('timeEntries', {
         temp_id: 'te_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
@@ -195,7 +200,8 @@ const TimeTracking = {
       }
     }
 
-    if (navigator.onLine && this._attendanceId) {
+    let queue = !navigator.onLine;
+    if (!queue && this._attendanceId) {
       try {
         const result = await OdooAPI.clockOut(this._attendanceId, gpsCoords, gpsAccuracy, appendEta, options.atTime || null);
         // Tolerate "already clocked out" (e.g. crew clock-off raced us) —
@@ -230,10 +236,16 @@ const TimeTracking = {
           return false;
         }
       } catch (err) {
-        App.showToast('Clock off failed: ' + err.message, 'error');
-        return false;
+        if (!OdooAPI.isOffline(err)) {
+          App.showToast('Clock off failed: ' + err.message, 'error');
+          return false;
+        }
+        queue = true; // weak signal: kept on the phone, like no signal
       }
-    } else if (!this._attendanceId) {
+    }
+    // Clocked on with no signal: the clock-on is still on the phone, so the clock-off waits with it
+    // (it gets the attendance when they both sync). Never clocked on at all: just reset.
+    if (!this._attendanceId && !(await this._clockInQueued())) {
       // No attendance ID — force reset state
       this._stopLunchTimer();
       this._status = 'out';
@@ -281,7 +293,8 @@ const TimeTracking = {
       if (pos) gpsCoords = GPS.formatCoords(pos);
     }
 
-    if (navigator.onLine && this._attendanceId) {
+    let queue = !navigator.onLine || !this._attendanceId;
+    if (!queue) {
       try {
         const result = await OdooAPI.startLunch(this._attendanceId, gpsCoords);
         if (result && result.success) {
@@ -298,10 +311,14 @@ const TimeTracking = {
           return false;
         }
       } catch (err) {
-        App.showToast('Failed to start break: ' + err.message, 'error');
-        return false;
+        if (!OdooAPI.isOffline(err)) {
+          App.showToast('Failed to start break: ' + err.message, 'error');
+          return false;
+        }
+        queue = true; // weak signal: kept on the phone, like no signal
       }
-    } else {
+    }
+    if (queue) {
       await DB.put('timeEntries', {
         temp_id: 'te_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
         action: 'start_lunch',
@@ -326,7 +343,8 @@ const TimeTracking = {
    * End lunch break.
    */
   async endLunch() {
-    if (navigator.onLine && this._attendanceId) {
+    let queue = !navigator.onLine || !this._attendanceId;
+    if (!queue) {
       try {
         const result = await OdooAPI.endLunch(this._attendanceId);
         if (result && result.success) {
@@ -346,10 +364,14 @@ const TimeTracking = {
           return false;
         }
       } catch (err) {
-        App.showToast('Failed to end break: ' + err.message, 'error');
-        return false;
+        if (!OdooAPI.isOffline(err)) {
+          App.showToast('Failed to end break: ' + err.message, 'error');
+          return false;
+        }
+        queue = true; // weak signal: kept on the phone, like no signal
       }
-    } else {
+    }
+    if (queue) {
       await DB.put('timeEntries', {
         temp_id: 'te_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
         action: 'end_lunch',
@@ -1538,14 +1560,27 @@ const TimeTracking = {
     let failed = 0;
 
     try {
-      const pending = await DB.getUnsyncedItems('timeEntries');
+      const pending = (await DB.getUnsyncedItems('timeEntries'))
+        .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
       for (const item of pending) {
         try {
+          if (!item.attendance_id && item.action !== 'clock_in'
+              && pending.some(p => p.action === 'clock_in' && !p.synced)) {
+            continue; // its clock-on hasn't gone yet: wait for it, next sync
+          }
           if (item.action === 'clock_in') {
-            const result = await OdooAPI.clockIn(item.employee_id, item.gps || '', item.gps_accuracy || 0, item.pay_category || null);
+            // The time they clocked on, not the time the phone found signal.
+            const result = await OdooAPI.clockIn(item.employee_id, item.gps || '', item.gps_accuracy || 0,
+              item.pay_category || null, item.timestamp);
             if (result && result.attendance_id) {
-              // Update local state with the real attendance ID
-              this._attendanceId = result.attendance_id;
+              // The clock-off and breaks queued after it belong to this attendance.
+              for (const later of pending) {
+                if (later !== item && !later.synced && !later.attendance_id && later.timestamp >= item.timestamp) {
+                  later.attendance_id = result.attendance_id;
+                  await DB.put('timeEntries', later);
+                }
+              }
+              if (this._status !== 'out') this._attendanceId = result.attendance_id;
               if (result.pay_category) this._payCategory = result.pay_category;
               await this._saveState();
             }
@@ -1559,11 +1594,11 @@ const TimeTracking = {
             }
           } else if (item.action === 'start_lunch') {
             if (item.attendance_id) {
-              await OdooAPI.startLunch(item.attendance_id, item.gps || '');
+              await OdooAPI.startLunch(item.attendance_id, item.gps || '', item.timestamp);
             }
           } else if (item.action === 'end_lunch') {
             if (item.attendance_id) {
-              await OdooAPI.endLunch(item.attendance_id);
+              await OdooAPI.endLunch(item.attendance_id, item.timestamp);
             }
           }
           item.synced = 1;
@@ -1582,6 +1617,15 @@ const TimeTracking = {
   },
 
   // ========== HELPERS ==========
+
+  /** A clock-on made with no signal, still waiting on the phone. */
+  async _clockInQueued() {
+    try {
+      return (await DB.getUnsyncedItems('timeEntries')).some(i => i.action === 'clock_in');
+    } catch {
+      return false;
+    }
+  },
 
   getStatus() { return this._status; },
   isClockedIn() { return this._status === 'in' || this._status === 'break'; },

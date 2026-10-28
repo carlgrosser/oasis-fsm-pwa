@@ -87,6 +87,18 @@ const OdooAPI = {
   },
 
   /**
+   * True when the error means no or weak signal (timed out, no connection, server unreachable), not Odoo
+   * refusing: the action is kept on the phone and sent later. fetch() fails with a TypeError
+   * ("Failed to fetch", Safari's "Load failed").
+   */
+  isOffline(err) {
+    if (!err) return false;
+    if (err.isTimeout || err instanceof TypeError) return true;
+    if (err.odooError) return false;
+    return /network|failed to fetch|load failed|timed out|timeout|HTTP 5\d\d/i.test(String(err.message || err));
+  },
+
+  /**
    * Authenticate with Odoo. Returns session info.
    */
   async authenticate(login, password) {
@@ -692,10 +704,10 @@ const OdooAPI = {
    * Clock in — create attendance record with GPS.
    * @param {string|null} payCategory - 'production' | 'hourly_pay' | null (defaults to employee's pay type)
    */
-  async clockIn(employeeId, gpsCoords, gpsAccuracy, payCategory) {
-    const args = [employeeId, gpsCoords || '', gpsAccuracy || 0];
-    if (payCategory) args.push(payCategory);
-    return this.callKw('hr.attendance', 'mobile_clock_in', args, {});
+  async clockIn(employeeId, gpsCoords, gpsAccuracy, payCategory, atTime) {
+    // atTime: when they clocked on with no signal (sent later); the server keeps a sane past time.
+    return this.callKw('hr.attendance', 'mobile_clock_in',
+      [employeeId, gpsCoords || '', gpsAccuracy || 0, payCategory || null, atTime || null], {});
   },
 
   /**
@@ -712,15 +724,15 @@ const OdooAPI = {
   /**
    * Start lunch break.
    */
-  async startLunch(attendanceId, gpsCoords) {
-    return this.callKw('hr.attendance', 'mobile_start_lunch', [attendanceId, gpsCoords || ''], {});
+  async startLunch(attendanceId, gpsCoords, atTime) {
+    return this.callKw('hr.attendance', 'mobile_start_lunch', [attendanceId, gpsCoords || '', atTime || null], {});
   },
 
   /**
    * End lunch break.
    */
-  async endLunch(attendanceId) {
-    return this.callKw('hr.attendance', 'mobile_end_lunch', [attendanceId], {});
+  async endLunch(attendanceId, atTime) {
+    return this.callKw('hr.attendance', 'mobile_end_lunch', [attendanceId, atTime || null], {});
   },
 
   /**

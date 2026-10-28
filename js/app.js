@@ -20,8 +20,8 @@ const App = {
     { id: 'timeOffBtn', label: '🗓️ My Time Off' },
     { id: 'syncBtn', label: '&#10227; Sync Now' },
     { id: 'fixShiftBtn', label: '⏱️ Adjust Shift' },
-    { id: 'clearCacheBtn', label: '🗑️ Clear Cache' },
-    { id: 'importSettingsBtn', label: '⚙️ Import Settings' },
+    { id: 'clearCacheBtn', label: '🗑️ Clear Cache', hidden: true },
+    { id: 'importSettingsBtn', label: '⚙️ Import Settings', hidden: true },
     { id: 'viewAsBtn', label: '👁️ View As Worker', hidden: true },
     { divider: true },
     { id: 'wrapupPlacementBtn', label: '📌 Close Job Btn: Above Tabs' },
@@ -90,9 +90,10 @@ const App = {
     this._initListTabs();
     this._initOrientationHandler();
 
-    // Show admin-only menu items
+    // Show admin-only menu items (setup tools a crew phone doesn't need)
     if (Auth.isAdmin()) {
-      ['viewAsBtnList', 'viewAsBtnDetail'].forEach(id => {
+      ['viewAsBtnList', 'viewAsBtnDetail', 'clearCacheBtnList', 'clearCacheBtnDetail',
+        'importSettingsBtnList', 'importSettingsBtnDetail'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = '';
       });

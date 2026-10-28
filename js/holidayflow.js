@@ -97,7 +97,7 @@ const HolidayFlow = {
         await DB.setState(this._key(job.id), data).catch(() => {});
         return;
       } catch (err) {
-        if (!/network|fetch|timeout/i.test(String(err.message || err))) throw err;
+        if (!OdooAPI.isOffline(err)) throw err;
       }
     }
     const pending = ((await DB.getState(this.PENDING_KEY).catch(() => null)) || []).filter(p => !(p.jobId === job.id && p.code === code));
@@ -113,6 +113,7 @@ const HolidayFlow = {
     if (n.includes('complete') || n.includes('closed') || job.wrapup_submitted) return 'done';
     if (n.includes('progress')) return 'work';
     if (n.includes('arrived')) return 'arrival';
+    if (n.includes('route')) return 'enroute';
     return 'pre';
   },
 
@@ -156,7 +157,13 @@ const HolidayFlow = {
     if (stage === 'pre') {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span>${sop}</div>
           <div class="ohf-title">Head to the job</div>
-          <div class="ohf-help">Tap En Route on the Info tab when you set off. On arrival: A-frame signs and the walk-through.</div></div>`;
+          <div class="ohf-help">Tap when you set off (you can text the customer your ETA). On arrival: A-frame signs and the walk-through.</div>
+          <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="enroute">&#128666; Leaving now</button></div></div>`;
+    } else if (stage === 'enroute') {
+      card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span>${sop}</div>
+          <div class="ohf-title">On the way</div>
+          <div class="ohf-help">Tap Arrived when you get there. Then the A-frame signs and the walk-through.</div>
+          <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="arrived">&#128205; Arrived</button></div></div>`;
     } else if (stage === 'done') {
       card = `<div class="ohf-card ohf-done"><div class="ohf-card-head"><span class="ohf-label">&#10003; Job closed</span>${sop}</div>
           <div class="ohf-help">${this._esc(data.bill && data.bill.state === 'scheduled' ? 'The balance is charged to the card on file tomorrow morning.' : '')}</div></div>`;
@@ -177,8 +184,18 @@ const HolidayFlow = {
         <div class="ohf-tally"><span>&#129522; Magnets <b id="ohfMagnets">${magnets}</b></span>
           <button class="btn btn-sm" data-ohf-tally="1">+1</button><button class="btn btn-sm" data-ohf-tally="5">+5</button></div>
         <button class="btn" data-ohf="photo">&#128247;</button></div>` : '';
-    top.innerHTML = card + quick;
+    top.innerHTML = this._gateHtml(job, stage) + card + quick;
     top.onclick = (e) => this._onClick(job, e);
+  },
+
+  /** Install gate, warn only: the agreement or deposit isn't done. The crew calls the office first. */
+  _gateHtml(job, stage) {
+    if (stage === 'done' || job.ohl_job_kind === 'takedown') return '';
+    const missing = [];
+    if (job.ohl_agreement_state === 'sent') missing.push('agreement not signed');
+    if (job.ohl_deposit_state === 'requested') missing.push('deposit not paid');
+    if (!missing.length) return '';
+    return `<div class="ohf-gate">&#9888;&#65039; ${this._esc(missing.join(' · '))}. Call the office before you start.</div>`;
   },
 
   _actionLabel(step) {
@@ -193,6 +210,21 @@ const HolidayFlow = {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.ohf === 'sop') return this.openSop(job);
+    if (t.dataset.ohf === 'enroute') return Jobs._showEnRouteModal(job);
+    if (t.dataset.ohf === 'arrived') {
+      t.disabled = true;
+      try {
+        if (await Jobs.changeJobStatus(job, 'Arrived')) {
+          const container = document.getElementById('jobDetail');
+          if (container) Jobs.renderJobDetail(job.id, container);
+          return;
+        }
+      } catch (err) {
+        App.showToast('Could not mark Arrived: ' + err.message, 'error');
+      }
+      t.disabled = false;
+      return;
+    }
     if (t.dataset.ohf === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job);
     if (t.dataset.ohf === 'photo') return document.getElementById('footerCameraBtn')?.click();
     if (t.dataset.ohfTally) return this.tally(job, parseInt(t.dataset.ohfTally, 10));
@@ -222,12 +254,14 @@ const HolidayFlow = {
       document.querySelectorAll('.ohf-magnets-count').forEach(x => { x.textContent = data.tally[this.MAGNETS]; });
       await DB.setState(this._key(job.id), data).catch(() => {});
     }
+    // Each tap has an id: sent again after a lost answer, the server counts it once.
+    const tapId = 't' + Date.now() + Math.random().toString(36).slice(2, 7);
     try {
-      const tally = await OdooAPI.callKw('fsm.order', 'worker_tally', [job.id, this.MAGNETS, delta], {});
+      const tally = await OdooAPI.callKw('fsm.order', 'worker_tally', [job.id, this.MAGNETS, delta, tapId], {});
       if (data) data.tally = tally;
     } catch (err) {
       const pending = (await DB.getState('ohf_tally_pending').catch(() => null)) || [];
-      pending.push({ jobId: job.id, delta });
+      pending.push({ jobId: job.id, delta, tapId });
       await DB.setState('ohf_tally_pending', pending).catch(() => {});
     }
   },
@@ -237,7 +271,7 @@ const HolidayFlow = {
     const pending = (await DB.getState('ohf_tally_pending').catch(() => null)) || [];
     const left = [];
     for (const p of pending) {
-      try { await OdooAPI.callKw('fsm.order', 'worker_tally', [p.jobId, this.MAGNETS, p.delta], {}); } catch (e) { left.push(p); }
+      try { await OdooAPI.callKw('fsm.order', 'worker_tally', [p.jobId, this.MAGNETS, p.delta, p.tapId || false], {}); } catch (e) { left.push(p); }
     }
     await DB.setState('ohf_tally_pending', left).catch(() => {});
   },

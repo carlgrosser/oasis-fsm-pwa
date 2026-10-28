@@ -505,7 +505,8 @@ const WrapUp = {
 
     const btnLabel = editMode ? 'Save Changes' : 'Close Job';
 
-    if (navigator.onLine) {
+    let queue = !navigator.onLine;
+    if (!queue) {
       try {
         const result = await OdooAPI.submitWrapup(job.id, { ...data, gps, gps_accuracy: gpsAccuracy });
         overlay.remove();
@@ -541,11 +542,16 @@ const WrapUp = {
           }
         }
       } catch (err) {
-        App.showToast('Close Job failed: ' + err.message, 'error');
-        const btn = overlay.querySelector('#wrapupSubmitBtn');
-        if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
+        if (OdooAPI.isOffline(err)) {
+          queue = true; // weak signal: kept on the phone, like no signal
+        } else {
+          App.showToast('Close Job failed: ' + err.message, 'error');
+          const btn = overlay.querySelector('#wrapupSubmitBtn');
+          if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
+        }
       }
-    } else {
+    }
+    if (queue) {
       // Queue for offline sync
       await DB.put('wrapupQueue', {
         temp_id: 'wu_' + Date.now(),
@@ -591,6 +597,8 @@ const WrapUp = {
   async showEarly(job) {
     this._currentJob = job;
     const workerCount = job.worker_count || 1;
+    // Holiday jobs take no money in the field: no payment question.
+    const holiday = typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job);
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -607,7 +615,7 @@ const WrapUp = {
               placeholder="Why are you leaving before the job is complete?"></textarea>
           </div>
 
-          <div class="wrapup-field">
+          <div class="wrapup-field"${holiday ? ' style="display:none;"' : ''}>
             <label class="wrapup-label">Was payment collected?</label>
             <div class="toggle-trio" id="earlyPaymentToggle">
               <button class="toggle-btn" data-val="collected">✓ Collected</button>
@@ -674,7 +682,8 @@ const WrapUp = {
         if (pos) { gps = GPS.formatCoords(pos); gpsAccuracy = pos.accuracy || 0; }
       }
 
-      if (navigator.onLine) {
+      let queue = !navigator.onLine;
+      if (!queue) {
         try {
           const result = await OdooAPI.submitEarlyWrapup(job.id, { ...earlyData, gps, gps_accuracy: gpsAccuracy });
           overlay.remove();
@@ -691,11 +700,16 @@ const WrapUp = {
           }
           this._showClockOffPrompt(job, workerCount, result.clocked_out_count || 0, gps, gpsAccuracy);
         } catch (err) {
-          App.showToast('Wrap-up failed: ' + err.message, 'error');
-          const btn = document.querySelector('#earlyWrapupSubmitBtn');
-          if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
+          if (OdooAPI.isOffline(err)) {
+            queue = true; // weak signal: kept on the phone, like no signal
+          } else {
+            App.showToast('Wrap-up failed: ' + err.message, 'error');
+            const btn = document.querySelector('#earlyWrapupSubmitBtn');
+            if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
+          }
         }
-      } else {
+      }
+      if (queue) {
         await DB.put('wrapupQueue', {
           temp_id: 'wu_' + Date.now(),
           order_id: job.id,
