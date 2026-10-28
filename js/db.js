@@ -86,6 +86,12 @@ const DB = {
           eqStore.createIndex('synced', 'synced', { unique: false });
           eqStore.createIndex('created_at', 'created_at', { unique: false });
         }
+
+        // Close Job / early wrap-up queue (jobs closed with no signal)
+        if (!db.objectStoreNames.contains('wrapupQueue')) {
+          const wqStore = db.createObjectStore('wrapupQueue', { keyPath: 'temp_id' });
+          wqStore.createIndex('synced', 'synced', { unique: false });
+        }
       };
 
       request.onsuccess = (event) => {

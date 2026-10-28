@@ -61,6 +61,7 @@ const Sync = {
       await this._syncJournal();
       await this._syncMaterials();
       await this._syncTimeEntries();
+      await this._syncWrapups();
       await this._syncOfficeNotes();
       await this._syncExpenses();
       await this._updatePendingCount();
@@ -96,6 +97,30 @@ const Sync = {
         await DB.put('statusChanges', item);
       } catch (err) {
         console.warn('Failed to sync status change:', item, err);
+        // Leave unsynced for next attempt
+      }
+    }
+  },
+
+  /**
+   * Sync queued Close Job / early wrap-ups (jobs closed with no signal).
+   */
+  async _syncWrapups() {
+    let pending = [];
+    try {
+      pending = await DB.getUnsyncedItems('wrapupQueue');
+    } catch { return; /* store may not exist yet */ }
+    for (const item of pending) {
+      try {
+        if (item.type === 'early') {
+          await OdooAPI.submitEarlyWrapup(item.order_id, item.data);
+        } else {
+          await OdooAPI.submitWrapup(item.order_id, item.data);
+        }
+        item.synced = 1;
+        await DB.put('wrapupQueue', item);
+      } catch (err) {
+        console.warn('Failed to sync wrap-up:', item, err);
         // Leave unsynced for next attempt
       }
     }
@@ -204,7 +229,12 @@ const Sync = {
         const expenseItems = await DB.getUnsyncedItems('expensesQueue');
         expensesCount = expenseItems.length;
       } catch { /* store may not exist yet */ }
-      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount + expensesCount;
+      let wrapupCount = 0;
+      try {
+        const wrapupItems = await DB.getUnsyncedItems('wrapupQueue');
+        wrapupCount = wrapupItems.length;
+      } catch { /* store may not exist yet */ }
+      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount + expensesCount + wrapupCount;
     } catch {
       this._pendingCount = 0;
     }
