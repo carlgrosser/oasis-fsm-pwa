@@ -24,7 +24,12 @@ const HolidayFlow = {
   isHoliday(job) {
     const company = job && (Array.isArray(job.company_id) ? job.company_id[0] : job.company_id);
     return !!company && company === CONFIG.HOLIDAY_COMPANY_ID
-      && ['install', 'takedown', 'greenery'].includes(job.ohl_job_kind);
+      && ['install', 'takedown', 'greenery', 'consult'].includes(job.ohl_job_kind);
+  },
+
+  /** A design visit (presite, consultation, follow-up): photos, measuring, notes; no lights, no count. */
+  isVisit(job) {
+    return this.isHoliday(job) && job.ohl_job_kind === 'consult';
   },
 
   _key(jobId) { return 'ohf_' + jobId; },
@@ -154,7 +159,18 @@ const HolidayFlow = {
     const doneN = all.filter(s => s.done || s.skipped).length;
     const sop = '<button class="btn btn-sm ohf-sop" data-ohf="sop">&#128216; SOP</button>';
     let card = '';
-    if (stage === 'pre') {
+    const visit = this.isVisit(job);
+    if (stage === 'pre' && visit) {
+      card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span></div>
+          <div class="ohf-title">Head to the visit</div>
+          <div class="ohf-help">${this._esc(job.ohl_visit_label || '')}${job.ohl_visit_label ? '. ' : ''}Tap when you set off (you can text the customer your ETA).</div>
+          <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="enroute">&#128666; Leaving now</button></div></div>`;
+    } else if (stage === 'enroute' && visit) {
+      card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span></div>
+          <div class="ohf-title">On the way</div>
+          <div class="ohf-help">Tap Arrived when you get there. Then photos of the house.</div>
+          <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="arrived">&#128205; Arrived</button></div></div>`;
+    } else if (stage === 'pre') {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span>${sop}</div>
           <div class="ohf-title">Head to the job</div>
           <div class="ohf-help">Tap when you set off (you can text the customer your ETA). On arrival: A-frame signs and the walk-through.</div>
@@ -179,7 +195,9 @@ const HolidayFlow = {
           </div></div>`;
     }
     const magnets = (data.tally && data.tally[this.MAGNETS]) || 0;
-    const quick = stage === 'work' ? `<div class="ohf-quick">
+    const quick = stage === 'work' && visit ? `<div class="ohf-quick">
+        ${job.ohl_design_id ? '<button class="btn" data-ohf="map">&#128506;&#65039; Design</button>' : ''}
+        <button class="btn" data-ohf="photo">&#128247; Photo</button></div>` : stage === 'work' ? `<div class="ohf-quick">
         <button class="btn" data-ohf="map">&#128506;&#65039; Map</button>
         <div class="ohf-tally"><span>&#129522; Magnets <b id="ohfMagnets">${magnets}</b></span>
           <button class="btn btn-sm" data-ohf-tally="1">+1</button><button class="btn btn-sm" data-ohf-tally="5">+5</button></div>
@@ -434,6 +452,17 @@ const HolidayFlow = {
     const box = document.getElementById('ohfMapCount');
     const data = this._data && this._data[job.id];
     if (!box) return;
+    if (this.isVisit(job)) {
+      box.innerHTML = job.ohl_design_id
+        ? `<div class="ohf-grid"><button class="ohf-tile" data-mc="map"><span>&#128506;&#65039;</span>Design</button></div>
+           <div class="ohf-help">Measure on the design, or put the measurements in the Close Job notes.</div>`
+        : '<div class="ohf-help">No design yet: put the measurements in the Close Job notes.</div>';
+      box.onclick = (e) => {
+        const t = e.target.closest('button');
+        if (t && t.dataset.mc === 'map' && typeof HolidayMap !== 'undefined') HolidayMap.open(job, () => this.refresh(job));
+      };
+      return;
+    }
     const magnets = (data && data.tally && data.tally[this.MAGNETS]) || 0;
     const sheet = job.ohl_design_id ? 'Picking List' : 'Rehang Sheet';
     const install = job.ohl_job_kind === 'install';

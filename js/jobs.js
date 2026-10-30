@@ -739,7 +739,7 @@ const Jobs = {
     // Format time — context-aware per view
     const timeStr = isHistoryComplete
       ? this._formatHistoryDate(job)
-      : this._formatCardTime(job.scheduled_date_start);
+      : (job.ohl_visit_label || this._formatCardTime(job.scheduled_date_start));
 
     // Multi-worker indicator
     const crewCount = job.person_ids ? job.person_ids.length : 1;
@@ -956,7 +956,7 @@ const Jobs = {
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
         ${holidayFlow ? `<button class="detail-tab" data-tab="2">Finish</button>
-        <button class="detail-tab" data-tab="3">Map &amp; Count</button>` : `<button class="detail-tab" data-tab="2">Sales</button>
+        <button class="detail-tab" data-tab="3">${HolidayFlow.isVisit(job) ? 'Design' : 'Map &amp; Count'}</button>` : `<button class="detail-tab" data-tab="2">Sales</button>
         <button class="detail-tab" data-tab="3">Options <span class="options-tab-badge" id="optionsTabBadge" style="display:none;"></span></button>`}
       </div>
 
@@ -971,7 +971,7 @@ const Jobs = {
           ${holidayFlow ? `<div class="detail-section"><h3>Finish</h3><div id="ohfFinish"><div class="loading"><div class="spinner"></div></div></div></div>` : this._renderSalesPanel(job)}
         </div>
         <div class="detail-panel" data-panel="3">
-          ${holidayFlow ? '<div class="detail-section"><h3>Map &amp; Count</h3><div id="ohfMapCount"></div></div>' : '<div id="optionsTabContent"></div>'}
+          ${holidayFlow ? `<div class="detail-section"><h3>${HolidayFlow.isVisit(job) ? 'Design' : 'Map &amp; Count'}</h3><div id="ohfMapCount"></div></div>` : '<div id="optionsTabContent"></div>'}
         </div>
       </div>
     `;
@@ -1204,7 +1204,8 @@ const Jobs = {
     const mapUrl = _isIOS ? `maps://?q=${addressForMap}` : `geo:0,0?q=${addressForMap}`;
 
     const scheduledDate = this._formatScheduleDate(job.scheduled_date_start);
-    const scheduledTime = this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
+    const scheduledTime = job.ohl_visit_label  // a design visit's window (the office routes the day)
+      || this._formatScheduleTimeRange(job.scheduled_date_start, job.scheduled_date_end);
 
     // Gate code — a contact detail row; edited via the contact modal
     const gateCodeHtml = `<div class="detail-row">

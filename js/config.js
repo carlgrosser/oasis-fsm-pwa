@@ -95,6 +95,7 @@ const CONFIG = {
   FSM_ORDER_OPTIONAL_FIELDS: [
     'ticket_id', 'is_callback',
     'ohl_job_kind', 'ohl_design_id',  // Holiday Lighting: install map (ohl_design)
+    'ohl_visit_label',  // Holiday Lighting: a design visit's window (ohl_requests)
     'ohl_agreement_state', 'ohl_deposit_state',  // Holiday Lighting: install gate warning (ohl_contract)
   ],
 
