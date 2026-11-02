@@ -24,7 +24,12 @@ const HolidayFlow = {
   isHoliday(job) {
     const company = job && (Array.isArray(job.company_id) ? job.company_id[0] : job.company_id);
     return !!company && company === CONFIG.HOLIDAY_COMPANY_ID
-      && ['install', 'takedown', 'greenery', 'consult'].includes(job.ohl_job_kind);
+      && ['install', 'takedown', 'greenery', 'consult', 'service'].includes(job.ohl_job_kind);
+  },
+
+  /** A callback: back at the house to fix or finish something (Info tab: what). Photos, fix, photos. */
+  isCallback(job) {
+    return this.isHoliday(job) && job.ohl_job_kind === 'service';
   },
 
   /** A design visit (presite, consultation, follow-up): photos, measuring, notes; no lights, no count. */
@@ -160,15 +165,16 @@ const HolidayFlow = {
     const sop = '<button class="btn btn-sm ohf-sop" data-ohf="sop">&#128216; SOP</button>';
     let card = '';
     const visit = this.isVisit(job);
-    if (stage === 'pre' && visit) {
+    const callback = this.isCallback(job);
+    if (stage === 'pre' && (visit || callback)) {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span></div>
-          <div class="ohf-title">Head to the visit</div>
+          <div class="ohf-title">${visit ? 'Head to the visit' : 'Head to the callback'}</div>
           <div class="ohf-help">${this._esc(job.ohl_visit_label || '')}${job.ohl_visit_label ? '. ' : ''}Tap when you set off (you can text the customer your ETA).</div>
           <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="enroute">&#128666; Leaving now</button></div></div>`;
-    } else if (stage === 'enroute' && visit) {
+    } else if (stage === 'enroute' && (visit || callback)) {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span></div>
           <div class="ohf-title">On the way</div>
-          <div class="ohf-help">Tap Arrived when you get there. Then photos of the house.</div>
+          <div class="ohf-help">Tap Arrived when you get there. Then ${visit ? 'photos of the house' : 'before photos'}.</div>
           <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="arrived">&#128205; Arrived</button></div></div>`;
     } else if (stage === 'pre') {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span>${sop}</div>
@@ -195,13 +201,14 @@ const HolidayFlow = {
           </div></div>`;
     }
     const magnets = (data.tally && data.tally[this.MAGNETS]) || 0;
-    const quick = stage === 'work' && visit ? `<div class="ohf-quick">
+    const back = '<button class="btn" data-ohf="comeback" title="Need to come back">&#8617;&#65039;</button>';
+    const quick = stage === 'work' && (visit || callback) ? `<div class="ohf-quick">
         ${job.ohl_design_id ? '<button class="btn" data-ohf="map">&#128506;&#65039; Design</button>' : ''}
-        <button class="btn" data-ohf="photo">&#128247; Photo</button></div>` : stage === 'work' ? `<div class="ohf-quick">
+        <button class="btn" data-ohf="photo">&#128247; Photo</button>${callback ? back : ''}</div>` : stage === 'work' ? `<div class="ohf-quick">
         <button class="btn" data-ohf="map">&#128506;&#65039; Map</button>
         <div class="ohf-tally"><span>&#129522; Magnets <b id="ohfMagnets">${magnets}</b></span>
           <button class="btn btn-sm" data-ohf-tally="1">+1</button><button class="btn btn-sm" data-ohf-tally="5">+5</button></div>
-        <button class="btn" data-ohf="photo">&#128247;</button></div>` : '';
+        <button class="btn" data-ohf="photo">&#128247;</button>${back}</div>` : '';
     top.innerHTML = this._gateHtml(job, stage) + card + quick;
     top.onclick = (e) => this._onClick(job, e);
   },
@@ -245,6 +252,7 @@ const HolidayFlow = {
     }
     if (t.dataset.ohf === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job);
     if (t.dataset.ohf === 'photo') return document.getElementById('footerCameraBtn')?.click();
+    if (t.dataset.ohf === 'comeback' && typeof ComeBack !== 'undefined') return ComeBack.open(job);
     if (t.dataset.ohfTally) return this.tally(job, parseInt(t.dataset.ohfTally, 10));
     if (t.dataset.ohfDo) return this.doStep(job, t.dataset.ohfDo);
     if (t.dataset.ohfSkip) return this.skipStep(job, t.dataset.ohfSkip);
@@ -443,6 +451,10 @@ const HolidayFlow = {
     const billState = { scheduled: `Charged to the card on file tomorrow morning${bill.card ? ` (ending ${this._esc(bill.card)})` : ''}`,
       hold: 'On hold (office)', charged: 'Charged', office: `The office follows up: ${this._esc(bill.note)}`, nothing: 'Nothing left to charge' }[bill.state];
     html += billState ? `<div class="ohf-billstate">&#128179; ${bill.invoice ? this._esc(bill.invoice) + ': ' : ''}${billState}</div>` : '';
+    if (!this.isVisit(job)) {
+      html += '<div class="ohf-comeback"><button class="btn" data-ohf="comeback">&#8617;&#65039; Need to come back</button>'
+        + '<div class="ohf-help">Short on material, couldn\'t finish, something to fix, damage: the office books the trip back.</div></div>';
+    }
     box.innerHTML = html;
     box.onclick = (e) => this._onClick(job, e);
   },
@@ -452,11 +464,12 @@ const HolidayFlow = {
     const box = document.getElementById('ohfMapCount');
     const data = this._data && this._data[job.id];
     if (!box) return;
-    if (this.isVisit(job)) {
+    if (this.isVisit(job) || this.isCallback(job)) {
+      const visit = this.isVisit(job);
       box.innerHTML = job.ohl_design_id
         ? `<div class="ohf-grid"><button class="ohf-tile" data-mc="map"><span>&#128506;&#65039;</span>Design</button></div>
-           <div class="ohf-help">Measure on the design, or put the measurements in the Close Job notes.</div>`
-        : '<div class="ohf-help">No design yet: put the measurements in the Close Job notes.</div>';
+           <div class="ohf-help">${visit ? 'Measure on the design, or put the measurements in the Close Job notes.' : 'Where the lights are, to find the fix.'}</div>`
+        : `<div class="ohf-help">${visit ? 'No design yet: put the measurements in the Close Job notes.' : 'What to fix or finish is on the Info tab.'}</div>`;
       box.onclick = (e) => {
         const t = e.target.closest('button');
         if (t && t.dataset.mc === 'map' && typeof HolidayMap !== 'undefined') HolidayMap.open(job, () => this.refresh(job));

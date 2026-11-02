@@ -956,7 +956,7 @@ const Jobs = {
         <button class="detail-tab active" data-tab="0">Info</button>
         <button class="detail-tab" data-tab="1">Work</button>
         ${holidayFlow ? `<button class="detail-tab" data-tab="2">Finish</button>
-        <button class="detail-tab" data-tab="3">${HolidayFlow.isVisit(job) ? 'Design' : 'Map &amp; Count'}</button>` : `<button class="detail-tab" data-tab="2">Sales</button>
+        <button class="detail-tab" data-tab="3">${HolidayFlow.isVisit(job) || HolidayFlow.isCallback(job) ? 'Design' : 'Map &amp; Count'}</button>` : `<button class="detail-tab" data-tab="2">Sales</button>
         <button class="detail-tab" data-tab="3">Options <span class="options-tab-badge" id="optionsTabBadge" style="display:none;"></span></button>`}
       </div>
 
@@ -971,7 +971,7 @@ const Jobs = {
           ${holidayFlow ? `<div class="detail-section"><h3>Finish</h3><div id="ohfFinish"><div class="loading"><div class="spinner"></div></div></div></div>` : this._renderSalesPanel(job)}
         </div>
         <div class="detail-panel" data-panel="3">
-          ${holidayFlow ? `<div class="detail-section"><h3>${HolidayFlow.isVisit(job) ? 'Design' : 'Map &amp; Count'}</h3><div id="ohfMapCount"></div></div>` : '<div id="optionsTabContent"></div>'}
+          ${holidayFlow ? `<div class="detail-section"><h3>${HolidayFlow.isVisit(job) || HolidayFlow.isCallback(job) ? 'Design' : 'Map &amp; Count'}</h3><div id="ohfMapCount"></div></div>` : '<div id="optionsTabContent"></div>'}
         </div>
       </div>
     `;
