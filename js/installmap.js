@@ -18,17 +18,20 @@ const InstallMap = {
     if (!this.isHolidayJob(job)) return '';
     const sheet = job.ohl_design_id ? 'Picking List' : 'Rehang Sheet';
     const map = typeof HolidayMap !== 'undefined'
-      ? '<button class="btn btn-primary" id="ohlMapBtn">&#128506;&#65039; Map</button>' : '';
+      ? '<button class="btn" id="ohlMapBtn">&#128506;&#65039; Map</button>' : '';
     const used = job.ohl_job_kind === 'install' && typeof HolidayUsed !== 'undefined'
       ? '<div class="ohl-map-row"><button class="btn" id="ohlUsedBtn">&#9989; Actual Used</button></div>' : '';
+    const house = typeof HouseScreen !== 'undefined'
+      ? '<button class="btn btn-primary" id="ohlHouseBtn">&#127968; House</button>' : '';
     return `<div class="install-map-row ohl-map-row">
-      ${map}
+      ${house}${map}
       <button class="btn${map ? '' : ' btn-primary'}" id="installMapBtn">&#128196; ${sheet}</button>
     </div>${used}`;
   },
 
   bind(job) {
     document.getElementById('installMapBtn')?.addEventListener('click', () => this.open(job));
+    document.getElementById('ohlHouseBtn')?.addEventListener('click', () => HouseScreen.open(job));
     document.getElementById('ohlMapBtn')?.addEventListener('click', () => HolidayMap.open(job));
     document.getElementById('ohlUsedBtn')?.addEventListener('click', () => HolidayUsed.open(job));
   },
@@ -71,6 +74,7 @@ const InstallMap = {
     if (!this.isHolidayJob(job) || !navigator.onLine) return;
     await this.load(job).catch(() => {});
     if (typeof HolidayUsed !== 'undefined') await HolidayUsed.prewarm(job);
+    if (typeof HouseScreen !== 'undefined') await HouseScreen.prewarm(job);
   },
 
   async open(job) {

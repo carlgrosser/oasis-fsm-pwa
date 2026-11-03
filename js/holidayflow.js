@@ -467,12 +467,14 @@ const HolidayFlow = {
     if (this.isVisit(job) || this.isCallback(job)) {
       const visit = this.isVisit(job);
       box.innerHTML = job.ohl_design_id
-        ? `<div class="ohf-grid"><button class="ohf-tile" data-mc="map"><span>&#128506;&#65039;</span>Design</button></div>
+        ? `<div class="ohf-grid"><button class="ohf-tile" data-mc="house"><span>&#127968;</span>House</button><button class="ohf-tile" data-mc="map"><span>&#128506;&#65039;</span>Design</button></div>
            <div class="ohf-help">${visit ? 'Measure on the design, or put the measurements in the Close Job notes.' : 'Where the lights are, to find the fix.'}</div>`
-        : `<div class="ohf-help">${visit ? 'No design yet: put the measurements in the Close Job notes.' : 'What to fix or finish is on the Info tab.'}</div>`;
+        : `<div class="ohf-grid"><button class="ohf-tile" data-mc="house"><span>&#127968;</span>House</button></div>
+           <div class="ohf-help">${visit ? 'No design yet: put the measurements in the Close Job notes.' : 'What to fix or finish is on the Info tab.'}</div>`;
       box.onclick = (e) => {
         const t = e.target.closest('button');
         if (t && t.dataset.mc === 'map' && typeof HolidayMap !== 'undefined') HolidayMap.open(job, () => this.refresh(job));
+        if (t && t.dataset.mc === 'house' && typeof HouseScreen !== 'undefined') HouseScreen.open(job);
       };
       return;
     }
@@ -480,6 +482,7 @@ const HolidayFlow = {
     const sheet = job.ohl_design_id ? 'Picking List' : 'Rehang Sheet';
     const install = job.ohl_job_kind === 'install';
     box.innerHTML = `<div class="ohf-grid">
+        <button class="ohf-tile" data-mc="house"><span>&#127968;</span>House</button>
         <button class="ohf-tile" data-mc="map"><span>&#128506;&#65039;</span>Map</button>
         <button class="ohf-tile" data-mc="sheet"><span>&#128196;</span>${sheet}</button>
         ${install ? '<button class="ohf-tile" data-mc="used"><span>&#9989;</span>Actual Used</button>' : ''}
@@ -496,6 +499,7 @@ const HolidayFlow = {
       const act = t.dataset.mc;
       if (act === 'map' && typeof HolidayMap !== 'undefined') HolidayMap.open(job, () => this.refresh(job));
       if (act === 'sheet' && typeof InstallMap !== 'undefined') InstallMap.open(job);
+      if (act === 'house' && typeof HouseScreen !== 'undefined') HouseScreen.open(job);
       if (act === 'used' && typeof HolidayUsed !== 'undefined') HolidayUsed.open(job, () => this.refresh(job));
       if (act === 'change' && typeof HolidayCrew !== 'undefined') HolidayCrew.openChange(job);
       if (act === 'add' && typeof HolidayCrew !== 'undefined') HolidayCrew.openAddItems(job);
