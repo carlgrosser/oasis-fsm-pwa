@@ -239,5 +239,7 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .house-empty { color: #666; font-style: italic; }
 .house-zoom { position: fixed; inset: 0; z-index: 9100; background: #111; display: flex; flex-direction: column; }
 .house-zoom-bar { display: flex; gap: 8px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
-.house-zoom-body { flex: 1; overflow: auto; touch-action: pan-x pan-y pinch-zoom; -webkit-overflow-scrolling: touch; }
-.house-zoom-body img { display: block; width: 100%; height: auto; }
+.house-zoom-body { flex: 1; overflow: hidden; touch-action: none; display: flex; align-items: center;
+                   justify-content: center; }
+.house-zoom-body img { display: block; max-width: 100%; max-height: 100%; transform-origin: center center;
+                       user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }

@@ -19,6 +19,7 @@ const HouseScreen = {
   /** {house data..., saved_at, offline} or {reason}. Online: ask Odoo with the saved stamp. */
   async load(job) {
     const saved = await DB.getState(this._key(job.id)).catch(() => null);
+    let failed = false;
     if (navigator.onLine) {
       try {
         const res = await OdooAPI.callKw('fsm.order', 'worker_get_house', [job.id, saved ? saved.stamp : false], {});
@@ -31,9 +32,11 @@ const HouseScreen = {
         if (res && !res.ok) return { reason: res.reason };
       } catch (err) {
         console.warn('House screen: live fetch failed, using the saved copy', err);
+        failed = true;
       }
     }
     if (saved && saved.sections) return Object.assign({}, saved, { offline: true });
+    if (failed) return { reason: 'Couldn\'t reach Odoo just now. Try again in a minute.' };
     return { reason: 'Not saved on this device yet: open it once with signal.' };
   },
 
@@ -114,7 +117,8 @@ const HouseScreen = {
       <h3>${this._esc(section.title || '')}</h3>${parts.join('')}</div>`;
   },
 
-  /** One picture full screen: tap + / − (or pinch) to zoom, drag to look around. */
+  /** One picture full screen: two fingers to zoom and turn it, one to move it, double-tap to start over;
+   *  the buttons do the same for one hand. */
   zoom(img) {
     if (!img) return;
     const view = document.createElement('div');
@@ -122,21 +126,88 @@ const HouseScreen = {
     view.innerHTML = `<div class="house-zoom-bar">
         <button class="btn btn-sm" data-z="close">&times; Close</button>
         <span style="flex:1"></span>
+        <button class="btn btn-sm" data-z="left" aria-label="Turn left">&#8634;</button>
+        <button class="btn btn-sm" data-z="right" aria-label="Turn right">&#8635;</button>
         <button class="btn btn-sm" data-z="out" aria-label="Zoom out">&minus;</button>
         <button class="btn btn-sm" data-z="in" aria-label="Zoom in">+</button>
+        <button class="btn btn-sm" data-z="reset" aria-label="Start over">&#10226;</button>
       </div>
-      <div class="house-zoom-body"><img src="${img.getAttribute('src')}" alt=""/></div>`;
+      <div class="house-zoom-body"><img src="${img.getAttribute('src')}" alt="" draggable="false"/></div>`;
     document.body.appendChild(view);
+    const body = view.querySelector('.house-zoom-body');
     const big = view.querySelector('img');
-    let scale = 1;
+    // Turned like the design's map (road at the bottom), when the picture was.
+    const turned = /rotate\((-?[\d.]+)deg\)/.exec(img.getAttribute('style') || '');
+    const angle0 = turned ? parseFloat(turned[1]) : 0;
+    const t = { x: 0, y: 0, scale: 1, angle: angle0 };
+    const apply = () => {
+      big.style.transform = `translate(${t.x}px, ${t.y}px) rotate(${t.angle}deg) scale(${t.scale})`;
+    };
+    const reset = () => { Object.assign(t, { x: 0, y: 0, scale: 1, angle: angle0 }); apply(); };
+    apply();
     view.addEventListener('click', (e) => {
       const z = e.target.closest('[data-z]');
       if (!z) return;
-      if (z.dataset.z === 'close') view.remove();
-      if (z.dataset.z === 'in') scale = Math.min(scale * 1.5, 6);
-      if (z.dataset.z === 'out') scale = Math.max(scale / 1.5, 1);
-      big.style.width = (100 * scale) + '%';
+      const act = z.dataset.z;
+      if (act === 'close') view.remove();
+      if (act === 'in') t.scale = Math.min(t.scale * 1.5, 8);
+      if (act === 'out') t.scale = Math.max(t.scale / 1.5, 0.5);
+      if (act === 'left') t.angle -= 15;
+      if (act === 'right') t.angle += 15;
+      if (act === 'reset') reset();
+      apply();
     });
+    // Fingers on the picture: one moves it; two zoom (spread) and turn (twist) it.
+    const touches = new Map();
+    let start = null;
+    let lastTap = 0;
+    const pair = () => {
+      const [a, b] = [...touches.values()];
+      return { dist: Math.hypot(b.x - a.x, b.y - a.y), angle: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI,
+               mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    };
+    const begin = () => {
+      start = Object.assign({}, t);
+      if (touches.size === 2) start.pair = pair();
+      else start.point = [...touches.values()][0];
+    };
+    body.addEventListener('pointerdown', (e) => {
+      body.setPointerCapture(e.pointerId);
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 1) {
+        const now = Date.now();
+        if (now - lastTap < 300) { reset(); lastTap = 0; } else { lastTap = now; }
+      }
+      begin();
+    });
+    body.addEventListener('pointermove', (e) => {
+      if (!touches.has(e.pointerId) || !start) return;
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size >= 2 && start.pair) {
+        const now = pair();
+        t.scale = Math.min(Math.max(start.scale * now.dist / (start.pair.dist || 1), 0.5), 8);
+        t.angle = start.angle + (now.angle - start.pair.angle);
+        t.x = start.x + (now.mid.x - start.pair.mid.x);
+        t.y = start.y + (now.mid.y - start.pair.mid.y);
+      } else if (touches.size === 1 && start.point) {
+        const p = [...touches.values()][0];
+        t.x = start.x + (p.x - start.point.x);
+        t.y = start.y + (p.y - start.point.y);
+      }
+      apply();
+    });
+    const end = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size) begin(); else start = null;
+    };
+    body.addEventListener('pointerup', end);
+    body.addEventListener('pointercancel', end);
+    // A mouse wheel zooms too (the office checking on a computer).
+    body.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      t.scale = Math.min(Math.max(t.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 0.5), 8);
+      apply();
+    }, { passive: false });
   },
 
   _esc(text) {
