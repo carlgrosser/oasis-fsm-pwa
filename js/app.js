@@ -20,7 +20,7 @@ const App = {
     { id: 'timeOffBtn', label: '🗓️ My Time Off' },
     { id: 'syncBtn', label: '&#10227; Sync Now' },
     { id: 'fixShiftBtn', label: '⏱️ Adjust Shift' },
-    { id: 'clearCacheBtn', label: '🗑️ Clear Cache', hidden: true },
+    { id: 'updateAppBtn', label: '🔄 Update App' },
     { id: 'importSettingsBtn', label: '⚙️ Import Settings', hidden: true },
     { id: 'viewAsBtn', label: '👁️ View As Worker', hidden: true },
     { divider: true },
@@ -92,7 +92,7 @@ const App = {
 
     // Show admin-only menu items (setup tools a crew phone doesn't need)
     if (Auth.isAdmin()) {
-      ['viewAsBtnList', 'viewAsBtnDetail', 'clearCacheBtnList', 'clearCacheBtnDetail',
+      ['viewAsBtnList', 'viewAsBtnDetail',
         'importSettingsBtnList', 'importSettingsBtnDetail'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = '';
@@ -203,9 +203,10 @@ const App = {
       });
     });
 
-    // Clear cache buttons
-    ['clearCacheBtnList', 'clearCacheBtnDetail'].forEach(id => {
-      bindMenuAction(id, () => this._clearCache());
+    // Update App (everyone): shows the version this phone has
+    this._showAppVersion();
+    ['updateAppBtnList', 'updateAppBtnDetail'].forEach(id => {
+      bindMenuAction(id, () => this._updateApp());
     });
 
     // Theme buttons
@@ -661,36 +662,64 @@ const App = {
     input.click();
   },
 
+  /** The version this phone runs (its service worker's cache, e.g. 'v129'); '' if unknown. */
+  async _installedVersion() {
+    try {
+      const names = 'caches' in window ? await caches.keys() : [];
+      const nums = names.map(n => (/^fsm-pwa-v(\d+)$/.exec(n) || [])[1]).filter(Boolean).map(Number);
+      return nums.length ? 'v' + Math.max(...nums) : '';
+    } catch (e) {
+      return '';
+    }
+  },
+
+  async _showAppVersion() {
+    const v = await this._installedVersion();
+    if (!v) return;
+    ['updateAppBtnList', 'updateAppBtnDetail'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = `🔄 Update App · ${v}`;
+    });
+  },
+
   /**
-   * Clear all caches and reload the app.
+   * Get the newest version of the app: drop this phone's copy of the app files and reload them.
+   * Jobs, photos and anything not sent yet are kept (they're stored apart from the app files).
    */
-  async _clearCache() {
-    if (!confirm('Clear cache and reload? This will refresh all app data.')) return;
+  async _updateApp() {
+    if (!navigator.onLine) {
+      this.showToast('Updating needs signal. Try again when you have service.', 'error');
+      return;
+    }
+    const have = await this._installedVersion();
+    let latest = '';
+    try {
+      const resp = await fetch('sw.js', { cache: 'no-store' });
+      const m = /fsm-pwa-v(\d+)/.exec(await resp.text());
+      latest = m ? 'v' + m[1] : '';
+    } catch (e) {
+      // Can't tell the newest version: updating still loads it.
+    }
+    const msg = have && latest && have === latest
+      ? `You have the newest version (${have}). Reload the app anyway?`
+      : `Update the app${have ? ` from ${have}` : ''}${latest ? ` to ${latest}` : ''}?\n\nYour jobs, photos and anything not sent yet stay on the phone.`;
+    if (!confirm(msg)) return;
 
     try {
-      // Unregister service workers
       if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const reg of registrations) {
+        for (const reg of await navigator.serviceWorker.getRegistrations()) {
           await reg.unregister();
         }
       }
-
-      // Clear all caches
       if ('caches' in window) {
-        const cacheNames = await caches.keys();
-        for (const name of cacheNames) {
+        for (const name of await caches.keys()) {
           await caches.delete(name);
         }
       }
-
-      // Reload the page
-      this.showToast('Cache cleared, reloading...', 'success');
-      setTimeout(() => {
-        window.location.reload(true);
-      }, 500);
+      this.showToast('Updating…', 'success');
+      setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      this.showToast('Failed to clear cache: ' + err.message, 'error');
+      this.showToast('Update failed: ' + err.message, 'error');
     }
   },
 
