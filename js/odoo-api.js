@@ -253,6 +253,14 @@ const OdooAPI = {
   },
 
   /**
+   * My tentative and confirmed appointments that have no job yet (the office booked the time from the
+   * dispatch board), overlapping the range (UTC "YYYY-MM-DD HH:MM:SS").
+   */
+  async getMyAppointments(dateFrom, dateTo) {
+    return this.callKw('fsm.dispatch.appointment', 'worker_my_appointments', [dateFrom, dateTo], {});
+  },
+
+  /**
    * Fetch FSM orders for the current user.
    */
   async getMyOrders(personId, dateFrom, dateTo) {

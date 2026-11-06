@@ -109,6 +109,7 @@ const Jobs = {
   _historyCompletedOffset: 0, // Pagination offset for "load more" in history
   _historyHasMore: false, // Whether there are more completed jobs to load
   _upcomingJobs: [], // Jobs on the next scheduled day (shown below today's jobs)
+  _appointments: [], // My appointments with no job yet, today and the next 2 weeks (kept for offline)
   _overdueCount: 0,      // Overdue jobs count (for today banner)
   _notClosedCount: 0,    // Completed-but-not-wrapped-up count (for today banner, excludes overdue)
   // Invoicing is the office's job — techs are not shown or counted on it.
@@ -136,6 +137,16 @@ const Jobs = {
       // history — handled separately
       return this._fetchHistoryJobs(personId);
     }
+  },
+
+  /** My appointments with no job yet (tentative or confirmed), today and the next 14 days. */
+  async fetchAppointments() {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const to = new Date(from);
+    to.setDate(to.getDate() + 15);
+    const utc = (d) => d.toISOString().replace('T', ' ').slice(0, 19);
+    return OdooAPI.getMyAppointments(utc(from), utc(to));
   },
 
   /**
@@ -295,6 +306,7 @@ const Jobs = {
     this._overdueCount = 0;
     this._notClosedCount = 0;
     this._unpaidIds = new Set();
+    this._appointments = (await DB.getState('appointments').catch(() => null)) || [];
 
     // 2) Offline → cache is all we have.
     if (!navigator.onLine) return this._jobs;
@@ -313,11 +325,20 @@ const Jobs = {
           ? this.fetchHistoryCounts(personId).catch(() => null)
           : Promise.resolve(null);
 
-        const [fetchedJobs, upcoming, counts] = await Promise.all([
+        // Appointments: an Odoo without them (or a failure) keeps the ones from before.
+        const apptPromise = this._currentView === 'today'
+          ? this.fetchAppointments().catch(() => null)
+          : Promise.resolve(null);
+        const [fetchedJobs, upcoming, counts, appointments] = await Promise.all([
           this.fetchJobs(this._currentView),
           upcomingPromise,
           countsPromise,
+          apptPromise,
         ]);
+        if (appointments) {
+          this._appointments = appointments;
+          DB.setState('appointments', appointments).catch(() => {});
+        }
         this._upcomingJobs = this._currentView === 'today' ? (upcoming || []) : [];
         this._overdueCount = counts ? (counts.overdueCount || 0) : 0;
         this._notClosedCount = counts ? (counts.notClosedCount || 0) : 0;
@@ -468,8 +489,9 @@ const Jobs = {
       container.appendChild(banner);
     }
 
-    // Today view — today's jobs + upcoming section
-    if (this._jobs.length === 0 && this._upcomingJobs.length === 0) {
+    // Today view — today's jobs and appointments, then the next day that has any
+    const plan = this._dayPlan();
+    if (plan.today.length === 0 && plan.upcoming.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div style="font-size: 48px; opacity: 0.3;">📋</div>
@@ -482,12 +504,12 @@ const Jobs = {
       return;
     }
 
-    for (const job of this._jobs) {
-      container.appendChild(this._createJobCard(job));
+    for (const item of plan.today) {
+      container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));
     }
 
-    if (this._upcomingJobs.length > 0) {
-      const firstDate = this._parseOdooDatetime(this._upcomingJobs[0].scheduled_date_start);
+    if (plan.upcoming.length > 0) {
+      const firstDate = this._parseOdooDatetime(plan.upcoming[0].scheduled_date_start);
       const dateLabel = firstDate
         ? firstDate.toLocaleDateString([], this._tzOptions({ weekday: 'long', month: 'long', day: 'numeric' }))
         : 'Upcoming';
@@ -497,8 +519,8 @@ const Jobs = {
       divider.innerHTML = `<span class="jobs-section-label">Upcoming &middot; ${dateLabel}</span>`;
       container.appendChild(divider);
 
-      for (const job of this._upcomingJobs) {
-        container.appendChild(this._createJobCard(job));
+      for (const item of plan.upcoming) {
+        container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));
       }
     }
 
@@ -514,6 +536,66 @@ const Jobs = {
     // The clock card goes on top of everything (the main thing for most of the crew).
     if (typeof TimeTracking !== 'undefined') TimeTracking.renderCard(container);
     if (typeof YardSigns !== 'undefined') YardSigns.renderTile(container);
+  },
+
+  /** The day (YYYY-MM-DD, in the worker's time zone) of an Odoo time, for grouping by day; or null. */
+  _dayKey(dateStr) {
+    const d = this._parseOdooDatetime(dateStr);
+    if (!d) return null;
+    return new Intl.DateTimeFormat('en-CA', this._tzOptions({ year: 'numeric', month: '2-digit', day: '2-digit' })).format(d);
+  },
+
+  /**
+   * The Today list: today's jobs with today's appointments, in time order; then the next day with any
+   * jobs or appointments (the upcoming jobs are only shown when they're on that day).
+   */
+  _dayPlan() {
+    const byTime = (a, b) => String(a.scheduled_date_start || '').localeCompare(String(b.scheduled_date_start || ''));
+    const todayKey = this._dayKey(new Date().toISOString().replace('T', ' ').slice(0, 19));
+    const appts = (this._searchQuery ? [] : (this._appointments || [])).map(a => Object.assign({ _appt: true }, a));
+    const todayAppts = appts.filter(a => this._dayKey(a.scheduled_date_start) <= todayKey
+      && this._dayKey(a.scheduled_date_end) >= todayKey);
+    const later = appts.filter(a => this._dayKey(a.scheduled_date_start) > todayKey);
+    const jobDay = this._upcomingJobs.length ? this._dayKey(this._upcomingJobs[0].scheduled_date_start) : null;
+    const apptDay = later.length ? later.map(a => this._dayKey(a.scheduled_date_start)).sort()[0] : null;
+    const day = [jobDay, apptDay].filter(Boolean).sort()[0] || null;
+    const upcoming = day
+      ? (jobDay === day ? this._upcomingJobs : []).concat(later.filter(a => this._dayKey(a.scheduled_date_start) === day))
+      : [];
+    return {
+      today: this._jobs.concat(todayAppts).sort(byTime),
+      upcoming: upcoming.slice().sort(byTime),
+    };
+  },
+
+  /**
+   * An appointment the office booked for me that has no job yet: when, who, where, their number and the
+   * notes. Not a job: nothing to start or close; the job comes once the office sets it up.
+   */
+  _createAppointmentCard(a) {
+    const card = document.createElement('div');
+    card.className = `job-card appt-card appt-${a.state}`;
+    const esc = (v) => this._escapeHtml(v || '');
+    const end = this._formatScheduledTime(a.scheduled_date_end);
+    const time = this._formatCardTime(a.scheduled_date_start) + (end ? ` \u2013 ${end}` : '');
+    const address = [a.street, a.city].filter(Boolean).join(', ');
+    const phone = (a.phone || '').trim();
+    const notes = [['Instructions', a.todo], ['Notes', a.description], ['From the call', a.intake]]
+      .filter(([, v]) => v && v.trim())
+      .map(([label, v]) => `<div class="job-card-field"><span class="job-card-field-label">${label}:</span> ${esc(v)}</div>`)
+      .join('');
+    card.innerHTML = `
+      <div class="appt-ribbon">&#128197; ${a.state === 'confirmed' ? 'APPOINTMENT' : 'TENTATIVE APPOINTMENT'}</div>
+      <div class="job-card-header">
+        <span class="job-card-customer">${esc(a.partner_name || a.name || 'Appointment')}</span>
+        <span class="job-card-time">${esc(time)}</span>
+      </div>
+      ${address ? `<a class="job-card-address appt-link" href="https://maps.google.com/?q=${encodeURIComponent(address)}" target="_blank" rel="noopener">${esc(address)}</a>` : ''}
+      ${phone ? `<div class="job-card-contact"><a class="card-contact-item appt-link" href="tel:${esc(phone.replace(/[^\d+]/g, ''))}">&#128222; ${esc(phone)}</a></div>` : ''}
+      ${notes ? `<div class="job-card-divider"></div>${notes}` : ''}
+      <div class="appt-note">${a.state === 'confirmed' ? 'Booked' : 'Held'} by the office: no job yet, so nothing to start here.${a.opportunity ? ' ' + esc(a.opportunity) : ''}</div>
+    `;
+    return card;
   },
 
   /**
