@@ -260,6 +260,11 @@ const OdooAPI = {
     return this.callKw('fsm.dispatch.appointment', 'worker_my_appointments', [dateFrom, dateTo], {});
   },
 
+  /** On the clock as production, starting an hourly task (a shop day): my shift is paid by the hour. */
+  async taskHourly(appointmentId) {
+    return this.callKw('fsm.dispatch.appointment', 'worker_task_hourly', [appointmentId], {});
+  },
+
   /**
    * Fetch FSM orders for the current user.
    */

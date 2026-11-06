@@ -573,6 +573,7 @@ const Jobs = {
    * notes. Not a job: nothing to start or close; the job comes once the office sets it up.
    */
   _createAppointmentCard(a) {
+    if (a.kind === 'task') return this._createTaskCard(a);
     const card = document.createElement('div');
     card.className = `job-card appt-card appt-${a.state}`;
     const esc = (v) => this._escapeHtml(v || '');
@@ -595,6 +596,57 @@ const Jobs = {
       ${notes ? `<div class="job-card-divider"></div>${notes}` : ''}
       <div class="appt-note">${a.state === 'confirmed' ? 'Booked' : 'Held'} by the office: no job yet, so nothing to start here.${a.opportunity ? ' ' + esc(a.opportunity) : ''}</div>
     `;
+    return card;
+  },
+
+  /**
+   * A task (shop day, inventory, yard signs…): what, when, where, who else is on it, the notes. An hourly
+   * task offers Clock on (hourly), or, already on the clock as production, Switch to hourly.
+   */
+  _createTaskCard(a) {
+    const card = document.createElement('div');
+    card.className = 'job-card appt-card task-card';
+    const esc = (v) => this._escapeHtml(v || '');
+    const end = this._formatScheduledTime(a.scheduled_date_end);
+    const time = this._formatCardTime(a.scheduled_date_start) + (end ? ` \u2013 ${end}` : '');
+    const notes = [['Notes', a.description], ['Instructions', a.todo]]
+      .filter(([, v]) => v && v.trim())
+      .map(([label, v]) => `<div class="job-card-field"><span class="job-card-field-label">${label}:</span> ${esc(v)}</div>`)
+      .join('');
+    const today = this._dayKey(a.scheduled_date_start) === this._dayKey(new Date().toISOString().replace('T', ' ').slice(0, 19));
+    let clock = '';
+    if (a.clock_hourly && today && typeof TimeTracking !== 'undefined') {
+      if (!TimeTracking.isClockedIn()) {
+        clock = '<button type="button" class="btn btn-primary task-clock" data-task-clock="on">&#9654; Clock on (hourly)</button>';
+      } else if (TimeTracking.getPayCategory() === 'production') {
+        clock = '<button type="button" class="btn btn-secondary task-clock" data-task-clock="hourly">Switch my time to hourly</button>';
+      } else {
+        clock = '<div class="task-clock-note">&#10003; On the clock, hourly</div>';
+      }
+    } else if (a.clock_hourly) {
+      clock = '<div class="task-clock-note">Clock time, paid hourly</div>';
+    }
+    card.innerHTML = `
+      <div class="appt-ribbon task-ribbon">&#129520; ${esc((a.task_type || 'Task').toUpperCase())}</div>
+      <div class="job-card-header">
+        <span class="job-card-customer">${esc(a.title || a.name || a.task_type || 'Task')}</span>
+        <span class="job-card-time">${esc(time)}</span>
+      </div>
+      ${a.place ? `<div class="job-card-address">&#128205; ${esc(a.place)}</div>` : ''}
+      ${a.crew && a.crew.length ? `<div class="job-card-field"><span class="job-card-field-label">With:</span> ${esc(a.crew.join(', '))}</div>` : ''}
+      ${notes ? `<div class="job-card-divider"></div>${notes}` : ''}
+      ${clock}
+    `;
+    card.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-task-clock]');
+      if (!btn) return;
+      btn.disabled = true;
+      const done = btn.dataset.taskClock === 'on'
+        ? await TimeTracking.clockIn('hourly_pay')
+        : await TimeTracking.switchToHourly(a.id);
+      if (done) card.replaceWith(this._createTaskCard(a));
+      else btn.disabled = false;
+    });
     return card;
   },
 

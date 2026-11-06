@@ -89,16 +89,17 @@ const TimeTracking = {
 
   /**
    * Clock in — capture GPS and create attendance.
-   * Pay category is derived automatically from the employee's configured pay type.
+   * Pay category is derived automatically from the employee's configured pay type, unless given
+   * ('hourly_pay' from a task's Clock on: a shop day is paid by the hour).
    */
-  async clockIn() {
+  async clockIn(forcePayCategory) {
     const employeeId = Auth.getEmployeeId();
     if (!employeeId) {
       App.showToast('No employee profile linked. Contact admin.', 'error');
       return false;
     }
 
-    const payCategory = this._payType === 'production' ? 'production' : 'hourly_pay';
+    const payCategory = forcePayCategory || (this._payType === 'production' ? 'production' : 'hourly_pay');
 
     let gpsCoords = '';
     let gpsAccuracy = 0;
@@ -1628,6 +1629,27 @@ const TimeTracking = {
   },
 
   getStatus() { return this._status; },
+  getPayCategory() { return this._payCategory; },
+
+  /** Today's shift is paid by the hour from now on, for an hourly task (a shop day). Needs signal. */
+  async switchToHourly(taskId) {
+    if (!this._attendanceId || !navigator.onLine) {
+      App.showToast('Needs signal to switch to hourly', 'error');
+      return false;
+    }
+    try {
+      const res = await OdooAPI.taskHourly(taskId);
+      if (!res || res.success === false) throw new Error((res && res.error) || 'Not switched');
+      this._payCategory = 'hourly_pay';
+      await this._saveState();
+      this._renderHeaderButton();
+      App.showToast('Your time today is hourly', 'success');
+      return true;
+    } catch (err) {
+      App.showToast('Could not switch to hourly: ' + (err.message || err), 'error');
+      return false;
+    }
+  },
   isClockedIn() { return this._status === 'in' || this._status === 'break'; },
   getAttendanceId() { return this._attendanceId; },
 
