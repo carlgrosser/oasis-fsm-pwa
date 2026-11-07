@@ -1,5 +1,5 @@
 /**
- * Notifications on the worker's phone (instead of texts), and the clock-off reminder they bring.
+ * Notifications on the worker's phone, and the clock-off reminder they bring.
  *  - The Today list shows a card to turn notifications on (an iPhone needs the app added to the home screen
  *    first). Once allowed, the phone is subscribed (oasis_timeclock oasis.worker.push) on every start.
  *  - Odoo pushes "Still clocked on?" 30 minutes after they should have been back at the shop. Tapping it opens
@@ -83,7 +83,7 @@ const WorkerPush = {
         phone's settings (Chrome: the lock by the address, Notifications) to get them.</div>${x}`;
     } else {
       card.innerHTML = `<div><b>&#128276; Get a reminder if you forget to clock off</b><br>A notification on this phone
-        instead of a text.</div><button type="button" class="btn btn-primary push-card-on">Turn on</button>${x}`;
+        when you're still clocked on after your last job.</div><button type="button" class="btn btn-primary push-card-on">Turn on</button>${x}`;
     }
     card.querySelector('.push-card-on')?.addEventListener('click', async () => {
       if (await this.enable()) card.remove();

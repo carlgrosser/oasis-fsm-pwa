@@ -4292,3 +4292,6 @@ textarea.form-input {
   font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .autoarrive-bar span { flex: 1; }
 .autoarrive-bar button { border: 0; background: none; color: #93c5fd; font-weight: 700; font-size: 15px; min-height: 40px; padding: 0 6px; }
+
+/* Texts: which of our lines it goes from (js/texts.js _renderLines) */
+.texts-line select { font: inherit; font-size: 14px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border-color, #ccc); background: var(--card-background); color: inherit; max-width: 60vw; }

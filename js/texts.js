@@ -62,7 +62,8 @@ const Texts = {
     btn.disabled = true;
     btn.textContent = 'Sending…';
     try {
-      const response = await OdooAPI.sendJobText(this._job.id, this._phone, text);
+      const line = document.getElementById('textsLine')?.value || false;
+      const response = await OdooAPI.sendJobText(this._job.id, this._phone, text, line);
       input.value = '';
       if (typeof warnIfSmsMirrorFailed === 'function') warnIfSmsMirrorFailed(response);
       await this.refresh();
@@ -123,6 +124,7 @@ const Texts = {
   _render(data) {
     if (!data) return;
     if (!this._phone && data.phone) this._phone = data.phone;
+    this._renderLines(data);
     const status = document.getElementById('textsStatus');
     const w = data.window;
     if (w && w.open) {
@@ -162,6 +164,20 @@ const Texts = {
         ${photos ? `<div class="texts-photos">${photos}</div>` : ''}
         ${gate}
       </div>`;
+  },
+
+  /** From which of our lines (more than one: a choice, starting on the one they last called us on). */
+  _renderLines(data) {
+    const lines = data.lines || [];
+    const box = document.getElementById('textsFrom');
+    if (!box || lines.length < 2) return;
+    let sel = document.getElementById('textsLine');
+    if (sel && sel.dataset.job === String(this._job.id)) return;   // keep the worker's pick while open
+    const name = ((typeof Auth !== 'undefined' && Auth.getRealUser && Auth.getRealUser()) || {}).name || '';
+    box.innerHTML = `<label class="texts-line">From <select id="textsLine">${lines.map(l =>
+      `<option value="${this._esc(l.number)}"${l.number === data.line ? ' selected' : ''}>${this._esc(l.name)}</option>`
+    ).join('')}</select></label>${name ? ` as "From ${this._esc(name)}:"` : ''}`;
+    document.getElementById('textsLine').dataset.job = String(this._job.id);
   },
 
   _updateFrom() {
