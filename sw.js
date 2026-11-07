@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v132';
+const CACHE_NAME = 'fsm-pwa-v133';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -40,6 +40,8 @@ const STATIC_ASSETS = [
   'js/comeback.js',
   'js/holidayflow.js',
   'js/yardsigns.js',
+  'js/autoarrive.js',
+  'js/workerpush.js',
   'js/app.js',
   'manifest.json',
   'favicon.ico',
@@ -181,6 +183,30 @@ async function _syncPhotos() {
 }
 
 // Fetch — cache-first for static assets, network-first for API calls
+// Notifications from Odoo (oasis_timeclock oasis.worker.push): show them; a tap opens the app at their link
+// (the clock-off reminder: app.html#clockoff/…), in the open app when there is one.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { body: event.data && event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Oasis', {
+    body: data.body || '', tag: data.tag, renotify: true, requireInteraction: true,
+    icon: 'icon-192.png', badge: 'icon-192.png', data: { url: data.url || './app.html' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || './app.html', self.registration.scope).href;
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => c.url.startsWith(self.registration.scope));
+    if (open) {
+      open.postMessage({ type: 'open-url', url });
+      return open.focus();
+    }
+    return clients.openWindow(url);
+  }));
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 

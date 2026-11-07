@@ -106,8 +106,13 @@ const App = {
 
     // Init time tracking — restores from cache on failure; not awaited so a
     // weak-signal attendance fetch can't block the UI.
-    if (typeof TimeTracking !== 'undefined') {
-      TimeTracking.init();
+    const timeTrackingReady = typeof TimeTracking !== 'undefined' ? TimeTracking.init() : Promise.resolve();
+
+    // Notifications (the clock-off reminder, and its Clock off at …) and the GPS Arrived at a job.
+    if (typeof WorkerPush !== 'undefined') WorkerPush.init(timeTrackingReady);
+    if (typeof AutoArrive !== 'undefined') {
+      AutoArrive.init();
+      timeTrackingReady.then(() => AutoArrive.check()).catch(() => {});
     }
 
     // Init camera mode toggle (per-device setting)

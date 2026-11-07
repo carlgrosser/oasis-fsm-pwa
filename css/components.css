@@ -4278,3 +4278,17 @@ textarea.form-input {
 .task-ribbon { color: #0d9488; }
 .task-clock { width: 100%; min-height: 46px; margin-top: 10px; }
 .task-clock-note { margin-top: 8px; font-size: 13px; font-weight: 600; color: #0d9488; }
+
+/* Turn notifications on (js/workerpush.js) */
+.push-card { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 12px 14px; border-radius: var(--border-radius);
+  background: var(--card-background); box-shadow: var(--shadow-sm); font-size: 14px; }
+.push-card > div { flex: 1; }
+.push-card .btn { flex: none; min-height: 42px; }
+.push-card-x { flex: none; border: 0; background: none; font-size: 24px; line-height: 1; min-width: 36px; min-height: 36px; color: var(--text-muted, #777); }
+
+/* Arrived by GPS, with Undo (js/autoarrive.js) */
+.autoarrive-bar { position: fixed; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 3000;
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #1f2937; color: #fff;
+  font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.autoarrive-bar span { flex: 1; }
+.autoarrive-bar button { border: 0; background: none; color: #93c5fd; font-weight: 700; font-size: 15px; min-height: 40px; padding: 0 6px; }

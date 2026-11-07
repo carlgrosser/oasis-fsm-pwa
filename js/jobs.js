@@ -351,6 +351,8 @@ const Jobs = {
         await DB.saveJobs(fetchedJobs);
         await DB.setState('lastSync', Date.now());
         this._applyJobs(fetchedJobs);
+        // At a job's address now that the list is fresh? (GPS Arrived)
+        if (typeof AutoArrive !== 'undefined') AutoArrive.check();
         if (onRefresh) onRefresh();
 
         // Prewarm the offline cache (throttled internally): pre-fetch each
@@ -499,7 +501,8 @@ const Jobs = {
         </div>
       `;
       if (typeof HolidayCrew !== 'undefined') HolidayCrew.renderPool(container);
-      if (typeof TimeTracking !== 'undefined') TimeTracking.renderCard(container);
+      if (typeof WorkerPush !== 'undefined') WorkerPush.renderCard(container);
+    if (typeof TimeTracking !== 'undefined') TimeTracking.renderCard(container);
       if (typeof YardSigns !== 'undefined') YardSigns.renderTile(container);
       return;
     }
@@ -534,6 +537,7 @@ const Jobs = {
       HolidayCrew.renderPool(container);
     }
     // The clock card goes on top of everything (the main thing for most of the crew).
+    if (typeof WorkerPush !== 'undefined') WorkerPush.renderCard(container);
     if (typeof TimeTracking !== 'undefined') TimeTracking.renderCard(container);
     if (typeof YardSigns !== 'undefined') YardSigns.renderTile(container);
   },
