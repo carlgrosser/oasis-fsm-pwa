@@ -945,7 +945,7 @@ const Billing = {
   // ---------- Check Payment ----------
 
   _showCheckPaymentView(invoice, contentArea, job, parentContainer) {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localDate();
 
     contentArea.innerHTML = `
       <div style="margin-top:var(--spacing-md);">

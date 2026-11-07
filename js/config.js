@@ -204,3 +204,12 @@ function renderSmsTemplate(templateKey, vars) {
     return vars[key] !== undefined ? vars[key] : match;
   });
 }
+
+/**
+ * "YYYY-MM-DD" of a date in this computer's time zone (today when none). Not toISOString(), which is UTC:
+ * in California that is already tomorrow from 4 or 5 pm on.
+ */
+function localDate(d) {
+  const x = d || new Date();
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}

@@ -239,7 +239,7 @@ const TimeOff = {
     if (!fromEl.value) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      fromEl.value = tomorrow.toISOString().slice(0, 10);
+      fromEl.value = localDate(tomorrow);
     }
     if (!toEl.value) {
       toEl.value = this._addDays(fromEl.value, 1) || fromEl.value;
@@ -276,7 +276,7 @@ const TimeOff = {
     const d = new Date(dateStr + 'T00:00:00');
     if (Number.isNaN(d.getTime())) return '';
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return localDate(d);
   },
 
   _stateLabel(state) {

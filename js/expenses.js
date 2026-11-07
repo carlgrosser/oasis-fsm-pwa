@@ -793,7 +793,7 @@ const Expenses = {
     ]);
     const employeeId = Auth.getEmployeeId();
     const isEditing = !!editingExpense;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
 
     // Mutable image array for the multi-receipt strip
     let formImages = receiptImages.slice();
@@ -1126,7 +1126,7 @@ const Expenses = {
     const isEditing = !!editingExpense;
     const defaultRate = (CONFIG.MILEAGE_RATE || 0.67).toFixed(3);
     const mileageProductId = CONFIG.MILEAGE_PRODUCT_ID || false;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
 
     return new Promise((resolve) => {
       const productWarning = !mileageProductId
