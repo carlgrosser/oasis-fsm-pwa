@@ -188,8 +188,14 @@ if (location.port === '8443') {
     var strip = document.createElement('div');
     strip.textContent = 'STAGING: test copy (odoo18_staging), not the live app';
     strip.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#c62828;color:#fff;'
-      + 'text-align:center;font:600 11px system-ui,sans-serif;padding:1px;pointer-events:none';
+      + 'text-align:center;font:600 11px/16px system-ui,sans-serif;height:16px;overflow:hidden;white-space:nowrap;'
+      + 'pointer-events:none;padding-top:env(safe-area-inset-top,0px);box-sizing:content-box';
     document.body.appendChild(strip);
+    // The page starts below the strip (it covered CLOCK ON / Online: round 3 F-19).
+    var style = document.createElement('style');
+    style.textContent = ':root{--safe-top:calc(env(safe-area-inset-top, 0px) + 16px)}'
+      + '.app-header{top:16px}';
+    document.head.appendChild(style);
   });
 }
 
