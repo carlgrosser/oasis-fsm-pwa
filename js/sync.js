@@ -7,6 +7,7 @@ const Sync = {
   _isSyncing: false,
   _pendingCount: 0,
   _refreshTimer: null,
+  OTHER_QUEUES: ['oha_pending', 'ohu_pending', 'ohf_pending', 'omt_pending', 'damage_pending', 'comeback_pending', 'review_pending'],
 
   /**
    * Initialize sync — set up online/offline listeners and auto-refresh.
@@ -22,8 +23,9 @@ const Sync = {
     // Start auto-refresh timer
     this._startAutoRefresh();
 
-    // Check for pending items
+    // Check for pending items, and keep the "Waiting to send" count fresh (round 3: no badge while offline).
     this._updatePendingCount();
+    setInterval(() => this._updatePendingCount(), 4000);
   },
 
   /**
@@ -234,7 +236,16 @@ const Sync = {
         const wrapupItems = await DB.getUnsyncedItems('wrapupQueue');
         wrapupCount = wrapupItems.length;
       } catch { /* store may not exist yet */ }
-      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount + expensesCount + wrapupCount;
+      // The holiday screens, My Truck, damage, come-backs and reviews keep their own queues on the phone.
+      let otherCount = 0;
+      for (const key of this.OTHER_QUEUES) {
+        try {
+          const q = await DB.getState(key);
+          if (Array.isArray(q)) otherCount += q.length;
+          else if (q && typeof q === 'object') otherCount += Object.keys(q).length;
+        } catch { /* nothing kept */ }
+      }
+      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount + expensesCount + wrapupCount + otherCount;
     } catch {
       this._pendingCount = 0;
     }
@@ -269,7 +280,8 @@ const Sync = {
 
     if (this._pendingCount > 0) {
       badge.style.display = 'inline-flex';
-      badge.textContent = this._pendingCount;
+      badge.textContent = `Waiting to send (${this._pendingCount})`;
+      badge.title = 'Saved on this phone; sent when there is signal';
     } else {
       badge.style.display = 'none';
     }
