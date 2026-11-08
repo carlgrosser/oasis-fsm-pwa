@@ -1691,6 +1691,30 @@ const Jobs = {
       this._switchToTab(idx);
     });
 
+    // A panel must never stay half-way (round 3 F-18: Options showed half of Info and half of Work).
+    // Smooth scrolls get cut short when a panel's content loads or the bar resizes; after any scroll
+    // ends, and when the panels change size, settle on a whole panel.
+    this._activeTab = 0;
+    const settle = () => {
+      const w = panels.offsetWidth;
+      if (!w) return;
+      const idx = Math.round(panels.scrollLeft / w);
+      if (Math.abs(panels.scrollLeft - idx * w) > 1) panels.scrollLeft = idx * w;
+      this._activeTab = idx;
+      this._setActiveTab(idx);
+    };
+    let settleTimer = null;
+    panels.addEventListener('scroll', () => {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(settle, 180);
+    });
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => {
+        const w = panels.offsetWidth;
+        if (w) panels.scrollLeft = (this._activeTab || 0) * w;
+      }).observe(panels);
+    }
+
     // Scroll sync → update active tab
     let ticking = false;
     panels.addEventListener('scroll', () => {
@@ -1714,8 +1738,14 @@ const Jobs = {
     const panels = document.getElementById('detailPanels');
     if (!panels) return;
     const panelWidth = panels.offsetWidth;
+    this._activeTab = index;
     panels.scrollTo({ left: index * panelWidth, behavior: 'smooth' });
     this._setActiveTab(index);
+    // If the smooth scroll was cut short, finish it.
+    setTimeout(() => {
+      const w = panels.offsetWidth;
+      if (w && this._activeTab === index && Math.abs(panels.scrollLeft - index * w) > 1) panels.scrollLeft = index * w;
+    }, 600);
   },
 
   /**
