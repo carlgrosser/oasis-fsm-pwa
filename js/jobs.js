@@ -1995,6 +1995,12 @@ const Jobs = {
    * Show materials modal before completing a job.
    */
   async _showMaterialsModal(job, onComplete) {
+    // A Holiday Lighting job never uses the pool materials list (it was an empty dialog, round 3 F-06):
+    // its count is Actual Used.
+    const company = Array.isArray(job.company_id) ? job.company_id[0] : job.company_id;
+    if (company === CONFIG.HOLIDAY_COMPANY_ID && typeof HolidayUsed !== 'undefined') {
+      return this._showHolidayCountModal(job, onComplete);
+    }
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
@@ -2055,6 +2061,37 @@ const Jobs = {
         doneBtn.disabled = false;
         doneBtn.textContent = 'Save & Complete';
       }
+    });
+  },
+
+  /** Completing a Holiday job from the stage button: count what went up now, or finish the count later. */
+  _showHolidayCountModal(job, onComplete) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal modal-materials">
+        <div class="modal-header"><h3>What went up</h3></div>
+        <div class="modal-body">
+          <p>Count what went up at this house before you close the job (it takes a minute when it all went up as planned).</p>
+          <button class="btn btn-primary btn-block" id="holidayCountBtn">Actual Used: count it now</button>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="holidayLaterBtn">Finish later</button>
+          <button class="btn btn-secondary" id="holidayCancelBtn">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#holidayCancelBtn').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#holidayCountBtn').addEventListener('click', () => {
+      overlay.remove();
+      HolidayUsed.open(job, () => onComplete());
+    });
+    overlay.querySelector('#holidayLaterBtn').addEventListener('click', async () => {
+      overlay.remove();
+      if (typeof HolidayActual !== 'undefined') {
+        try { await HolidayActual.later(job); } catch (err) { console.warn('Finish later not saved', err); }
+      }
+      onComplete();
     });
   },
 

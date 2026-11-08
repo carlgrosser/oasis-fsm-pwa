@@ -216,38 +216,53 @@ const OdooAPI = {
     if (CONFIG.CUSTOM_MODULE_INSTALLED) {
       fields.push(...CONFIG.FSM_ORDER_EXTRA_FIELDS);
     }
-    if (this._optionalOrderFieldsOk) {
-      fields.push(...CONFIG.FSM_ORDER_OPTIONAL_FIELDS);
-    }
+    fields.push(...CONFIG.FSM_ORDER_OPTIONAL_FIELDS.filter(f => !this._badOrderFields.includes(f)));
     return fields;
   },
 
   // Optional fsm.order fields come from modules that may not be installed or
-  // upgraded yet (helpdesk_mgmt_fieldservice + fieldservice_helpdesk_link).
-  // Asking for a column Odoo doesn't have fails the whole read, which would
-  // blank the job list — so the first failure drops them for the session and
-  // the app carries on without the callback badges.
-  _optionalOrderFieldsOk: true,
+  // upgraded yet, or that this login can't read (2026-11 round 3: a crew lead
+  // without design access was refused ohl_design_id, the app dropped ALL the
+  // optional fields, lost ohl_job_kind and showed a holiday install as a pool
+  // job with an empty "Materials Used" dialog). Asking for a column Odoo
+  // refuses fails the whole read, so the first failure checks each optional
+  // field on its own and drops only the ones refused, for the session.
+  _badOrderFields: [],
+  _probing: null,
+
+  async _probeOrderFields() {
+    const bad = [];
+    for (const f of CONFIG.FSM_ORDER_OPTIONAL_FIELDS) {
+      try {
+        await this.searchRead('fsm.order', [], ['id', f], { limit: 1 });
+      } catch (e) {
+        bad.push(f);
+      }
+    }
+    console.warn('fsm.order fields refused for this login, read without them:', bad);
+    return bad;
+  },
 
   /**
-   * Run an fsm.order search_read, retrying once without the optional fields if
-   * the server rejects them.
+   * Run an fsm.order search_read; if the server rejects an optional field, retry once without the
+   * fields it refuses (checked one by one).
    *
-   * Whether to retry is decided from what THIS call actually sent, captured
-   * before the request — not from the shared flag at the time the error lands.
-   * loadJobs fires this concurrently (today's jobs + upcoming), so reading the
-   * live flag in the catch let the first failure flip it and the second call
-   * rethrow instead of retrying, failing the whole Promise.all and leaving the
-   * job list on stale cache.
+   * Whether to retry is decided from what THIS call actually sent (loadJobs fires this concurrently;
+   * the second call must retry too, not rethrow).
    */
   async _searchReadOrders(domain, opts) {
-    const sentOptional = this._optionalOrderFieldsOk;
+    const sent = this._getOrderFields();
     try {
-      return await this.searchRead('fsm.order', domain, this._getOrderFields(), opts);
+      return await this.searchRead('fsm.order', domain, sent, opts);
     } catch (err) {
-      if (!sentOptional) throw err;
-      console.warn('fsm.order optional fields unavailable — retrying without them.', err);
-      this._optionalOrderFieldsOk = false;
+      const optionalSent = CONFIG.FSM_ORDER_OPTIONAL_FIELDS.filter(f => sent.includes(f));
+      if (!optionalSent.length) throw err;
+      console.warn('fsm.order read refused — checking the optional fields.', err);
+      if (!this._probing) this._probing = this._probeOrderFields();
+      const bad = await this._probing;
+      this._probing = null;
+      // Nothing refused on its own: drop them all, as before.
+      this._badOrderFields = bad.length ? bad : [...CONFIG.FSM_ORDER_OPTIONAL_FIELDS];
       return this.searchRead('fsm.order', domain, this._getOrderFields(), opts);
     }
   },
