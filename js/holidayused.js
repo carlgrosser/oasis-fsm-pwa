@@ -115,6 +115,12 @@ const HolidayUsed = {
     document.body.appendChild(overlay);
     const $ = (s) => overlay.querySelector(s);
     const data = await this.load(job.id);
+    if (data && data.elements && typeof HolidayActual !== 'undefined') {
+      // By element, from the kit or the truck (Odoo ohl_dispatch 18.0.1.8+).
+      $('.ohu-foot').innerHTML = '<button class="btn btn-lg" data-act="later">Finish later</button>'
+        + '<button class="btn btn-primary btn-lg" data-act="save">&#10003; Save</button>';
+      return HolidayActual.render(job, data, onClose, overlay);
+    }
     if (!data) {
       $('.ohu-sub').textContent = '';
       $('.ohu-body').innerHTML = '<div class="empty-state" style="padding:24px;">Not on this phone yet: open it once with signal.</div>';

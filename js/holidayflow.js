@@ -253,6 +253,7 @@ const HolidayFlow = {
     if (t.dataset.ohf === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job);
     if (t.dataset.ohf === 'photo') return document.getElementById('footerCameraBtn')?.click();
     if (t.dataset.ohf === 'comeback' && typeof ComeBack !== 'undefined') return ComeBack.open(job);
+    if (t.dataset.ohf === 'swaps' && typeof HolidayActual !== 'undefined') return HolidayActual.openSwaps(job);
     if (t.dataset.ohfTally) return this.tally(job, parseInt(t.dataset.ohfTally, 10));
     if (t.dataset.ohfDo) return this.doStep(job, t.dataset.ohfDo);
     if (t.dataset.ohfSkip) return this.skipStep(job, t.dataset.ohfSkip);
@@ -339,6 +340,14 @@ const HolidayFlow = {
   skipStep(job, code) {
     const data = this._data && this._data[job.id];
     const step = data && data.steps.find(s => s.code === code);
+    if (step && step.type === 'used' && typeof HolidayActual !== 'undefined') {
+      // Not counted now: Finish later (the office's list shows it; count it tonight).
+      return HolidayActual.later(job).then(async () => {
+        Object.assign(step, { skipped: true, reason: 'Finish later' });
+        await this.refresh(job);
+        return true;
+      }).catch((err) => { App.showToast('Not saved: ' + (err.message || err), 'error'); return false; });
+    }
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `<div class="modal" style="max-width:420px;">
@@ -433,11 +442,16 @@ const HolidayFlow = {
       const sub = s.skipped ? `Skipped: ${this._esc(s.reason)}` : this._esc(s.detail || (s.required ? '' : 'optional'));
       // Done: a tick can be undone; a count, the map or photos can be opened again to change or add.
       const reopen = { used: 'Edit', map: 'Edit', photos_before: '+ Photos', photos_after: '+ Photos' }[s.type];
+      if (s.type === 'used' && s.skipped && !s.done) {
+        return `<div class="ohf-row"><span class="ohf-st skip">&#8631;</span><div class="ohf-row-main"><div>${this._esc(s.name)}</div>
+          <div class="ohf-row-sub">Finish later: count it tonight</div></div>
+          <div class="ohf-row-act"><button class="btn btn-sm" data-ohf-do="${this._esc(s.code)}">&#9989; Count now</button></div></div>`;
+      }
       const act = s.done
         ? (s.type === 'tick' ? `<button class="btn btn-sm btn-ghost" data-ohf-undo="${this._esc(s.code)}">Undo</button>`
           : reopen ? `<button class="btn btn-sm btn-ghost" data-ohf-do="${this._esc(s.code)}">${reopen}</button>` : '')
         : `<button class="btn btn-sm" data-ohf-do="${this._esc(s.code)}">${this._actionLabel(s)}</button>
-           ${s.skipped ? '' : `<button class="btn btn-sm btn-ghost" data-ohf-skip="${this._esc(s.code)}">Skip</button>`}`;
+           ${s.skipped ? '' : `<button class="btn btn-sm btn-ghost" data-ohf-skip="${this._esc(s.code)}">${s.type === 'used' ? 'Finish later' : 'Skip'}</button>`}`;
       return `<div class="ohf-row">${state}<div class="ohf-row-main"><div>${this._esc(s.name)}</div>
           ${sub ? `<div class="ohf-row-sub">${sub}</div>` : ''}</div><div class="ohf-row-act">${act}</div></div>`;
     };
@@ -451,6 +465,10 @@ const HolidayFlow = {
     const billState = { scheduled: `Charged to the card on file tomorrow morning${bill.card ? ` (ending ${this._esc(bill.card)})` : ''}`,
       hold: 'On hold (office)', charged: 'Charged', office: `The office follows up: ${this._esc(bill.note)}`, nothing: 'Nothing left to charge' }[bill.state];
     html += billState ? `<div class="ohf-billstate">&#128179; ${bill.invoice ? this._esc(bill.invoice) + ': ' : ''}${billState}</div>` : '';
+    if (this.isCallback(job) && typeof HolidayActual !== 'undefined') {
+      html += '<div class="ohf-comeback"><button class="btn" data-ohf="swaps">&#128295; Replaced anything?</button>'
+        + '<div class="ohf-help">A strand, bulbs, wire or clips from the truck (optional).</div></div>';
+    }
     if (!this.isVisit(job)) {
       html += '<div class="ohf-comeback"><button class="btn" data-ohf="comeback">&#8617;&#65039; Need to come back</button>'
         + '<div class="ohf-help">Short on material, couldn\'t finish, something to fix, damage: the office books the trip back.</div></div>';
@@ -524,7 +542,7 @@ const HolidayFlow = {
               ${still.length ? still.map(s => `<div class="ohf-row"><span class="ohf-st todo">&#9675;</span>
                   <div class="ohf-row-main">${this._esc(s.name)}</div>
                   <div class="ohf-row-act"><button class="btn btn-sm" data-do="${this._esc(s.code)}">${this._actionLabel(s)}</button>
-                  <button class="btn btn-sm btn-ghost" data-skip="${this._esc(s.code)}">Skip</button></div></div>`).join('')
+                  <button class="btn btn-sm btn-ghost" data-skip="${this._esc(s.code)}">${s.type === 'used' ? 'Finish later' : 'Skip'}</button></div></div>`).join('')
                 : '<p>&#10003; All set.</p>'}
             </div>
             <div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap;">
