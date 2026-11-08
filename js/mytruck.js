@@ -124,15 +124,19 @@ const MyTruck = {
       const box = $('.ohu-add');
       const packs = (item.packs || []).filter(p => p.qty > 1).sort((a, b) => a.qty - b.qty);
       const pack = packs[0] || null;
-      let left = Math.max(0, Math.round(item.has || 0));
+      // Both boxes count in the same pack (bags, spools), with the units in small text (round 3 F-22).
+      const per = pack ? pack.qty : 1;
+      const hasPacks = Math.max(0, (item.has || 0) / per);
+      const round2 = (n) => Math.round(n * 100) / 100;
+      let left = round2(hasPacks);
       let qty = item.short > 0 ? (pack ? Math.ceil(item.short / pack.qty) : Math.ceil(item.short)) : 1;
       let mode = null;
       const unitWord = pack ? pack.name : (item.unit || 'each');
       const render = () => {
         const units = pack ? qty * pack.qty : qty;
         box.innerHTML = `<div class="ohu-add-card"><div class="ohu-add-title">${this._esc(item.name)}</div>
-          <div class="oha-item"><div class="oha-item-label">How many are left on the truck?<div class="ohu-plan">The app thought ${this._esc(item.has_text || item.has)}</div></div>
-            <button class="ohu-btn" data-l="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${left}" data-left>
+          <div class="oha-item"><div class="oha-item-label">How many are left on the truck (${this._esc(unitWord)})?<div class="ohu-plan">${pack ? `= ${round2(left * per)} ${this._esc(item.unit || '')} · ` : ''}the app thought ${this._esc(item.has_text || item.has)}</div></div>
+            <button class="ohu-btn" data-l="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="decimal" min="0" step="any" value="${left}" data-left>
             <button class="ohu-btn" data-l="1">+</button></div>
           <div class="oha-item"><div class="oha-item-label">How many to get (${this._esc(unitWord)})${pack ? `<div class="ohu-plan">= ${units} ${this._esc(item.unit || '')}</div>` : ''}</div>
             <button class="ohu-btn" data-q="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${qty}" data-qty>
@@ -172,9 +176,10 @@ const MyTruck = {
         if (t.dataset.paid) { paid = t.dataset.paid; box.querySelectorAll('[data-paid]').forEach(b => b.classList.toggle('on', b === t)); return; }
         if (t.dataset.send) {
           const action = t.dataset.send;
+          const leftUnits = round2(left * per);
           const entry = { truck_id: data.truck_id, action, product_id: item.product_id, qty: pack ? qty * pack.qty : qty,
-            left: left !== Math.round(item.has || 0) ? left : undefined };
-          if (action === 'used_up') entry.left = left;
+            left: left !== round2(hasPacks) ? leftUnits : undefined };
+          if (action === 'used_up') entry.left = leftUnits;
           if (action === 'bought') {
             const total = parseFloat(box.querySelector('[data-total]').value || '0');
             if (!this._photoData) { App.showToast('Take the receipt photo first', 'error'); return; }
@@ -215,9 +220,21 @@ const MyTruck = {
       const search = async () => {
         const res = box.querySelector('[data-results]');
         if (!navigator.onLine) { res.innerHTML = '<span class="ohu-plan">Needs signal</span>'; return; }
-        const items = await OdooAPI.callKw('fsm.order', 'worker_truck_items', [input.value.trim()], {}).catch(() => []);
-        res.innerHTML = items.map(p => `<button class="ohu-chip" data-p="${p.id}">${this._esc(p.name)}</button>`).join('') || '<span class="ohu-plan">Nothing found</span>';
-        res.onclick = (e) => {
+        const typed = input.value.trim();
+        const items = await OdooAPI.callKw('fsm.order', 'worker_truck_items', [typed], {}).catch(() => []);
+        // Not in the catalogue (zip ties, a cord): add it as a new item; the office checks new items.
+        const exact = items.some(p => p.name.toLowerCase() === typed.toLowerCase());
+        res.innerHTML = (items.map(p => `<button class="ohu-chip" data-p="${p.id}">${this._esc(p.name)}</button>`).join('') || '<span class="ohu-plan">Nothing found</span>')
+          + (typed.length >= 2 && !exact ? `<button class="ohu-chip" data-new>&#65291; Add "${this._esc(typed)}" as a new item</button>` : '');
+        res.onclick = async (e) => {
+          if (e.target.closest('[data-new]')) {
+            try {
+              const p = await OdooAPI.callKw('fsm.order', 'worker_truck_new_item', [typed], {});
+              App.showToast(`${p.name} added: the office checks new items`, 'success');
+              sheet({ product_id: p.id, name: p.name, unit: p.unit, packs: p.packs, has: 0, short: 0 });
+            } catch (err) { App.showToast('Not added: ' + (err.message || err), 'error'); }
+            return;
+          }
           const b = e.target.closest('[data-p]');
           if (!b) return;
           const p = items.find(x => String(x.id) === b.dataset.p);
