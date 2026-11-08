@@ -2,9 +2,10 @@
  * Holiday Lighting: Actual Used by element (Odoo ohl_dispatch: worker_get_used → elements, worker_save_actual,
  * worker_used_later, worker_save_swaps).
  *
- * Built to take under a minute at a typical house:
- *  - every part of the house (roofline runs, Tree 1, the bushes) comes prefilled: last season's count for it,
- *    else the design, else the quote. "All as planned" is one tap; one element "as planned" is one tap.
+ * Every part of the house (roofline runs, Tree 1, the bushes) is listed:
+ *  - first count at a house (Carl 2026-11-08): every box starts empty and must be typed; nothing comes from the
+ *    quote or design (estimates), and there is no one-tap button;
+ *  - later years: prefilled from last year's ACTUAL count, with "Same as last year's count"; anything new is blank.
  *  - Where it came from: all from the kit (a rehang), all from the truck (a new house), or some of each.
  *    Only the truck part comes off the truck.
  *  - Replaced anything? Strand / Bulbs / Wire / Clips chips (optional, zero taps when skipped).
@@ -92,7 +93,12 @@ const HolidayActual = {
     const $ = (s) => overlay.querySelector(s);
     const draft = await DB.getState(this._draftKey(job.id)).catch(() => null);
     const pending = (await this._pending())[job.id];
-    const src = (pending && pending.payload) || draft || null;
+    let src = (pending && pending.payload) || draft || null;
+    // First count at this house (Carl 2026-11-08): everything is counted, nothing comes from the quote or design.
+    // A draft made by an older app version from the estimate doesn't count.
+    const first = !!data.first_count && data.source !== 'saved';
+    if (first && src && !pending && (src.elements || []).some(e => ['design', 'quote'].includes(e.source))) src = null;
+    const isBlank = (v) => v === null || v === undefined || v === '';
     const state = {
       from: (src && src.from) || (data.source === 'saved' ? 'mix' : data.default_from || 'kit'),
       truckId: (src && src.truck_id) || data.truck_id || (await DB.getState(this.TRUCK_KEY).catch(() => null)) || null,
@@ -103,54 +109,64 @@ const HolidayActual = {
     };
     state.elements.forEach(e => {
       if (e.ok === undefined) e.ok = data.source === 'saved' || e.source === 'saved';
-      e.items.forEach(i => { if (i.truck_qty === undefined || i.truck_qty === null) i.truck_qty = state.from === 'truck' ? i.qty : 0; });
+      e.items.forEach(i => {
+        if (i.truck_qty === undefined || i.truck_qty === null) i.truck_qty = state.from === 'truck' ? (i.qty || 0) : 0;
+        if (i.counted === undefined) i.counted = e.source === 'saved';
+      });
     });
+    state.houseRows.forEach(r => { if (r.counted === undefined) r.counted = data.source === 'saved'; });
+    const elBlank = (e) => e.items.some(i => isBlank(i.qty));
+    const lastYear = (e) => e.source === 'last_season';
     const trucks = data.trucks || [];
     if (!state.truckId && trucks.length === 1) state.truckId = trucks[0].id;
     const sub = data.source === 'saved' ? `Saved${data.saved_by ? ' by ' + this._esc(data.saved_by) : ''}. Change anything and save again.`
       : pending ? 'Saved on this phone: it goes to the office when there\'s signal.'
         : draft ? 'Your draft from earlier (Finish later).'
-          : 'Prefilled: tap As planned, or change what\'s different.';
+          : first ? '<b>First count at this house:</b> count everything and type each number (0 if none). Nothing comes from the quote.'
+            : 'From last year\'s count: tap Same as last year, or change what\'s different. Anything new must be counted.';
     $('.ohu-sub').innerHTML = sub;
 
     const checked = () => state.elements.filter(e => e.ok).length;
     const truckPart = () => state.from === 'truck' || (state.from === 'mix' && state.elements.some(e => e.items.some(i => (i.truck_qty || 0) > 0)));
     const needsTruck = () => truckPart() || state.swaps.length > 0;
-    const sourceBadge = (e) => ({ last_season: 'last season', design: 'design', quote: 'quote', saved: 'saved' }[e.source] || '');
-    const itemLine = (i) => `${this._esc(i.label)}: <b>${i.qty || 0}</b> ${this._esc(i.unit || '')}${i.planned && i.planned !== i.qty ? ` <span class="oha-was">(plan ${i.planned})</span>` : ''}${state.from === 'mix' && i.truck_qty ? ` <span class="oha-truckq">${i.truck_qty} off the truck</span>` : ''}`;
+    const sourceBadge = (e) => ({ last_season: 'last year', count: 'count it', saved: 'saved' }[e.source] || '');
+    const itemLine = (i, e) => isBlank(i.qty) ? `${this._esc(i.label)}: <b class="oha-tocount">not counted</b>`
+      : `${this._esc(i.label)}: <b>${i.qty}</b> ${this._esc(i.unit || '')}${lastYear(e) && i.planned && i.planned !== i.qty ? ` <span class="oha-was">(last year ${i.planned})</span>` : ''}${state.from === 'mix' && i.truck_qty ? ` <span class="oha-truckq">${i.truck_qty} off the truck</span>` : ''}`;
 
     const stepper = (attr, value, label) => `<div class="oha-step">
         <button class="ohu-btn" data-${attr}="-1" aria-label="Less">&minus;</button>
-        <input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${value || 0}" data-${attr}-in aria-label="${this._esc(label)}">
+        <input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${isBlank(value) ? '' : value}" placeholder="?" data-${attr}-in aria-label="${this._esc(label)}">
         <button class="ohu-btn" data-${attr}="1" aria-label="More">+</button></div>`;
 
     const elementHtml = (e, ei) => {
       const editing = state.open === ei;
-      const diff = e.items.some(i => i.planned !== undefined && i.qty !== i.planned);
+      const diff = lastYear(e) && e.items.some(i => i.planned !== undefined && i.qty !== i.planned);
       return `<div class="oha-el${e.ok ? ' ok' : ''}${editing ? ' open' : ''}" data-ei="${ei}">
           <div class="oha-el-head"><div class="oha-el-title">${e.ok ? '&#10003; ' : ''}${this._esc(e.label)}
               ${sourceBadge(e) ? `<span class="oha-src">${sourceBadge(e)}</span>` : ''}</div>
             ${editing ? '' : e.ok ? `<button class="btn btn-sm btn-ghost" data-el-edit="${ei}">Change</button>`
-              : `<button class="btn btn-success oha-asplanned" data-el-ok="${ei}">&#10003; As planned</button>`}</div>
+              : (first || elBlank(e) || !lastYear(e)) ? `<button class="btn btn-primary oha-asplanned" data-el-edit="${ei}">Count it</button>`
+                : `<button class="btn btn-success oha-asplanned" data-el-ok="${ei}">&#10003; Same as last year</button>`}</div>
           ${editing ? e.items.map((i, ii) => `<div class="oha-item">
-              <div class="oha-item-label">${this._esc(i.label)}${i.planned !== undefined ? `<div class="ohu-plan">plan ${i.planned} ${this._esc(i.unit || '')}${i.rough ? ' (rough)' : ''}</div>` : ''}</div>
+              <div class="oha-item-label">${this._esc(i.label)}${!first && lastYear(e) && i.planned !== undefined ? `<div class="ohu-plan">last year ${i.planned} ${this._esc(i.unit || '')}</div>` : ''}</div>
               ${stepper(`q="${ei}:${ii}"`, i.qty, i.label)}<span class="ohu-unit">${this._esc(i.unit || '')}</span>
               ${state.from === 'mix' ? `<div class="oha-truckrow">off the truck ${stepper(`t="${ei}:${ii}"`, i.truck_qty, 'off the truck')}</div>` : ''}
             </div>`).join('') + `<div class="oha-el-foot">${e.kind === 'added' ? `<button class="btn btn-sm btn-ghost" data-el-del="${ei}">Remove</button>` : ''}
               <button class="btn btn-primary" data-el-done="${ei}">Done</button></div>`
-            : `<div class="oha-el-items${diff ? ' diff' : ''}">${e.items.map(itemLine).join('<br>') || '<span class="ohu-plan">Nothing listed</span>'}</div>`}
+            : `<div class="oha-el-items${diff ? ' diff' : ''}">${e.items.map(i => itemLine(i, e)).join('<br>') || '<span class="ohu-plan">Nothing listed</span>'}</div>`}
         </div>`;
     };
 
     const houseHtml = () => {
       if (!state.houseRows.length) return '';
       const open = state.open === 'house';
-      return `<div class="oha-el ok${open ? ' open' : ''}"><div class="oha-el-head"><div class="oha-el-title">Clips, cords &amp; timers</div>
-          ${open ? '' : '<button class="btn btn-sm btn-ghost" data-house-edit>Change</button>'}</div>
-          ${open ? state.houseRows.map((r, ri) => `<div class="oha-item"><div class="oha-item-label">${this._esc(r.label)}${r.planned ? `<div class="ohu-plan">plan ${r.planned}</div>` : ''}</div>
+      const blank = state.houseRows.some(r => isBlank(r.qty));
+      return `<div class="oha-el${blank ? '' : ' ok'}${open ? ' open' : ''}"><div class="oha-el-head"><div class="oha-el-title">Clips, cords &amp; timers</div>
+          ${open ? '' : blank ? '<button class="btn btn-primary" data-house-edit>Count it</button>' : '<button class="btn btn-sm btn-ghost" data-house-edit>Change</button>'}</div>
+          ${open ? state.houseRows.map((r, ri) => `<div class="oha-item"><div class="oha-item-label">${this._esc(r.label)}${r.planned && !first && !r.blank ? `<div class="ohu-plan">last year ${r.planned}</div>` : ''}</div>
               ${stepper(`h="${ri}"`, r.qty, r.label)}<span class="ohu-unit">${this._esc(r.unit || '')}</span></div>`).join('')
               + '<div class="oha-el-foot"><button class="btn btn-primary" data-house-done>Done</button></div>'
-            : `<div class="oha-el-items">${state.houseRows.map(r => `${this._esc(r.label)} ${r.qty || 0}`).join(' · ')}</div>`}</div>`;
+            : `<div class="oha-el-items">${state.houseRows.map(r => `${this._esc(r.label)} ${isBlank(r.qty) ? '<b class="oha-tocount">not counted</b>' : r.qty}`).join(' · ')}</div>`}</div>`;
     };
 
     const swapsHtml = () => {
@@ -194,25 +210,37 @@ const HolidayActual = {
           ${needsTruck() ? `<div class="oha-trucks">${trucks.length ? 'Truck: ' + trucks.map(t => `<button class="ohu-chip${state.truckId === t.id ? ' on' : ''}" data-truck="${t.id}">${this._esc(t.name)}</button>`).join('')
             : '<span class="ohu-plan">No trucks set up: the truck count won\'t change.</span>'}</div>` : ''}
         </div>
-        ${n ? `<button class="btn btn-success btn-lg oha-all" data-all-ok ${checked() === n ? 'disabled' : ''}>&#10003; All as planned${checked() ? ` (${n - checked()} left)` : ''}</button>` : ''}
+        ${n && !first && state.elements.some(e => lastYear(e) && !e.ok && !elBlank(e)) ? `<button class="btn btn-success btn-lg oha-all" data-all-ok>&#10003; Same as last year's count</button>` : ''}
         ${state.elements.map(elementHtml).join('')}
         ${addHtml()}
         ${houseHtml()}
         ${swapsHtml()}`;
       const save = $('[data-act="save"]');
-      save.textContent = n && checked() < n ? `✓ Save (${checked()} of ${n} checked)` : '✓ Save';
+      save.textContent = n && checked() < n ? `✓ Save (${checked()} of ${n} ${first ? 'counted' : 'checked'})` : '✓ Save';
     };
 
     const setFromInputs = () => {
       overlay.querySelectorAll('.oha-step').forEach(holder => {
         const inp = holder.querySelector('input');
-        const v = Math.max(0, inp.valueAsNumber || 0);
         const ref = holder.dataset.ref;
         if (!ref) return;
+        const typed = inp.value !== '';
+        const v = Math.max(0, inp.valueAsNumber || 0);
         const [kind, a, b] = ref.split(':');
-        if (kind === 'q') { const it = state.elements[a].items[b]; it.qty = v; if (state.from === 'truck') it.truck_qty = v; if (it.truck_qty > it.qty) it.truck_qty = it.qty; }
+        // A box left empty stays "not counted"; a number typed is counted.
+        if (kind === 'q') {
+          const it = state.elements[a].items[b];
+          if (!typed) return;
+          if (isBlank(it.qty) || it.qty !== v) it.counted = true;
+          it.qty = v; if (state.from === 'truck') it.truck_qty = v; if (it.truck_qty > it.qty) it.truck_qty = it.qty;
+        }
         if (kind === 't') { const it = state.elements[a].items[b]; it.truck_qty = Math.min(v, it.qty || 0); }
-        if (kind === 'h') state.houseRows[a].qty = v;
+        if (kind === 'h') {
+          const r = state.houseRows[a];
+          if (!typed) return;
+          if (isBlank(r.qty) || r.qty !== v) r.counted = true;
+          r.qty = v;
+        }
         if (kind === 's') state.swaps[a].qty = v;
       });
     };
@@ -242,7 +270,8 @@ const HolidayActual = {
         const [kind, a, b] = holder.dataset.ref.split(':');
         if (kind === 'q') {
           const it = state.elements[a].items[b];
-          it.qty = Math.max(0, (it.qty || 0) + sign * stepOf(it));
+          it.qty = isBlank(it.qty) ? (sign > 0 ? stepOf(it) : 0) : Math.max(0, it.qty + sign * stepOf(it));
+          it.counted = true;
           if (state.from === 'truck') it.truck_qty = it.qty;
           if (it.truck_qty > it.qty) it.truck_qty = it.qty;
         } else if (kind === 't') {
@@ -250,7 +279,9 @@ const HolidayActual = {
           it.truck_qty = Math.min(it.qty || 0, Math.max(0, (it.truck_qty || 0) + sign * stepOf(it)));
         } else if (kind === 'h') {
           const r = state.houseRows[a];
-          r.qty = Math.max(0, (r.qty || 0) + sign * ((r.unit === 'ft' || (r.qty || 0) >= 100) ? 10 : 1));
+          const st = (r.unit === 'ft' || (r.qty || 0) >= 100) ? 10 : 1;
+          r.qty = isBlank(r.qty) ? (sign > 0 ? st : 0) : Math.max(0, r.qty + sign * st);
+          r.counted = true;
         } else if (kind === 's') {
           state.swaps[a].qty = Math.max(0, (state.swaps[a].qty || 0) + sign);
         }
@@ -260,7 +291,7 @@ const HolidayActual = {
       if (t.dataset.from) {
         state.from = t.dataset.from;
         state.elements.forEach(el => el.items.forEach(i => {
-          if (state.from === 'truck') i.truck_qty = i.qty;
+          if (state.from === 'truck') i.truck_qty = i.qty || 0;
           if (state.from === 'kit') i.truck_qty = 0;
         }));
         return redraw();
@@ -270,13 +301,21 @@ const HolidayActual = {
         await DB.setState(this.TRUCK_KEY, state.truckId).catch(() => {});
         return redraw();
       }
-      if (t.hasAttribute('data-all-ok')) { state.elements.forEach(el => { el.ok = true; }); state.open = null; return redraw(); }
+      // Same as last year's count: only elements that have last year's actual count (never a blank one).
+      if (t.hasAttribute('data-all-ok')) { state.elements.forEach(el => { if (lastYear(el) && !elBlank(el)) el.ok = true; }); state.open = null; return redraw(); }
       if (t.dataset.elOk) { state.elements[t.dataset.elOk].ok = true; return redraw(); }
       if (t.dataset.elEdit) { state.open = parseInt(t.dataset.elEdit, 10); return redraw(); }
-      if (t.dataset.elDone) { state.elements[t.dataset.elDone].ok = true; state.open = null; return redraw(); }
+      if (t.dataset.elDone) {
+        const el = state.elements[t.dataset.elDone];
+        if (elBlank(el)) { App.showToast('Type a number for each one (0 if none)', 'error'); return; }
+        el.ok = true; state.open = null; return redraw();
+      }
       if (t.dataset.elDel) { state.elements.splice(parseInt(t.dataset.elDel, 10), 1); state.open = null; return redraw(); }
       if (t.hasAttribute('data-house-edit')) { state.open = 'house'; return redraw(); }
-      if (t.hasAttribute('data-house-done')) { state.open = null; return redraw(); }
+      if (t.hasAttribute('data-house-done')) {
+        if (state.houseRows.some(r => isBlank(r.qty))) { App.showToast('Type a number for each one (0 if none)', 'error'); return; }
+        state.open = null; return redraw();
+      }
       if (t.hasAttribute('data-add-el')) { state.adding = {}; return redraw(); }
       if (t.hasAttribute('data-add-cancel')) { state.adding = null; return redraw(); }
       if (t.dataset.addKind) { state.adding.kind = t.dataset.addKind; return redraw(); }
@@ -287,8 +326,8 @@ const HolidayActual = {
         const kindLabel = ((data.add_kinds || []).find(k => k.key === a.kind) || {}).label || 'Item';
         const same = state.elements.filter(el => (el.label || '').startsWith(kindLabel)).length;
         const item = a.strand
-          ? { group: 'strand', label: ((data.catalog.strand_types || []).find(s => s.id === a.strand) || {}).name || 'Mini strands', strand_type_id: a.strand, qty: 0, planned: 0, unit: 'strands', step: 1 }
-          : { group: 'bulb', label: 'C9 · ' + (((data.patterns || []).find(p => p.id === a.pattern) || {}).name || ''), bulb_type_id: ((data.catalog.bulb_types || [])[0] || {}).id || false, pattern_id: a.pattern, qty: 0, planned: 0, unit: 'bulbs', step: 25 };
+          ? { group: 'strand', label: ((data.catalog.strand_types || []).find(s => s.id === a.strand) || {}).name || 'Mini strands', strand_type_id: a.strand, qty: null, counted: false, unit: 'strands', step: 1 }
+          : { group: 'bulb', label: 'C9 · ' + (((data.patterns || []).find(p => p.id === a.pattern) || {}).name || ''), bulb_type_id: ((data.catalog.bulb_types || [])[0] || {}).id || false, pattern_id: a.pattern, qty: null, counted: false, unit: 'bulbs', step: 25 };
         item.truck_qty = 0;
         state.elements.push({ uid: this._uid(), label: `${kindLabel} ${same + 1}`, kind: 'added', source: '', items: [item], ok: false });
         state.adding = null;
@@ -333,8 +372,15 @@ const HolidayActual = {
       }
       if (act.dataset.act === 'save') {
         const body = payload();
+        // Blank boxes (and, on a first count, anything not counted) must be counted first.
+        const toCount = state.elements.filter(el => elBlank(el) || (first && !el.ok)).map(el => el.label);
+        if (state.houseRows.some(r => isBlank(r.qty))) toCount.push('Clips, cords & timers');
+        if (toCount.length) {
+          App.showToast(`Count these first (0 if none): ${toCount.slice(0, 4).join(', ')}${toCount.length > 4 ? '…' : ''}. Or tap Finish later.`, 'error');
+          return;
+        }
         const left = body.elements.filter(el => !el.ok).length;
-        if (left && !window.confirm(`${left} not checked yet. Save them as planned?`)) return;
+        if (left && !window.confirm(`${left} not checked yet. Save them the same as last year?`)) return;
         if (needsTruck() && !body.truck_id && trucks.length) { App.showToast('Which truck did it come off? Tap it at the top.', 'error'); return; }
         act.disabled = true;
         try {
