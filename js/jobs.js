@@ -963,6 +963,10 @@ const Jobs = {
     }
 
     const isHistory = this._currentView === 'history';
+    // An install whose count is owed (Finish later, or never counted after Completed): round 5 F-05.
+    const owedHtml = job.ohl_job_kind === 'install' && (job.ohl_used_state === 'later'
+      || (job.ohl_used_state === 'missing' && /complete|closed/i.test(stageName || '')))
+      ? '<span class="status-badge owed" title="Actual Used still to count">Count owed</span>' : '';
     const unpaidTagHtml = isHistory && this._unpaidIds.has(job.id)
       ? '<span class="job-billing-tag unpaid-tag">Unpaid</span>'
       : '';
@@ -1000,7 +1004,7 @@ const Jobs = {
           <div style="display:flex; align-items:center; gap:8px;">
             ${crewHtml}
             <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
-            ${unpaidTagHtml}
+            ${owedHtml}${unpaidTagHtml}
           </div>
         </div>
       `;

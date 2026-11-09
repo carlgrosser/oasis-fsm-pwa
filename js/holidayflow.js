@@ -187,8 +187,11 @@ const HolidayFlow = {
           <div class="ohf-help">Tap Arrived when you get there. Then the A-frame signs and the walk-through.</div>
           <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="arrived">&#128205; Arrived</button></div></div>`;
     } else if (stage === 'done') {
+      // The count stays owed after Completed, until it's done (round 5 F-05).
+      const owed = this.owed(job, data);
       card = `<div class="ohf-card ohf-done"><div class="ohf-card-head"><span class="ohf-label">&#10003; Job closed</span>${sop}</div>
-          <div class="ohf-help">${this._esc(data.bill && data.bill.state === 'scheduled' ? 'The balance is charged to the card on file tomorrow morning.' : '')}</div></div>`;
+          <div class="ohf-help">${this._esc(data.bill && data.bill.state === 'scheduled' ? 'The balance is charged to the card on file tomorrow morning.' : '')}</div>
+          ${owed ? `<div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="owed">&#9989; Actual Used: count owed</button></div>` : ''}</div>`;
     } else if (next) {
       const action = this._actionLabel(next);
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next · ${doneN} of ${all.length} done</span>${sop}</div>
@@ -236,6 +239,7 @@ const HolidayFlow = {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.ohf === 'sop') return this.openSop(job);
+    if (t.dataset.ohf === 'owed' && typeof HolidayUsed !== 'undefined') return HolidayUsed.open(job, () => this.refresh(job));
     if (t.dataset.ohf === 'enroute') return Jobs._showEnRouteModal(job);
     if (t.dataset.ohf === 'arrived') {
       t.disabled = true;
@@ -535,9 +539,22 @@ const HolidayFlow = {
 
   // ---------------------------------------------------------------- Before Close Job
   /** Required steps not done: do them or skip them (with a reason). Resolves true to go on to Close Job. */
+  /** The install's count is still owed: Finish later was tapped, or it was never done (round 5 F-05). */
+  owed(job, data) {
+    if (!job || job.ohl_job_kind !== 'install') return false;
+    const step = data && data.steps.find(s => s.type === 'used');
+    return !!step && !step.done;
+  },
+
   async beforeClose(job) {
     const data = await this.load(job);
     if (!data) return true;
+    // Close Job asks for the count first while it's owed (Finish later turns into never otherwise).
+    if (this.owed(job, data) && typeof HolidayUsed !== 'undefined'
+        && window.confirm('Actual Used is still owed for this house. Count it now? (Cancel closes the job anyway; it stays on the office\'s list.)')) {
+      HolidayUsed.open(job, () => this.refresh(job));
+      return false;
+    }
     const open = this._open(data.steps.filter(s => s.required && s.type !== 'rating'));
     if (!open.length) return true;
     return new Promise((resolve) => {

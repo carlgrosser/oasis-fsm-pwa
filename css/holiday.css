@@ -297,3 +297,5 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .omt-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .omt-actions .btn { min-height: 52px; }
 .omt-receipt { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+.status-badge.owed { background: #fff3e0; color: #e65100; border: 1px solid #ffb74d; }
