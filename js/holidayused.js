@@ -97,7 +97,7 @@ const HolidayUsed = {
     return out;
   },
 
-  async open(job, onClose) {
+  async open(job, onClose, opts) {
     const overlay = document.createElement('div');
     overlay.className = 'ohu-overlay';
     overlay.innerHTML = `
@@ -119,7 +119,7 @@ const HolidayUsed = {
       // By element, from the kit or the truck (Odoo ohl_dispatch 18.0.1.8+).
       $('.ohu-foot').innerHTML = '<button class="btn btn-lg" data-act="later">Finish later</button>'
         + '<button class="btn btn-primary btn-lg" data-act="save">&#10003; Save</button>';
-      return HolidayActual.render(job, data, onClose, overlay);
+      return HolidayActual.render(job, data, onClose, overlay, opts);
     }
     if (!data) {
       $('.ohu-sub').textContent = '';

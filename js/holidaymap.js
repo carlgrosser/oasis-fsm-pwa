@@ -232,10 +232,11 @@ const HolidayMap = {
         if (!(f.lat || f.lng)) return;
         const kind = this.ITEMS.find(i => i.key === f.kind) || this.ITEMS[2];
         const loose = st.data.design && st.data.design.field && !f.item_key && list('items').length;
+        const counted = (st.data.counted || []).includes(f.uid);  // counted in Actual Used on this job
         const m = new g.Marker({ map, position: { lat: f.lat, lng: f.lng }, zIndex: 6, title: f.item_label || f.label,
           clickable: st.mode === 'items' || st.mode === 'view',
-          label: { text: (f.code || kind.label.slice(0, 2)) + (loose ? '?' : ''), color: '#fff', fontWeight: '700', fontSize: '11px' },
-          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: loose ? '#ffeb3b' : '#fff', strokeWeight: loose ? 3 : 2 } });
+          label: { text: (counted ? '✓' : '') + (f.code || kind.label.slice(0, 2)) + (loose ? '?' : ''), color: '#fff', fontWeight: '700', fontSize: '11px' },
+          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: counted ? '#2e7d32' : loose ? '#ffeb3b' : '#fff', strokeWeight: counted || loose ? 3 : 2 } });
         m.addListener('click', () => featureSheet(f));
         st.shapes.push(m);
       });
@@ -432,7 +433,13 @@ const HolidayMap = {
     });
     // A tree / bush on the map: assign it to one of the order's items, unassign it, or delete it.
     const featureSheet = (f) => {
-      if (!(live('items') || live('view')) || !editable() || st.busy) return;
+      if (!(live('items') || live('view')) || st.busy) return;
+      // Count this tree / bush in Actual Used (an install), even when the map can't be edited any more.
+      const canCount = job.ohl_job_kind === 'install' && typeof HolidayUsed !== 'undefined' && f.uid;
+      if (!editable()) {
+        if (canCount) HolidayUsed.open(job, () => this._refreshCounted && this._refreshCounted(), { focus: f.uid });
+        return;
+      }
       const field = !!(st.data.design && st.data.design.field);
       const own = field || f.added_on_site;
       const current = field ? f.item_key : (f.added_on_site ? false : `f:${f.id}`);
@@ -445,6 +452,7 @@ const HolidayMap = {
               <span>${KIND_ICON[i.kind] || '⭐'}</span><span class="ohm-item-label">${this._esc(i.label)}</span>
               <span class="ohm-item-state">${i.key === current ? '&#10003;' : (i.placed ? 'on the map' : 'unassigned')}</span></button>`).join('')}`
             : '<div class="ohm-hint">No trees or bushes on this order to assign it to.</div>'}
+          ${canCount ? `<button class="btn btn-success" style="width:100%;margin-top:10px;" data-sheet="count">${(st.data.counted || []).includes(f.uid) ? '&#10003; Counted: change it' : 'Count this'}</button>` : ''}
           <div class="ohm-btns" style="margin-top:12px;">
             ${current ? '<button class="btn" data-sheet="unassign">Unassign</button>' : ''}
             ${own ? '<button class="btn" data-sheet="delete">Delete</button>' : ''}
@@ -454,6 +462,18 @@ const HolidayMap = {
         const t = e.target.closest('button');
         if (!t) return;
         if (t.dataset.sheet === 'close') { box.hidden = true; return; }
+        if (t.dataset.sheet === 'count') {
+          box.hidden = true;
+          HolidayUsed.open(job, async () => {
+            // Back on the map: the tree shows ✓ once counted.
+            try {
+              const fresh = await OdooAPI.callKw('fsm.order', 'worker_get_design_map', [job.id], {});
+              st.data.counted = fresh.counted || [];
+              draw();
+            } catch (e) { /* offline: shown next time */ }
+          }, { focus: f.uid });
+          return;
+        }
         guard(async () => {
           let state = null;
           if (t.dataset.assign && t.dataset.assign !== current) {

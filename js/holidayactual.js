@@ -106,7 +106,7 @@ const HolidayActual = {
   },
 
   // ------------------------------------------------------------------ the screen
-  async render(job, data, onClose, overlay) {
+  async render(job, data, onClose, overlay, opts) {
     const $ = (s) => overlay.querySelector(s);
     const draft = await DB.getState(this._draftKey(job.id)).catch(() => null);
     const pending = (await this._pending())[job.id];
@@ -121,6 +121,8 @@ const HolidayActual = {
       truckId: (src && src.truck_id) || data.truck_id || (await DB.getState(this.TRUCK_KEY).catch(() => null)) || null,
       elements: JSON.parse(JSON.stringify((src && src.elements) || data.elements || [])),
       houseRows: JSON.parse(JSON.stringify((src && src.house_rows) || data.house_rows || [])),
+      // Per tree / bush / run (optional; they feed the product totals), when the house has a design or a crew map.
+      parts: JSON.parse(JSON.stringify((src && src.parts) || data.parts || [])),
       swaps: JSON.parse(JSON.stringify((src && src.swaps) || data.swaps || [])),
       open: null, adding: null, swapKind: null,
     };
@@ -250,8 +252,43 @@ const HolidayActual = {
             <button class="btn btn-primary" data-add-ok ${a.kind && (a.strand || a.pattern) ? '' : 'disabled'}>Add</button></div></div>`;
     };
 
+    // What the trees, bushes and runs add up to, per product total.
+    const partSums = () => {
+      const out = {};
+      state.parts.forEach(pt => pt.items.forEach(it => {
+        if (isBlank(it.qty)) return;
+        const o = out[it.product_uid] || (out[it.product_uid] = { qty: 0, labels: [] });
+        o.qty += it.qty;
+        if (!o.labels.includes(pt.label)) o.labels.push(pt.label);
+      }));
+      return out;
+    };
+    // A total is at least what its parts add up to: raise it (and count it as typed) when the parts pass it.
+    const feedTotals = () => {
+      const sums = partSums();
+      state.elements.forEach(e => {
+        const sum = sums[e.uid];
+        if (!sum) return;
+        const it = e.items[0];
+        if (isBlank(it.qty) || it.qty < sum.qty) {
+          it.qty = sum.qty; it.counted = true; e.ok = true;
+          if (state.from === 'truck') it.truck_qty = it.qty;
+        }
+      });
+    };
+    const partsHtml = () => {
+      if (!data.per_product || !state.parts.length) return '';
+      return `<div class="ohu-group">Per tree, bush, run <span class="ohu-plan">(optional: they add up into the totals)</span></div>
+        ${state.parts.map((pt, pi) => `<div class="oha-el open oha-part" data-part="${this._esc(pt.uid)}">
+          <div class="oha-el-head"><div class="oha-el-title">${pt.items.every(i => !isBlank(i.qty)) ? '&#10003; ' : ''}${this._esc(pt.label)}
+            ${pt.recount ? '<span class="oha-src">changed in the design: count again</span>' : ''}</div></div>
+          ${pt.items.map((it, ii) => `<div class="oha-item"><div class="oha-item-label">${this._esc(it.label)}${!first && pt.source === 'last_season' && it.planned !== undefined ? `<div class="ohu-plan">last year ${it.planned}</div>` : ''}</div>
+            ${stepper(`r="${pi}:${ii}"`, it.qty, it.label)}<span class="ohu-unit">${this._esc(it.unit || '')}</span></div>`).join('')}
+        </div>`).join('')}`;
+    };
     const render = () => {
       const n = state.elements.length;
+      const sums = partSums();
       const fromBtn = (k, t) => `<button class="oha-seg${state.from === k ? ' on' : ''}" data-from="${k}">${t}</button>`;
       $('.ohu-body').innerHTML = `
         <div class="oha-from"><div class="oha-from-title">Where did it come from?</div>
@@ -260,8 +297,10 @@ const HolidayActual = {
             : '<span class="ohu-plan">No trucks set up: the truck count won\'t change.</span>'}</div>` : ''}
         </div>
         ${n && !first && state.elements.some(e => lastYear(e) && !e.ok && !elBlank(e)) ? `<button class="btn btn-success btn-lg oha-all" data-all-ok>&#10003; Same as last year's count</button>` : ''}
-        ${state.elements.map(elementHtml).join('')}
+        ${data.per_product ? '<div class="ohu-group">Total material</div>' : ''}
+        ${state.elements.map((e, ei) => elementHtml(e, ei) + (sums[e.uid] ? `<div class="ohu-plan oha-fromparts">from ${this._esc(sums[e.uid].labels.join(', '))}: ${sums[e.uid].qty}</div>` : '')).join('')}
         ${addHtml()}
+        ${partsHtml()}
         ${houseHtml()}
         ${swapsHtml()}`;
       const save = $('[data-act="save"]');
@@ -294,6 +333,7 @@ const HolidayActual = {
           r.qty = v;
         }
         if (kind === 's') state.swaps[a].qty = v;
+        if (kind === 'r') state.parts[a].items[b].qty = typed ? v : null;
       });
     };
     // Each stepper knows what it holds (data-ref), so typed values are kept on every re-draw.
@@ -305,6 +345,7 @@ const HolidayActual = {
         else if (ds.t) holder.dataset.ref = 't:' + ds.t;
         else if (ds.h) holder.dataset.ref = 'h:' + ds.h;
         else if (ds.s) holder.dataset.ref = 's:' + ds.s;
+        else if (ds.r) holder.dataset.ref = 'r:' + ds.r;
       });
     };
     this._addName = (kind) => {
@@ -316,9 +357,17 @@ const HolidayActual = {
     };
     const redraw = () => { render(); tagSteppers(); };
     redraw();
+    // Opened from the map ("Count this tree"): straight to that tree's box.
+    if (opts && opts.focus) {
+      const card = [...overlay.querySelectorAll('.oha-part')].find(c => c.dataset.part === opts.focus);
+      if (card) { card.scrollIntoView({ block: 'center' }); const inp = card.querySelector('input'); if (inp) inp.focus(); }
+    }
 
     const stepOf = (it) => it.step || ((it.unit === 'ft' || (it.planned || it.qty || 0) >= 100) ? 10 : 1);
-    $('.ohu-body').addEventListener('change', () => setFromInputs());
+    $('.ohu-body').addEventListener('change', (e) => {
+      setFromInputs();
+      if (e.target.closest('.oha-part')) { feedTotals(); redraw(); }
+    });
     $('.ohu-body').addEventListener('input', (e) => {
       if (!e.target.matches('[data-swap-q]')) return;
       state.swapQ = e.target.value;
@@ -352,6 +401,10 @@ const HolidayActual = {
           const st = (r.unit === 'ft' || (r.qty || 0) >= 100) ? 10 : 1;
           r.qty = isBlank(r.qty) ? (sign > 0 ? st : 0) : Math.max(0, r.qty + sign * st);
           r.counted = true;
+        } else if (kind === 'r') {
+          const it = state.parts[a].items[b];
+          it.qty = isBlank(it.qty) ? (sign > 0 ? stepOf(it) : 0) : Math.max(0, it.qty + sign * stepOf(it));
+          feedTotals();
         } else if (kind === 's') {
           state.swaps[a].qty = Math.max(0, (state.swaps[a].qty || 0) + sign);
         }
@@ -435,7 +488,7 @@ const HolidayActual = {
           items: el.items.map(i => Object.assign({}, i, { from: el.kind === 'added' ? (el.from === 'kit' ? 'kit' : 'truck') : undefined,
             truck_qty: el.kind === 'added' ? (el.from === 'kit' ? 0 : (i.qty || 0))
               : state.from === 'kit' ? 0 : state.from === 'truck' ? (i.qty || 0) : Math.min(i.truck_qty || 0, i.qty || 0) })) })),
-        house_rows: state.houseRows, swaps: state.swaps.filter(s => s.qty > 0),
+        house_rows: state.houseRows, swaps: state.swaps.filter(s => s.qty > 0), parts: state.parts,
       };
     };
 
@@ -458,6 +511,9 @@ const HolidayActual = {
           App.showToast(`Count these first (0 if none): ${toCount.slice(0, 4).join(', ')}${toCount.length > 4 ? '…' : ''}. Or tap Finish later.`, 'error');
           return;
         }
+        const sums = partSums();
+        const under = state.elements.find(e => sums[e.uid] && !isBlank(e.items[0].qty) && e.items[0].qty < sums[e.uid].qty);
+        if (under) { App.showToast(`${under.label}: the total can't be less than its trees, bushes and runs (${sums[under.uid].qty}).`, 'error'); return; }
         const left = body.elements.filter(el => !el.ok).length;
         if (left && !window.confirm(`${left} not checked yet. Save them the same as last year?`)) return;
         if (needsTruck() && !body.truck_id && trucks.length) { App.showToast('Which truck did it come off? Tap it at the top.', 'error'); return; }
