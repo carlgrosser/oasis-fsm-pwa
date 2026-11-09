@@ -86,6 +86,22 @@ const HolidayActual = {
     if (draft) await DB.setState(this._draftKey(job.id), draft).catch(() => {});
     const res = await this._call(job.id, 'worker_used_later', [], { kind: 'later' });
     App.showToast(res.queued ? 'Finish later: saved on this phone (sent with signal)' : 'Finish later: the office sees it on its list. Count it tonight.', 'success');
+    // Show it on the job at once, online or not (round 4 F-13): the step reads "Finish later" straight away.
+    if (typeof HolidayFlow !== 'undefined') {
+      const data = HolidayFlow._data && HolidayFlow._data[job.id];
+      const step = data && data.steps.find(s => s.type === 'used');
+      if (step) {
+        Object.assign(step, { done: false, skipped: true, reason: 'Finish later' });
+        await DB.setState(HolidayFlow._key(job.id), data).catch(() => {});
+      }
+      if (res.queued && data) {
+        const top = document.getElementById('ohfTop');
+        if (top) HolidayFlow._renderTop(job, data, top);
+        HolidayFlow.renderFinish(job);
+      } else {
+        HolidayFlow.refresh(job).catch(() => {});
+      }
+    }
     return res;
   },
 
@@ -128,7 +144,11 @@ const HolidayActual = {
     $('.ohu-sub').innerHTML = sub;
 
     const checked = () => state.elements.filter(e => e.ok).length;
-    const truckPart = () => state.from === 'truck' || (state.from === 'mix' && state.elements.some(e => e.items.some(i => (i.truck_qty || 0) > 0)));
+    const truckPart = () => state.from === 'truck' || state.elements.some(e => e.kind === 'added' && e.from !== 'kit')
+      || (state.from === 'mix' && state.elements.some(e => e.items.some(i => (i.truck_qty || 0) > 0)));
+    // "Some of each" (round 4 F-05): from the kit, except what is above last year's count, which came off the truck.
+    const mixTruck = (e, i) => (e.kind === 'added' ? (e.from === 'kit' ? 0 : (i.qty || 0))
+      : lastYear(e) ? Math.max(0, (i.qty || 0) - (i.planned || 0)) : 0);
     const needsTruck = () => truckPart() || state.swaps.length > 0;
     // recount: the design changed this element since its last count, so it is counted again (no last-year figure).
     const sourceBadge = (e) => (e.recount ? 'changed in the design: count again' : { last_season: 'last year', count: 'count it', saved: 'saved' }[e.source] || '');
@@ -148,11 +168,12 @@ const HolidayActual = {
               ${sourceBadge(e) ? `<span class="oha-src">${sourceBadge(e)}</span>` : ''}</div>
             ${editing ? '' : e.ok ? `<button class="btn btn-sm btn-ghost" data-el-edit="${ei}">Change</button>`
               : (first || elBlank(e) || !lastYear(e)) ? `<button class="btn btn-primary oha-asplanned" data-el-edit="${ei}">Count it</button>`
-                : `<button class="btn btn-success oha-asplanned" data-el-ok="${ei}">&#10003; Same as last year</button>`}</div>
+                : `<span class="oha-elbtns"><button class="btn btn-sm btn-ghost" data-el-edit="${ei}">Change</button><button class="btn btn-success oha-asplanned" data-el-ok="${ei}">&#10003; Same as last year</button></span>`}</div>
+          ${e.kind === 'added' ? `<div class="oha-chips oha-addfrom">Came: <button class="ohu-chip${e.from !== 'kit' ? ' on' : ''}" data-el-from="${ei}:truck">off the truck</button><button class="ohu-chip${e.from === 'kit' ? ' on' : ''}" data-el-from="${ei}:kit">from the kit</button></div>` : ''}
           ${editing ? e.items.map((i, ii) => `<div class="oha-item">
               <div class="oha-item-label">${this._esc(i.label)}${!first && lastYear(e) && i.planned !== undefined ? `<div class="ohu-plan">last year ${i.planned} ${this._esc(i.unit || '')}</div>` : ''}</div>
               ${stepper(`q="${ei}:${ii}"`, i.qty, i.label)}<span class="ohu-unit">${this._esc(i.unit || '')}</span>
-              ${state.from === 'mix' ? `<div class="oha-truckrow">off the truck ${stepper(`t="${ei}:${ii}"`, i.truck_qty, 'off the truck')}</div>` : ''}
+              ${state.from === 'mix' && e.kind !== 'added' ? `<div class="oha-truckrow">off the truck ${stepper(`t="${ei}:${ii}"`, i.truck_qty, 'off the truck')}</div>` : ''}
             </div>`).join('') + `<div class="oha-el-foot">${e.kind === 'added' ? `<button class="btn btn-sm btn-ghost" data-el-del="${ei}">Remove</button>` : ''}
               <button class="btn btn-primary" data-el-done="${ei}">Done</button></div>`
             : `<div class="oha-el-items${diff ? ' diff' : ''}">${e.items.map(i => itemLine(i, e)).join('<br>') || '<span class="ohu-plan">Nothing listed</span>'}</div>`}
@@ -176,10 +197,15 @@ const HolidayActual = {
       let html = `<div class="ohu-group">Replaced anything? <span class="ohu-plan">(optional)</span></div><div class="oha-chips">
         ${Object.keys(this.SWAP_TITLES).map(k => `<button class="ohu-chip${state.swapKind === k ? ' on' : ''}" data-swap-kind="${k}">${this.SWAP_TITLES[k]}</button>`).join('')}</div>`;
       if (state.swapKind) {
-        const list = items[state.swapKind] || [];
+        // This house's own items first (its colours), then every other one: search or "More…" (round 4 F-06).
+        const all = items[state.swapKind] || [];
+        const q = (state.swapQ || '').toLowerCase();
+        const list = q ? all.filter(p => p.name.toLowerCase().includes(q)) : state.swapMore ? all : all.slice(0, 8);
         html += `<div class="oha-swappick"><div class="ohu-plan">${this.SWAP_HELP[state.swapKind]}</div>
-            ${list.length ? list.slice(0, 8).map(p => `<button class="ohu-chip" data-swap-add="${p.id}">${this._esc(p.name)}</button>`).join('')
-              : '<div class="ohu-plan">No stock items of this kind.</div>'}</div>`;
+            ${all.length > 8 ? `<input class="ohu-other" type="search" placeholder="Search, e.g. warm" value="${this._esc(state.swapQ || '')}" data-swap-q>` : ''}
+            ${list.length ? list.map(p => `<button class="ohu-chip${p.house ? ' on' : ''}" data-swap-add="${p.id}">${this._esc(p.name)}</button>`).join('')
+              : `<div class="ohu-plan">${q ? 'Nothing found.' : 'No stock items of this kind.'}</div>`}
+            ${!q && !state.swapMore && all.length > 8 ? `<button class="btn btn-sm btn-ghost" data-swap-more>More&hellip; (${all.length - 8})</button>` : ''}</div>`;
       }
       html += state.swaps.map((s, si) => `<div class="oha-item"><div class="oha-item-label">${this.SWAP_TITLES[s.kind] || ''}: ${this._esc(s.label)}</div>
           ${stepper(`s="${si}"`, s.qty, s.label)}<button class="btn btn-sm btn-ghost" data-swap-del="${si}" aria-label="Remove">&#10005;</button></div>`).join('');
@@ -199,6 +225,8 @@ const HolidayActual = {
           ${a.kind ? `<div class="oha-item-label" style="margin-top:6px;">Lights on it</div><div class="oha-chips">
               ${strands.map(s => `<button class="ohu-chip${a.strand === s.id ? ' on' : ''}" data-add-strand="${s.id}">${this._esc(s.name)}</button>`).join('')}
               ${patterns.slice(0, 6).map(p => `<button class="ohu-chip${a.pattern === p.id ? ' on' : ''}" data-add-pattern="${p.id}">C9 ${this._esc(p.name)}</button>`).join('')}</div>` : ''}
+          ${a.kind ? `<div class="oha-item-label" style="margin-top:6px;">Name</div><input class="ohu-other" type="text" data-add-name value="${this._esc(a.name || this._addName(a.kind))}" placeholder="e.g. Tree 3">
+            <div class="oha-chips">It came: <button class="ohu-chip${a.from !== 'kit' ? ' on' : ''}" data-add-from="truck">off the truck</button><button class="ohu-chip${a.from === 'kit' ? ' on' : ''}" data-add-from="kit">from the kit</button></div>` : ''}
           <div class="oha-el-foot"><button class="btn btn-ghost" data-add-cancel>Cancel</button>
             <button class="btn btn-primary" data-add-ok ${a.kind && (a.strand || a.pattern) ? '' : 'disabled'}>Add</button></div></div>`;
     };
@@ -234,9 +262,12 @@ const HolidayActual = {
           const it = state.elements[a].items[b];
           if (!typed) return;
           if (isBlank(it.qty) || it.qty !== v) it.counted = true;
-          it.qty = v; if (state.from === 'truck') it.truck_qty = v; if (it.truck_qty > it.qty) it.truck_qty = it.qty;
+          const changed = it.qty !== v;
+          it.qty = v; if (state.from === 'truck') it.truck_qty = v;
+          if (state.from === 'mix' && changed && !it.truckSet) it.truck_qty = mixTruck(state.elements[a], it);
+          if (it.truck_qty > it.qty) it.truck_qty = it.qty;
         }
-        if (kind === 't') { const it = state.elements[a].items[b]; it.truck_qty = Math.min(v, it.qty || 0); }
+        if (kind === 't') { const it = state.elements[a].items[b]; if (it.truck_qty !== Math.min(v, it.qty || 0)) it.truckSet = true; it.truck_qty = Math.min(v, it.qty || 0); }
         if (kind === 'h') {
           const r = state.houseRows[a];
           if (!typed) return;
@@ -257,11 +288,26 @@ const HolidayActual = {
         else if (ds.s) holder.dataset.ref = 's:' + ds.s;
       });
     };
+    this._addName = (kind) => {
+      const label = ((data.add_kinds || []).find(k => k.key === kind) || {}).label || 'Item';
+      // Tree 3 when the house already has Tree 1 and Tree 2 (design T1, T2 count too).
+      const prefix = label.charAt(0).toUpperCase();
+      const n = state.elements.filter(el => (el.label || '').startsWith(label) || new RegExp('^' + prefix + '\\d').test(el.label || '')).length;
+      return `${label} ${n + 1}`;
+    };
     const redraw = () => { render(); tagSteppers(); };
     redraw();
 
     const stepOf = (it) => it.step || ((it.unit === 'ft' || (it.planned || it.qty || 0) >= 100) ? 10 : 1);
     $('.ohu-body').addEventListener('change', () => setFromInputs());
+    $('.ohu-body').addEventListener('input', (e) => {
+      if (!e.target.matches('[data-swap-q]')) return;
+      state.swapQ = e.target.value;
+      const pos = e.target.selectionStart;
+      redraw();
+      const box = overlay.querySelector('[data-swap-q]');
+      if (box) { box.focus(); box.setSelectionRange(pos, pos); }
+    });
     $('.ohu-body').addEventListener('click', async (e) => {
       const t = e.target.closest('button');
       if (!t) return;
@@ -275,10 +321,12 @@ const HolidayActual = {
           it.qty = isBlank(it.qty) ? (sign > 0 ? stepOf(it) : 0) : Math.max(0, it.qty + sign * stepOf(it));
           it.counted = true;
           if (state.from === 'truck') it.truck_qty = it.qty;
+          if (state.from === 'mix' && !it.truckSet) it.truck_qty = mixTruck(state.elements[a], it);
           if (it.truck_qty > it.qty) it.truck_qty = it.qty;
         } else if (kind === 't') {
           const it = state.elements[a].items[b];
           it.truck_qty = Math.min(it.qty || 0, Math.max(0, (it.truck_qty || 0) + sign * stepOf(it)));
+          it.truckSet = true;
         } else if (kind === 'h') {
           const r = state.houseRows[a];
           const st = (r.unit === 'ft' || (r.qty || 0) >= 100) ? 10 : 1;
@@ -295,6 +343,7 @@ const HolidayActual = {
         state.elements.forEach(el => el.items.forEach(i => {
           if (state.from === 'truck') i.truck_qty = i.qty || 0;
           if (state.from === 'kit') i.truck_qty = 0;
+          if (state.from === 'mix') { i.truck_qty = mixTruck(el, i); i.truckSet = false; }
         }));
         return redraw();
       }
@@ -312,6 +361,7 @@ const HolidayActual = {
         if (elBlank(el)) { App.showToast('Type a number for each one (0 if none)', 'error'); return; }
         el.ok = true; state.open = null; return redraw();
       }
+      if (t.dataset.elFrom) { const [ei, f] = t.dataset.elFrom.split(':'); state.elements[ei].from = f; return redraw(); }
       if (t.dataset.elDel) { state.elements.splice(parseInt(t.dataset.elDel, 10), 1); state.open = null; return redraw(); }
       if (t.hasAttribute('data-house-edit')) { state.open = 'house'; return redraw(); }
       if (t.hasAttribute('data-house-done')) {
@@ -320,18 +370,21 @@ const HolidayActual = {
       }
       if (t.hasAttribute('data-add-el')) { state.adding = {}; return redraw(); }
       if (t.hasAttribute('data-add-cancel')) { state.adding = null; return redraw(); }
-      if (t.dataset.addKind) { state.adding.kind = t.dataset.addKind; return redraw(); }
-      if (t.dataset.addStrand) { state.adding.strand = parseInt(t.dataset.addStrand, 10); state.adding.pattern = null; return redraw(); }
-      if (t.dataset.addPattern) { state.adding.pattern = parseInt(t.dataset.addPattern, 10); state.adding.strand = null; return redraw(); }
+      const keepName = () => { const n = overlay.querySelector('[data-add-name]'); if (n && state.adding) state.adding.name = n.value; };
+      if (t.dataset.addKind) { keepName(); state.adding.kind = t.dataset.addKind; state.adding.name = null; return redraw(); }
+      if (t.dataset.addFrom) { keepName(); state.adding.from = t.dataset.addFrom; return redraw(); }
+      if (t.dataset.addStrand) { keepName(); state.adding.strand = parseInt(t.dataset.addStrand, 10); state.adding.pattern = null; return redraw(); }
+      if (t.dataset.addPattern) { keepName(); state.adding.pattern = parseInt(t.dataset.addPattern, 10); state.adding.strand = null; return redraw(); }
       if (t.hasAttribute('data-add-ok')) {
         const a = state.adding;
-        const kindLabel = ((data.add_kinds || []).find(k => k.key === a.kind) || {}).label || 'Item';
-        const same = state.elements.filter(el => (el.label || '').startsWith(kindLabel)).length;
+        keepName();
         const item = a.strand
           ? { group: 'strand', label: ((data.catalog.strand_types || []).find(s => s.id === a.strand) || {}).name || 'Mini strands', strand_type_id: a.strand, qty: null, counted: false, unit: 'strands', step: 1 }
           : { group: 'bulb', label: 'C9 · ' + (((data.patterns || []).find(p => p.id === a.pattern) || {}).name || ''), bulb_type_id: ((data.catalog.bulb_types || [])[0] || {}).id || false, pattern_id: a.pattern, qty: null, counted: false, unit: 'bulbs', step: 25 };
         item.truck_qty = 0;
-        state.elements.push({ uid: this._uid(), label: `${kindLabel} ${same + 1}`, kind: 'added', source: '', items: [item], ok: false });
+        // Added on site: off the truck unless they say the kit (round 4 F-03); named as they typed ("Tree 3").
+        state.elements.push({ uid: this._uid(), label: (a.name || '').trim() || this._addName(a.kind), kind: 'added', source: '',
+          from: a.from === 'kit' ? 'kit' : 'truck', items: [item], ok: false });
         state.adding = null;
         state.open = state.elements.length - 1;
         redraw();
@@ -339,13 +392,14 @@ const HolidayActual = {
         if (inp) { inp.focus(); inp.select(); }
         return;
       }
-      if (t.dataset.swapKind) { state.swapKind = state.swapKind === t.dataset.swapKind ? null : t.dataset.swapKind; return redraw(); }
+      if (t.dataset.swapKind) { state.swapKind = state.swapKind === t.dataset.swapKind ? null : t.dataset.swapKind; state.swapQ = ''; state.swapMore = false; return redraw(); }
+      if (t.hasAttribute('data-swap-more')) { state.swapMore = true; return redraw(); }
       if (t.dataset.swapAdd) {
         const list = (data.swap_items || {})[state.swapKind] || [];
         const p = list.find(x => String(x.id) === t.dataset.swapAdd);
         const found = state.swaps.find(s => s.kind === state.swapKind && s.product_id === p.id);
         if (found) found.qty += 1; else state.swaps.push({ kind: state.swapKind, product_id: p.id, label: p.name, qty: 1 });
-        state.swapKind = null;
+        state.swapKind = null; state.swapQ = ''; state.swapMore = false;
         return redraw();
       }
       if (t.dataset.swapDel) { state.swaps.splice(parseInt(t.dataset.swapDel, 10), 1); return redraw(); }
@@ -357,7 +411,10 @@ const HolidayActual = {
         from: state.from, truck_id: state.truckId || false,
         elements: state.elements.map(el => ({ uid: el.uid, label: el.label, kind: el.kind, run_id: el.run_id || false,
           feature_id: el.feature_id || false, source: el.source, ok: el.ok,
-          items: el.items.map(i => Object.assign({}, i, { truck_qty: state.from === 'kit' ? 0 : state.from === 'truck' ? (i.qty || 0) : Math.min(i.truck_qty || 0, i.qty || 0) })) })),
+          from: el.from || false,
+          items: el.items.map(i => Object.assign({}, i, { from: el.kind === 'added' ? (el.from === 'kit' ? 'kit' : 'truck') : undefined,
+            truck_qty: el.kind === 'added' ? (el.from === 'kit' ? 0 : (i.qty || 0))
+              : state.from === 'kit' ? 0 : state.from === 'truck' ? (i.qty || 0) : Math.min(i.truck_qty || 0, i.qty || 0) })) })),
         house_rows: state.houseRows, swaps: state.swaps.filter(s => s.qty > 0),
       };
     };
@@ -388,7 +445,10 @@ const HolidayActual = {
         try {
           const res = await this._call(job.id, 'worker_save_actual', [body], { kind: 'count', payload: body });
           await DB.setState(this._draftKey(job.id), res.queued ? body : null).catch(() => {});
-          App.showToast(res.queued ? 'Saved on this phone: it goes to the office when there\'s signal' : 'Count saved', 'success');
+          // A truck that didn't have it all is marked for a count: say so (round 4 F-12).
+          const flagged = (res.notes || []).find(n => /marked for a count/.test(n));
+          App.showToast(res.queued ? 'Saved on this phone: it goes to the office when there\'s signal'
+            : flagged ? `Count saved. ${flagged}` : 'Count saved', flagged ? 'info' : 'success', flagged ? 8000 : undefined);
           close();
         } catch (err) {
           App.showToast('Not saved: ' + (err.message || err), 'error');

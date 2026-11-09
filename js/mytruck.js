@@ -113,7 +113,8 @@ const MyTruck = {
         ${rows.map((r, i) => `<button class="omt-row${r.short > 0 ? ' short' : r.on_list ? ' ok' : ''}" data-row="${data.rows.indexOf(r)}">
             <span class="omt-name">${this._esc(r.name)}</span>
             <span class="omt-qty">${this._esc(r.has_text || r.has)}${r.should_text ? `<span class="omt-should">should carry ${this._esc(r.should_text)}</span>` : ''}
-              ${r.short > 0 ? `<span class="omt-short">short ${this._esc(r.short_text)}</span>` : ''}</span></button>`).join('')}
+              ${r.short > 0 ? `<span class="omt-short">short ${this._esc(r.short_text)}</span>` : ''}
+              ${r.waiting_text ? `<span class="omt-should">${this._esc(r.waiting_text)}</span>` : ''}</span></button>`).join('')}
         ${data.truck_id ? '<button class="btn oha-add-btn" data-other>&#10133; Something not on the list</button>' : ''}
         <div class="ohu-plan" style="margin-top:10px;">Tap anything used up or missing.</div>`;
     };

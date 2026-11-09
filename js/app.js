@@ -831,7 +831,7 @@ const App = {
   /**
    * Show a toast notification.
    */
-  showToast(message, type) {
+  showToast(message, type, ms) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
 
@@ -844,7 +844,7 @@ const App = {
       toast.style.opacity = '0';
       toast.style.transition = 'opacity 0.3s';
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, ms || 3000);
   },
 };
 
