@@ -146,7 +146,7 @@ const HolidayActual = {
             : 'From last year\'s count: tap Same as last year, or change what\'s different. Anything new or changed in the design must be counted.';
     $('.ohu-sub').innerHTML = sub;
 
-    const checked = () => state.elements.filter(e => e.ok).length;
+    const checked = () => state.elements.filter(e => e.ok && !e.hidden).length;
     const truckPart = () => state.from === 'truck' || state.elements.some(e => e.kind === 'added' && e.from !== 'kit')
       || (state.from === 'mix' && state.elements.some(e => e.items.some(i => (i.truck_qty || 0) > 0)));
     // "Some of each" (round 4 F-05): from the kit, except what is above last year's count, which came off the truck.
@@ -181,6 +181,7 @@ const HolidayActual = {
         </div>`;
     };
     const elementHtml = (e, ei) => {
+      if (e.hidden) return '';  // a takedown: what the install counted stays as it was
       if (data.per_product) return productHtml(e, ei);
       const editing = state.open === ei;
       const diff = lastYear(e) && e.items.some(i => i.planned !== undefined && i.qty !== i.planned);
@@ -202,12 +203,12 @@ const HolidayActual = {
     };
 
     const houseHtml = () => {
-      if (!state.houseRows.length) return '';
+      if (!state.houseRows.some(r => !r.hidden)) return '';
       const open = data.per_product || state.open === 'house';  // one-line-per-product screen: always open
       const blank = state.houseRows.some(r => isBlank(r.qty));
       return `<div class="oha-el${blank ? '' : ' ok'}${open ? ' open' : ''}"><div class="oha-el-head"><div class="oha-el-title">Clips, cords &amp; timers</div>
           ${open ? '' : blank ? '<button class="btn btn-primary" data-house-edit>Count it</button>' : '<button class="btn btn-sm btn-ghost" data-house-edit>Change</button>'}</div>
-          ${open ? state.houseRows.map((r, ri) => `<div class="oha-item"><div class="oha-item-label">${this._esc(r.label)}${r.planned && !first && !r.blank ? `<div class="ohu-plan">last year ${r.planned}</div>` : ''}</div>
+          ${open ? state.houseRows.map((r, ri) => r.hidden ? '' : `<div class="oha-item"><div class="oha-item-label">${this._esc(r.label)}${r.planned && !first && !r.blank ? `<div class="ohu-plan">last year ${r.planned}</div>` : ''}</div>
               ${stepper(`h="${ri}"`, r.qty, r.label)}<span class="ohu-unit">${this._esc(r.unit || '')}</span></div>`).join('')
               + (data.per_product ? '' : '<div class="oha-el-foot"><button class="btn btn-primary" data-house-done>Done</button></div>')
             : `<div class="oha-el-items">${state.houseRows.map(r => `${this._esc(r.label)} ${isBlank(r.qty) ? '<b class="oha-tocount">not counted</b>' : r.qty}`).join(' · ')}</div>`}</div>`;
@@ -277,9 +278,9 @@ const HolidayActual = {
       });
     };
     const partsHtml = () => {
-      if (!data.per_product || !state.parts.length) return '';
+      if (!data.per_product || !state.parts.some(p => !p.hidden)) return '';
       return `<div class="ohu-group">Per tree, bush, run <span class="ohu-plan">(optional: they add up into the totals)</span></div>
-        ${state.parts.map((pt, pi) => `<div class="oha-el open oha-part" data-part="${this._esc(pt.uid)}">
+        ${state.parts.map((pt, pi) => pt.hidden ? '' : `<div class="oha-el open oha-part" data-part="${this._esc(pt.uid)}">
           <div class="oha-el-head"><div class="oha-el-title">${pt.items.every(i => !isBlank(i.qty)) ? '&#10003; ' : ''}${this._esc(pt.label)}
             ${pt.recount ? '<span class="oha-src">changed in the design: count again</span>' : ''}</div></div>
           ${pt.items.map((it, ii) => `<div class="oha-item"><div class="oha-item-label">${this._esc(it.label)}${!first && pt.source === 'last_season' && it.planned !== undefined ? `<div class="ohu-plan">last year ${it.planned}</div>` : ''}</div>
@@ -287,11 +288,12 @@ const HolidayActual = {
         </div>`).join('')}`;
     };
     const render = () => {
-      const n = state.elements.length;
+      const n = state.elements.filter(e => !e.hidden).length;
       const sums = partSums();
       const fromBtn = (k, t) => `<button class="oha-seg${state.from === k ? ' on' : ''}" data-from="${k}">${t}</button>`;
       $('.ohu-body').innerHTML = `
-        <div class="oha-from"><div class="oha-from-title">Where did it come from?</div>
+        ${data.takedown ? `<div class="ohu-plan" style="margin:6px 0 10px;">The install${data.install ? ' (' + this._esc(data.install) + ')' : ''} wasn't counted for these: count what comes down.</div>` : ''}
+        <div class="oha-from"${data.takedown ? ' hidden' : ''}><div class="oha-from-title">Where did it come from?</div>
           <div class="oha-segs">${fromBtn('kit', 'All from the kit')}${fromBtn('truck', 'All from the truck')}${fromBtn('mix', 'Some of each')}</div>
           ${needsTruck() ? `<div class="oha-trucks">${trucks.length ? 'Truck: ' + trucks.map(t => `<button class="ohu-chip${state.truckId === t.id ? ' on' : ''}" data-truck="${t.id}">${this._esc(t.name)}</button>`).join('')
             : '<span class="ohu-plan">No trucks set up: the truck count won\'t change.</span>'}</div>` : ''}
@@ -506,7 +508,7 @@ const HolidayActual = {
       if (act.dataset.act === 'save') {
         const body = payload();
         // Blank boxes (and, on a first count, anything not counted) must be counted first.
-        const toCount = state.elements.filter(el => elBlank(el) || (first && !el.ok)).map(el => el.label);
+        const toCount = state.elements.filter(el => !el.hidden && (elBlank(el) || (first && !el.ok))).map(el => el.label);
         if (state.houseRows.some(r => isBlank(r.qty))) toCount.push('Clips, cords & timers');
         if (toCount.length) {
           App.showToast(`Count these first (0 if none): ${toCount.slice(0, 4).join(', ')}${toCount.length > 4 ? '…' : ''}. Or tap Finish later.`, 'error');
@@ -515,7 +517,7 @@ const HolidayActual = {
         const sums = partSums();
         const under = state.elements.find(e => sums[e.uid] && !isBlank(e.items[0].qty) && e.items[0].qty < sums[e.uid].qty);
         if (under) { App.showToast(`${under.label}: the total can't be less than its trees, bushes and runs (${sums[under.uid].qty}).`, 'error'); return; }
-        const left = body.elements.filter(el => !el.ok).length;
+        const left = state.elements.filter(el => !el.ok && !el.hidden).length;
         if (left && !window.confirm(`${left} not checked yet. Save them the same as last year?`)) return;
         if (needsTruck() && !body.truck_id && trucks.length) { App.showToast('Which truck did it come off? Tap it at the top.', 'error'); return; }
         act.disabled = true;

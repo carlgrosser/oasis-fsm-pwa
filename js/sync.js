@@ -7,7 +7,7 @@ const Sync = {
   _isSyncing: false,
   _pendingCount: 0,
   _refreshTimer: null,
-  OTHER_QUEUES: ['oha_pending', 'ohu_pending', 'ohf_pending', 'omt_pending', 'damage_pending', 'comeback_pending', 'review_pending'],
+  OTHER_QUEUES: ['otc_pending', 'oha_pending', 'ohu_pending', 'ohf_pending', 'omt_pending', 'damage_pending', 'comeback_pending', 'review_pending'],
 
   /**
    * Initialize sync — set up online/offline listeners and auto-refresh.

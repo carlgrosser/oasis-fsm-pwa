@@ -228,6 +228,7 @@ const HolidayFlow = {
       tick: '&#10003; Done', photos_before: '&#128247; Take photos', photos_after: '&#128247; Take photos',
       used: '&#9989; Count', map: '&#128506;&#65039; Open the map', bill: '&#128179; OK to bill',
       rating: '&#11088; Rate', _start: '&#9654; Start install', _close: '&#10003; Close Job',
+      takedown_check: '&#10003; Check strands',
     }[step.type] || 'Do it';
   },
 
@@ -340,6 +341,7 @@ const HolidayFlow = {
       return;
     }
     if (type === 'used' && typeof HolidayUsed !== 'undefined') return HolidayUsed.open(job, after);
+    if (type === 'takedown_check' && typeof TakedownCheck !== 'undefined') return TakedownCheck.open(job, after);
     if (type === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job, after);
     if (type === 'bill') return this.okToBill(job);
   },

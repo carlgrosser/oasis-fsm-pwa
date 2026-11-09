@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fsm-pwa-v145';
+const CACHE_NAME = 'fsm-pwa-v146';
 const STATIC_ASSETS = [
   './',
   'index.html',
@@ -38,6 +38,7 @@ const STATIC_ASSETS = [
   'js/mytruck.js',
   'js/holidaymap.js',
   'js/elementphotos.js',
+  'js/takedowncheck.js',
   'js/reviews.js',
   'js/damage.js',
   'js/comeback.js',
