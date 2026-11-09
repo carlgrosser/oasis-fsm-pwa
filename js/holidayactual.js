@@ -105,6 +105,45 @@ const HolidayActual = {
     return res;
   },
 
+  /** "Truck 1 has 0. Where did the other 14 come from?" per item. Resolves [{product_id, source, truck_id, qty}],
+   *  or null (back to the count). */
+  _askShort(shorts, otherTrucks) {
+    return new Promise((resolve) => {
+      const answers = shorts.map(() => null);
+      const box = document.createElement('div');
+      box.className = 'modal-overlay';
+      const draw = () => {
+        box.innerHTML = `<div class="modal" style="max-width:460px;"><div class="modal-header"><h3>The truck didn't have it all</h3></div>
+          <div class="modal-body">${shorts.map((sh, i) => {
+            const rest = Math.round((sh.need - sh.have) * 100) / 100;
+            const opt = (key, label) => `<button class="ohu-chip${answers[i] === key ? ' on' : ''}" data-i="${i}" data-a="${key}">${label}</button>`;
+            return `<div style="margin-bottom:12px;"><b>${this._esc(sh.truck)} has ${sh.have} ${this._esc(sh.label)}.</b>
+              Where did the other ${rest} come from?<div class="oha-chips">${opt('kit', 'The kit')}${otherTrucks.map(t => opt('truck:' + t.id, this._esc(t.name))).join('')}
+              ${opt('garage', 'The garage')}${opt('unsure', 'Not sure')}</div></div>`;
+          }).join('')}</div>
+          <div class="modal-footer"><button class="btn btn-secondary" data-back>Back</button>
+            <button class="btn btn-primary" data-ok ${answers.every(a => a) ? '' : 'disabled'}>Save</button></div></div>`;
+      };
+      draw();
+      document.body.appendChild(box);
+      box.addEventListener('click', (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+        if (t.hasAttribute('data-back')) { box.remove(); resolve(null); return; }
+        if (t.dataset.a) { answers[+t.dataset.i] = t.dataset.a; draw(); return; }
+        if (t.hasAttribute('data-ok')) {
+          box.remove();
+          resolve(shorts.map((sh, i) => {
+            const qty = Math.round((sh.need - sh.have) * 100) / 100;
+            const a = answers[i];
+            if (a.startsWith('truck:')) return { product_id: sh.product_id, source: 'truck', truck_id: parseInt(a.slice(6), 10), qty };
+            return { product_id: sh.product_id, source: a === 'unsure' ? 'unsure' : a, qty };
+          }));
+        }
+      });
+    });
+  },
+
   // ------------------------------------------------------------------ the screen
   async render(job, data, onClose, overlay, opts) {
     const $ = (s) => overlay.querySelector(s);
@@ -533,6 +572,15 @@ const HolidayActual = {
         if (left && !window.confirm(`${left} not checked yet. Save them the same as last year?`)) return;
         if (needsTruck() && !body.truck_id && trucks.length) { App.showToast('Which truck did it come off? Tap it at the top.', 'error'); return; }
         act.disabled = true;
+        // More off the truck than it has? Ask where the rest came from before saving (round 5 F-07).
+        if (navigator.onLine && body.truck_id && needsTruck()) {
+          const check = await OdooAPI.callKw('fsm.order', 'worker_check_truck', [job.id, body], {}).catch(() => null);
+          if (check && check.short && check.short.length) {
+            const sources = await this._askShort(check.short, trucks.filter(t => t.id !== body.truck_id));
+            if (!sources) { act.disabled = false; return; }
+            body.short_sources = sources;
+          }
+        }
         try {
           const res = await this._call(job.id, 'worker_save_actual', [body], { kind: 'count', payload: body });
           await DB.setState(this._draftKey(job.id), res.queued ? body : null).catch(() => {});
