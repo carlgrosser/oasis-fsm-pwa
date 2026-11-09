@@ -2029,6 +2029,8 @@ const Jobs = {
     // its count is Actual Used.
     const company = Array.isArray(job.company_id) ? job.company_id[0] : job.company_id;
     if (company === CONFIG.HOLIDAY_COMPANY_ID && typeof HolidayUsed !== 'undefined') {
+      // A takedown counts only what the install missed, in its own steps (round 5 F-03): no install count here.
+      if (job.ohl_job_kind === 'takedown') return onComplete();
       return this._showHolidayCountModal(job, onComplete);
     }
     const overlay = document.createElement('div');

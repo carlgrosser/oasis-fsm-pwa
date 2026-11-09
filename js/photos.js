@@ -601,6 +601,10 @@ const Photos = {
    */
   async savePhoto(jobId, data, thumbnail, category, filename, takenAt, picked) {
     const pos = this._freshPos();
+    // Taken from a tree, bush or run on the map: tied to it right here, on the phone (round 5 F-02), whatever
+    // happens to the photo sheet or the Drive upload afterwards.
+    const target = this.elementTarget && this.elementTarget.jobId === jobId && Date.now() < (this.elementTarget.until || 0)
+      ? this.elementTarget : null;
     const photo = {
       temp_id: 'photo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       job_id: jobId,
@@ -616,8 +620,10 @@ const Photos = {
       accuracy: pos ? pos.accuracy : null,
       synced: 0,
     };
+    if (target) Object.assign(photo, { element_uid: target.uid, element_label: target.label, element_sent: 0 });
 
     await DB.put('photos', photo);
+    if (target && typeof ElementPhotos !== 'undefined') ElementPhotos.flush().catch(() => {});
 
     // Register background sync so photo uploads when connectivity returns
     if ('serviceWorker' in navigator && 'SyncManager' in window) {

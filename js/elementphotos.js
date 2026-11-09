@@ -38,6 +38,7 @@ const ElementPhotos = {
   async flush() {
     if (!navigator.onLine) return;
     const all = await DB.getAll('photos').catch(() => []);
+    // Sent now with the phone's thumbnail; again once uploaded (Drive link, or the Odoo copy when Drive is down).
     for (const p of all.filter(x => x.element_uid && (!x.element_sent || (x.synced && x.element_sent !== 'synced')))) {
       try {
         await OdooAPI.callKw('fsm.order', 'worker_photo_element', [p.job_id, {
@@ -60,10 +61,15 @@ const ElementPhotos = {
 
   /** Take photos now and assign them all to this element. */
   async takeFor(job, element) {
+    // Every photo saved while this is set belongs to the element (Photos.savePhoto stamps it), however the photo
+    // sheet is closed.
+    // Kept until the element's sheet closes (the camera / picker may resolve before the last photo is saved).
+    Photos.elementTarget = { jobId: job.id, uid: element.uid, label: element.label, until: Date.now() + 15 * 60000 };
     const since = Date.now();
     await Photos.capturePhoto(job.id, 'after');
-    const taken = (await Photos.getPhotosForJob(job.id).catch(() => [])).filter(p => new Date(p.timestamp).getTime() >= since);
-    for (const p of taken) await this.assign(p, element);
+    const taken = (await Photos.getPhotosForJob(job.id).catch(() => [])).filter(p => p.element_uid === element.uid
+      && new Date(p.timestamp).getTime() >= since);
+    this.flush().catch(() => {});
     return taken.length;
   },
 
@@ -76,7 +82,7 @@ const ElementPhotos = {
       <div class="ohu-body"><div class="loading"><div class="spinner"></div></div></div>`;
     document.body.appendChild(overlay);
     const body = overlay.querySelector('.ohu-body');
-    const close = () => { overlay.remove(); if (onClose) onClose(); };
+    const close = () => { Photos.elementTarget = null; overlay.remove(); if (onClose) onClose(); };
     const draw = async () => {
       let seasons = [];
       if (navigator.onLine) seasons = await OdooAPI.callKw('fsm.order', 'worker_element_photos', [job.id, element.uid], {}).catch(() => []);

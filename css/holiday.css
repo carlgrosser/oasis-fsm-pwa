@@ -69,6 +69,7 @@
   background: #fff3e0; color: #e65100; font-weight: 700; font-size: 14px; padding: 8px 14px; border-radius: 18px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .35); touch-action: manipulation; }
 .ohm-pill[hidden] { display: none; }
+.ohm-pill-photos { top: auto; bottom: 14px; background: #1565c0; color: #fff; }
 .ohm-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 10px; margin-bottom: 6px;
   border: 1px solid var(--border-color, #ccc); border-radius: 10px; background: var(--bg-secondary, #f6f6f6);
   color: inherit; font-size: 15px; text-align: left; }

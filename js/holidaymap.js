@@ -375,6 +375,24 @@ const HolidayMap = {
       pill.innerHTML = `&#9888;&#65039; ${n} unassigned`;
     };
     pill.addEventListener('click', () => itemsList());
+    // Still to photograph this season (round 5 F-02): a strip on the map; tap it for the list, then a tree's sheet.
+    const shotPill = document.createElement('button');
+    shotPill.className = 'ohm-pill ohm-pill-photos';
+    shotPill.hidden = true;
+    $('.ohm-map').appendChild(shotPill);
+    const refreshPhotos = async () => {
+      if (typeof ElementPhotos === 'undefined' || job.ohl_job_kind === 'takedown') return;
+      const res = await ElementPhotos.elements(job).catch(() => null);  // includes this phone's unsent photos
+      if (!res) return;
+      st.data.photos = res.photos;
+      const todo = res.elements.filter(el => !res.photos[el.uid]).length;
+      shotPill.hidden = !todo;
+      shotPill.innerHTML = `&#128247; ${todo} still to photograph`;
+      draw();
+    };
+    shotPill.addEventListener('click', () => ElementPhotos.stillList(job, (el) => ElementPhotos.sheet(job, el, refreshPhotos)));
+    this._refreshPhotos = refreshPhotos;
+    setTimeout(() => refreshPhotos(), 800);
 
     const KIND_ICON = { tree: '🌳', bush: '🌿', other: '⭐' };
     const itemsList = () => {
@@ -434,7 +452,7 @@ const HolidayMap = {
       if (!editable()) {
         // A finished design: tapping a run still opens its photos and count.
         if (live('view') && typeof ElementPhotos !== 'undefined') {
-          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' });
+          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' }, this._refreshPhotos);
         }
         return;
       }
@@ -448,7 +466,7 @@ const HolidayMap = {
       if (!live('view')) return;
       if (!ownRun(run)) {
         if (typeof ElementPhotos !== 'undefined') {
-          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' });
+          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' }, this._refreshPhotos);
           return;
         }
         App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft (the office's run: tag it in Tags)`, 'info');
@@ -480,9 +498,9 @@ const HolidayMap = {
       const refresh = async () => {
         try {
           const fresh = await OdooAPI.callKw('fsm.order', 'worker_get_design_map', [job.id], {});
-          Object.assign(st.data, { counted: fresh.counted || [], photos: fresh.photos || {}, to_photograph: fresh.to_photograph || [] });
-          draw();
-        } catch (e) { /* offline: shown next time */ }
+          Object.assign(st.data, { counted: fresh.counted || [], to_photograph: fresh.to_photograph || [] });
+        } catch (e) { /* offline: the phone's own photos still show */ }
+        if (this._refreshPhotos) await this._refreshPhotos(); else draw();
       };
       if (!editable()) {
         // Tap a tree: its photos and count, together (Carl 2026-11-09).
