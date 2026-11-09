@@ -183,7 +183,10 @@ const HolidayActual = {
           : first ? (data.per_product ? '<b>First count at this house:</b> type how many of each went up (0 if none). Nothing comes from the quote.'
             : '<b>First count at this house:</b> count everything and type each number (0 if none). Nothing comes from the quote.')
             : 'From last year\'s count: tap Same as last year, or change what\'s different. Anything new or changed in the design must be counted.';
-    $('.ohu-sub').innerHTML = sub;
+    // Another visit this season was counted already (round 5 F-08): only what went up on this one.
+    const earlier = (data.earlier_visits || []).map(v => `${this._esc(v.name)}${v.date ? ' (' + this._esc(v.date) + ')' : ''}`);
+    $('.ohu-sub').innerHTML = earlier.length && data.source !== 'saved'
+      ? `Counted on ${earlier.join(', ')} this season: count only what went up on <b>this visit</b>.` : sub;
 
     const checked = () => state.elements.filter(e => e.ok && !e.hidden).length;
     const truckPart = () => state.from === 'truck' || state.elements.some(e => e.kind === 'added' && e.from !== 'kit')
