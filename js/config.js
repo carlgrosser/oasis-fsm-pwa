@@ -194,7 +194,7 @@ if (location.port === '8443') {
     // The page starts below the strip (it covered CLOCK ON / Online: round 3 F-19).
     var style = document.createElement('style');
     style.textContent = ':root{--safe-top:calc(env(safe-area-inset-top, 0px) + 16px)}'
-      + '.app-header{top:16px}';
+      + '.app-header{top:16px}.ohu-overlay{top:16px}';
     document.head.appendChild(style);
   });
 }
