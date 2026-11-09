@@ -136,10 +136,10 @@ const MyTruck = {
       const render = () => {
         const units = pack ? qty * pack.qty : qty;
         box.innerHTML = `<div class="ohu-add-card"><div class="ohu-add-title">${this._esc(item.name)}</div>
-          <div class="oha-item"><div class="oha-item-label">How many are left on the truck (${this._esc(unitWord)})?<div class="ohu-plan">${pack ? `= ${round2(left * per)} ${this._esc(item.unit || '')} · ` : ''}the app thought ${this._esc(item.has_text || item.has)}</div></div>
+          <div class="oha-item"><div class="oha-item-label">How many are left on the truck (${this._esc(unitWord)})?<div class="ohu-plan"><span data-left-units>${pack ? `= ${round2(left * per)} ${this._esc(item.unit || '')} · ` : ''}</span>the app thought ${this._esc(item.has_text || item.has)}</div></div>
             <button class="ohu-btn" data-l="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="decimal" min="0" step="any" value="${left}" data-left>
             <button class="ohu-btn" data-l="1">+</button></div>
-          <div class="oha-item"><div class="oha-item-label">How many to get (${this._esc(unitWord)})${pack ? `<div class="ohu-plan">= ${units} ${this._esc(item.unit || '')}</div>` : ''}</div>
+          <div class="oha-item"><div class="oha-item-label">How many to get (${this._esc(unitWord)})${pack ? `<div class="ohu-plan" data-qty-units>= ${units} ${this._esc(item.unit || '')}</div>` : ''}</div>
             <button class="ohu-btn" data-q="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${qty}" data-qty>
             <button class="ohu-btn" data-q="1">+</button></div>
           ${mode === 'bought' ? `<div class="omt-receipt">
@@ -199,6 +199,19 @@ const MyTruck = {
             App.showToast('Not done: ' + (err.message || err), 'error');
             t.disabled = false;
           }
+        }
+      };
+      // A typed number counts at once (round 5 F-01): the "= N units" lines follow as you type.
+      box.oninput = (e) => {
+        if (e.target.matches('[data-left]')) {
+          left = Math.max(0, e.target.valueAsNumber || 0);
+          const u = box.querySelector('[data-left-units]');
+          if (u && pack) u.textContent = `= ${round2(left * per)} ${item.unit || ''} · `;
+        }
+        if (e.target.matches('[data-qty]')) {
+          qty = Math.max(0, e.target.valueAsNumber || 0);
+          const u = box.querySelector('[data-qty-units]');
+          if (u && pack) u.textContent = `= ${qty * pack.qty} ${item.unit || ''}`;
         }
       };
       box.onchange = async (e) => {

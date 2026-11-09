@@ -305,9 +305,13 @@ const HolidayActual = {
         ${partsHtml()}
         ${houseHtml()}
         ${swapsHtml()}`;
+      saveLabel();
+    };
+    function saveLabel() {
+      const n = state.elements.filter(e => !e.hidden).length;
       const save = $('[data-act="save"]');
       save.textContent = n && checked() < n ? `✓ Save (${checked()} of ${n} ${first ? 'counted' : 'checked'})` : '✓ Save';
-    };
+    }
 
     const setFromInputs = () => {
       overlay.querySelectorAll('.oha-step').forEach(holder => {
@@ -321,9 +325,11 @@ const HolidayActual = {
         if (kind === 'q') {
           const it = state.elements[a].items[b];
           if (!typed) return;
-          if (isBlank(it.qty) || it.qty !== v) { it.counted = true; if (data.per_product) state.elements[a].ok = !elBlank(state.elements[a]); }
-          const changed = it.qty !== v;
+          const changed = isBlank(it.qty) || it.qty !== v;
+          if (changed) it.counted = true;
           it.qty = v; if (state.from === 'truck') it.truck_qty = v;
+          // A typed number counts, like + / − (round 5 F-01: ok was worked out before the number was stored).
+          if (changed) state.elements[a].ok = !elBlank(state.elements[a]);
           if (state.from === 'mix' && changed && !it.truckSet) it.truck_qty = mixTruck(state.elements[a], it);
           if (it.truck_qty > it.qty) it.truck_qty = it.qty;
         }
@@ -369,7 +375,13 @@ const HolidayActual = {
     const stepOf = (it) => it.step || ((it.unit === 'ft' || (it.planned || it.qty || 0) >= 100) ? 10 : 1);
     $('.ohu-body').addEventListener('change', (e) => {
       setFromInputs();
-      if (e.target.closest('.oha-part')) { feedTotals(); redraw(); }
+      if (e.target.closest('.oha-part')) { feedTotals(); redraw(); return; }
+      // The ✓ on the line and the Save label follow a typed number at once.
+      const card = e.target.closest('.oha-el');
+      const el = card && card.dataset.ei !== undefined ? state.elements[+card.dataset.ei] : null;
+      const title = el && card.querySelector('.oha-el-title');
+      if (title && el.ok && !title.textContent.trim().startsWith('✓')) title.insertAdjacentText('afterbegin', '✓ ');
+      saveLabel();
     });
     $('.ohu-body').addEventListener('input', (e) => {
       if (!e.target.matches('[data-swap-q]')) return;
