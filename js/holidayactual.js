@@ -356,6 +356,7 @@ const HolidayActual = {
       return `${label} ${n + 1}`;
     };
     const redraw = () => { render(); tagSteppers(); };
+    feedTotals();  // counts made from the map's element sheet (in the draft) add up into the totals
     redraw();
     // Opened from the map ("Count this tree"): straight to that tree's box.
     if (opts && opts.focus) {

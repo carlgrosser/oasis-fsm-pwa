@@ -788,6 +788,8 @@ const Photos = {
     }
     // Records (when, where, fingerprint) that didn't reach Odoo with their photo.
     await this.flushRecords().catch(() => {});
+    // Photos assigned to a tree, bush or run on the map: their Drive link once uploaded.
+    if (typeof ElementPhotos !== 'undefined') await ElementPhotos.flush().catch(() => {});
 
     return { uploaded, failed };
   },

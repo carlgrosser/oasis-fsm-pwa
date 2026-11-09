@@ -325,7 +325,14 @@ const HolidayFlow = {
     if (code === '_close' || type === 'rating') { if (typeof WrapUp !== 'undefined') WrapUp.show(job); return; }
     if (type === 'tick') { await this.setStep(job, code, 'done'); return after(); }
     if (type === 'photos_before' || type === 'photos_after') {
+      const since = Date.now();
       await Photos.capturePhoto(job.id, type === 'photos_before' ? 'before' : 'after');
+      // After-install photos: assign each to a tree, bush or run on the map (optional; Carl 2026-11-09).
+      if (type === 'photos_after' && typeof ElementPhotos !== 'undefined') {
+        const taken = (await Photos.getPhotosForJob(job.id).catch(() => []))
+          .filter(p => new Date(p.timestamp).getTime() >= since);
+        await ElementPhotos.offerAssign(job, taken).catch(() => {});
+      }
       // The Work tab's photo section and the stage gate follow, and so does the card.
       const detail = document.getElementById('jobDetail');
       if (detail && typeof Jobs !== 'undefined') await Jobs.renderJobDetail(job.id, detail);

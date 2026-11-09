@@ -20,7 +20,8 @@ const InstallMap = {
     const map = typeof HolidayMap !== 'undefined'
       ? '<button class="btn" id="ohlMapBtn">&#128506;&#65039; Map</button>' : '';
     const used = job.ohl_job_kind === 'install' && typeof HolidayUsed !== 'undefined'
-      ? '<div class="ohl-map-row"><button class="btn" id="ohlUsedBtn">&#9989; Actual Used</button></div>' : '';
+      ? `<div class="ohl-map-row"><button class="btn" id="ohlUsedBtn">&#9989; Actual Used</button>
+          ${typeof ElementPhotos !== 'undefined' ? '<button class="btn" id="ohlStillBtn">&#128247; Still to photograph</button>' : ''}</div>` : '';
     const house = typeof HouseScreen !== 'undefined'
       ? '<button class="btn btn-primary" id="ohlHouseBtn">&#127968; House</button>' : '';
     return `<div class="install-map-row ohl-map-row">
@@ -34,6 +35,9 @@ const InstallMap = {
     document.getElementById('ohlHouseBtn')?.addEventListener('click', () => HouseScreen.open(job));
     document.getElementById('ohlMapBtn')?.addEventListener('click', () => HolidayMap.open(job));
     document.getElementById('ohlUsedBtn')?.addEventListener('click', () => HolidayUsed.open(job));
+    // Trees, bushes and runs with no photo this season: tap one for its photos and count (Carl 2026-11-09).
+    document.getElementById('ohlStillBtn')?.addEventListener('click',
+      () => ElementPhotos.stillList(job, (el) => ElementPhotos.sheet(job, el)));
   },
 
   _key(jobId) { return 'ism_' + jobId; },

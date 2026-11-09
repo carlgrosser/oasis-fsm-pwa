@@ -98,9 +98,38 @@ const HolidayMap = {
   ],
   ITEMS: [
     { key: 'tree', label: '🌳 Tree', color: '#2e7d32' }, { key: 'bush', label: '🌿 Bush', color: '#9ccc65' },
+    { key: 'bushes', label: '🌿🌿 Bush group', color: '#7cb342' },
     { key: 'other', label: '⭐ Other', color: '#ab47bc' },
   ],
   CORD_COLOR: '#ff9800',
+
+  /** A group of bushes: how many, and an optional name. Resolves {count, name}, or null when cancelled. */
+  _askGroup() {
+    return new Promise((resolve) => {
+      const box = document.createElement('div');
+      box.className = 'modal-overlay';
+      box.innerHTML = `<div class="modal"><div class="modal-header"><h3>Bush group</h3></div>
+          <div class="modal-body"><label class="ohu-plan">How many bushes?</label>
+            <div class="oha-step"><button class="ohu-btn" data-n="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="numeric" min="2" value="3" data-count><button class="ohu-btn" data-n="1">+</button></div>
+            <label class="ohu-plan" style="display:block;margin-top:10px;">Name (optional)</label>
+            <input class="ohu-other" type="text" placeholder="e.g. front hedge" data-name></div>
+          <div class="modal-footer"><button class="btn btn-secondary" data-cancel>Cancel</button><button class="btn btn-primary" data-ok>Place it</button></div></div>`;
+      document.body.appendChild(box);
+      const inp = box.querySelector('[data-count]');
+      box.addEventListener('click', (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+        if (t.dataset.n) { inp.value = Math.max(2, (parseInt(inp.value, 10) || 2) + parseInt(t.dataset.n, 10)); return; }
+        if (t.hasAttribute('data-cancel')) { box.remove(); resolve(null); return; }
+        if (t.hasAttribute('data-ok')) {
+          const count = Math.max(2, parseInt(inp.value, 10) || 2);
+          const name = box.querySelector('[data-name]').value.trim();
+          box.remove();
+          resolve({ count, name: name || null });
+        }
+      });
+    });
+  },
   // Runs tool: a C9 bulb on a green wire.
   RUN_ICON: '<svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M1 8 Q8 4 16 8 T31 8" stroke="#2e7d32" stroke-width="2.6" fill="none" stroke-linecap="round"/><rect x="12.5" y="8" width="7" height="5.5" rx="1.2" fill="#1b5e20"/><path d="M16 13.5 C9.5 17.5 10.5 27 16 29.5 C21.5 27 22.5 17.5 16 13.5 Z" fill="#ffca28" stroke="#f57f17" stroke-width="1.1"/><path d="M14 18 C13 20 13.2 23 14.3 25" stroke="#fff8e1" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>',
 
@@ -233,9 +262,10 @@ const HolidayMap = {
         const kind = this.ITEMS.find(i => i.key === f.kind) || this.ITEMS[2];
         const loose = st.data.design && st.data.design.field && !f.item_key && list('items').length;
         const counted = (st.data.counted || []).includes(f.uid);  // counted in Actual Used on this job
+        const shots = (st.data.photos || {})[f.uid] || 0;  // photos this season
         const m = new g.Marker({ map, position: { lat: f.lat, lng: f.lng }, zIndex: 6, title: f.item_label || f.label,
           clickable: st.mode === 'items' || st.mode === 'view',
-          label: { text: (counted ? '✓' : '') + (f.code || kind.label.slice(0, 2)) + (loose ? '?' : ''), color: '#fff', fontWeight: '700', fontSize: '11px' },
+          label: { text: (counted ? '✓' : '') + (f.code || kind.label.slice(0, 2)) + (loose ? '?' : '') + (shots ? ` 📷${shots}` : ''), color: '#fff', fontWeight: '700', fontSize: '11px' },
           icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: counted ? '#2e7d32' : loose ? '#ffeb3b' : '#fff', strokeWeight: counted || loose ? 3 : 2 } });
         m.addListener('click', () => featureSheet(f));
         st.shapes.push(m);
@@ -401,7 +431,13 @@ const HolidayMap = {
 
     // ------------------------------------------------ Tapping things
     const onRun = (run) => guard(async () => {
-      if (!editable()) return;
+      if (!editable()) {
+        // A finished design: tapping a run still opens its photos and count.
+        if (live('view') && typeof ElementPhotos !== 'undefined') {
+          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' });
+        }
+        return;
+      }
       if (live('tag')) {
         if (!st.tag) { App.showToast('Pick a tag color first', 'info'); return; }
         const same = run.tag_id === st.tag && (run.tag2_id || false) === (st.tag2 || false);
@@ -411,6 +447,10 @@ const HolidayMap = {
       }
       if (!live('view')) return;
       if (!ownRun(run)) {
+        if (typeof ElementPhotos !== 'undefined') {
+          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' });
+          return;
+        }
         App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft (the office's run: tag it in Tags)`, 'info');
         return;
       }
@@ -435,9 +475,18 @@ const HolidayMap = {
     const featureSheet = (f) => {
       if (!(live('items') || live('view')) || st.busy) return;
       // Count this tree / bush in Actual Used (an install), even when the map can't be edited any more.
-      const canCount = job.ohl_job_kind === 'install' && typeof HolidayUsed !== 'undefined' && f.uid;
+      const canCount = typeof ElementPhotos !== 'undefined' && f.uid;
+      const element = { uid: f.uid, label: `${f.code ? f.code + ' · ' : ''}${f.name || f.label || f.kind}${(f.count || 1) > 1 ? ` (×${f.count})` : ''}`, kind: f.kind };
+      const refresh = async () => {
+        try {
+          const fresh = await OdooAPI.callKw('fsm.order', 'worker_get_design_map', [job.id], {});
+          Object.assign(st.data, { counted: fresh.counted || [], photos: fresh.photos || {}, to_photograph: fresh.to_photograph || [] });
+          draw();
+        } catch (e) { /* offline: shown next time */ }
+      };
       if (!editable()) {
-        if (canCount) HolidayUsed.open(job, () => this._refreshCounted && this._refreshCounted(), { focus: f.uid });
+        // Tap a tree: its photos and count, together (Carl 2026-11-09).
+        if (canCount) ElementPhotos.sheet(job, element, refresh);
         return;
       }
       const field = !!(st.data.design && st.data.design.field);
@@ -452,7 +501,7 @@ const HolidayMap = {
               <span>${KIND_ICON[i.kind] || '⭐'}</span><span class="ohm-item-label">${this._esc(i.label)}</span>
               <span class="ohm-item-state">${i.key === current ? '&#10003;' : (i.placed ? 'on the map' : 'unassigned')}</span></button>`).join('')}`
             : '<div class="ohm-hint">No trees or bushes on this order to assign it to.</div>'}
-          ${canCount ? `<button class="btn btn-success" style="width:100%;margin-top:10px;" data-sheet="count">${(st.data.counted || []).includes(f.uid) ? '&#10003; Counted: change it' : 'Count this'}</button>` : ''}
+          ${canCount ? `<button class="btn btn-success" style="width:100%;margin-top:10px;" data-sheet="count">&#128247; Photo &amp; count${(st.data.photos || {})[f.uid] ? ` (📷${st.data.photos[f.uid]})` : ''}${(st.data.counted || []).includes(f.uid) ? ' &#10003;' : ''}</button>` : ''}
           <div class="ohm-btns" style="margin-top:12px;">
             ${current ? '<button class="btn" data-sheet="unassign">Unassign</button>' : ''}
             ${own ? '<button class="btn" data-sheet="delete">Delete</button>' : ''}
@@ -464,14 +513,7 @@ const HolidayMap = {
         if (t.dataset.sheet === 'close') { box.hidden = true; return; }
         if (t.dataset.sheet === 'count') {
           box.hidden = true;
-          HolidayUsed.open(job, async () => {
-            // Back on the map: the tree shows ✓ once counted.
-            try {
-              const fresh = await OdooAPI.callKw('fsm.order', 'worker_get_design_map', [job.id], {});
-              st.data.counted = fresh.counted || [];
-              draw();
-            } catch (e) { /* offline: shown next time */ }
-          }, { focus: f.uid });
+          ElementPhotos.sheet(job, element, refresh);
           return;
         }
         guard(async () => {
@@ -679,7 +721,14 @@ const HolidayMap = {
         took(res); list('power').push(res.power);
         draw();
       } else if (live('items')) {
-        const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_feature', [job.id, st.item, e.latLng.lat(), e.latLng.lng(), center3()], {});
+        let count = null, name = null;
+        if (st.item === 'bushes') {
+          // A group of bushes: one marker, how many and an optional name ("front hedge").
+          const ask = await this._askGroup();
+          if (!ask) return;
+          ({ count, name } = ask);
+        }
+        const res = await OdooAPI.callKw('fsm.order', 'worker_map_add_feature', [job.id, st.item, e.latLng.lat(), e.latLng.lng(), center3(), count, name], {});
         took(res); applyState(res.state);
         draw();
       } else if (live('place') && st.placing) {
