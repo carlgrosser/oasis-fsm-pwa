@@ -5,7 +5,8 @@
  * Every part of the house (roofline runs, Tree 1, the bushes) is listed:
  *  - first count at a house (Carl 2026-11-08): every box starts empty and must be typed; nothing comes from the
  *    quote or design (estimates), and there is no one-tap button;
- *  - later years: prefilled from last year's ACTUAL count, with "Same as last year's count"; anything new is blank.
+ *  - later years: prefilled from last year's ACTUAL count, with "Same as last year's count"; anything new, or
+ *    changed in the design since that count, is blank and must be counted.
  *  - Where it came from: all from the kit (a rehang), all from the truck (a new house), or some of each.
  *    Only the truck part comes off the truck.
  *  - Replaced anything? Strand / Bulbs / Wire / Clips chips (optional, zero taps when skipped).
@@ -123,13 +124,14 @@ const HolidayActual = {
       : pending ? 'Saved on this phone: it goes to the office when there\'s signal.'
         : draft ? 'Your draft from earlier (Finish later).'
           : first ? '<b>First count at this house:</b> count everything and type each number (0 if none). Nothing comes from the quote.'
-            : 'From last year\'s count: tap Same as last year, or change what\'s different. Anything new must be counted.';
+            : 'From last year\'s count: tap Same as last year, or change what\'s different. Anything new or changed in the design must be counted.';
     $('.ohu-sub').innerHTML = sub;
 
     const checked = () => state.elements.filter(e => e.ok).length;
     const truckPart = () => state.from === 'truck' || (state.from === 'mix' && state.elements.some(e => e.items.some(i => (i.truck_qty || 0) > 0)));
     const needsTruck = () => truckPart() || state.swaps.length > 0;
-    const sourceBadge = (e) => ({ last_season: 'last year', count: 'count it', saved: 'saved' }[e.source] || '');
+    // recount: the design changed this element since its last count, so it is counted again (no last-year figure).
+    const sourceBadge = (e) => (e.recount ? 'changed in the design: count again' : { last_season: 'last year', count: 'count it', saved: 'saved' }[e.source] || '');
     const itemLine = (i, e) => isBlank(i.qty) ? `${this._esc(i.label)}: <b class="oha-tocount">not counted</b>`
       : `${this._esc(i.label)}: <b>${i.qty}</b> ${this._esc(i.unit || '')}${lastYear(e) && i.planned && i.planned !== i.qty ? ` <span class="oha-was">(last year ${i.planned})</span>` : ''}${state.from === 'mix' && i.truck_qty ? ` <span class="oha-truckq">${i.truck_qty} off the truck</span>` : ''}`;
 
