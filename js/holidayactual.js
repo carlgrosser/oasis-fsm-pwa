@@ -139,7 +139,8 @@ const HolidayActual = {
     const sub = data.source === 'saved' ? `Saved${data.saved_by ? ' by ' + this._esc(data.saved_by) : ''}. Change anything and save again.`
       : pending ? 'Saved on this phone: it goes to the office when there\'s signal.'
         : draft ? 'Your draft from earlier (Finish later).'
-          : first ? '<b>First count at this house:</b> count everything and type each number (0 if none). Nothing comes from the quote.'
+          : first ? (data.per_product ? '<b>First count at this house:</b> type how many of each went up (0 if none). Nothing comes from the quote.'
+            : '<b>First count at this house:</b> count everything and type each number (0 if none). Nothing comes from the quote.')
             : 'From last year\'s count: tap Same as last year, or change what\'s different. Anything new or changed in the design must be counted.';
     $('.ohu-sub').innerHTML = sub;
 
@@ -160,7 +161,25 @@ const HolidayActual = {
         <input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${isBlank(value) ? '' : value}" placeholder="?" data-${attr}-in aria-label="${this._esc(label)}">
         <button class="ohu-btn" data-${attr}="1" aria-label="More">+</button></div>`;
 
+    // One line per product (Carl 2026-11-09): the box is open at once, one total, "for:" what it covers.
+    const productHtml = (e, ei) => {
+      const i = e.items[0] || {};
+      const lastNote = !first && lastYear(e) && i.planned !== undefined ? `<div class="ohu-plan">last year ${i.planned} ${this._esc(i.unit || '')}</div>` : '';
+      return `<div class="oha-el open oha-prod${e.ok ? ' ok' : ''}" data-ei="${ei}">
+          <div class="oha-el-head"><div class="oha-el-title">${e.ok ? '&#10003; ' : ''}${this._esc(e.label)}
+              ${e.recount ? '<span class="oha-src">changed in the design: count again</span>' : e.kind === 'added' ? '<span class="oha-src">added</span>' : ''}</div>
+            ${!first && lastYear(e) && !e.ok ? `<button class="btn btn-sm btn-success" data-el-ok="${ei}">&#10003; Same as last year</button>` : ''}
+            ${e.kind === 'added' ? `<button class="btn btn-sm btn-ghost" data-el-del="${ei}" aria-label="Remove">&#10005;</button>` : ''}</div>
+          ${(e.covers || []).length ? `<div class="ohu-plan">for: ${this._esc(e.covers.join(', '))}</div>` : ''}
+          ${e.kind === 'added' ? `<div class="oha-chips oha-addfrom">Came: <button class="ohu-chip${e.from !== 'kit' ? ' on' : ''}" data-el-from="${ei}:truck">off the truck</button><button class="ohu-chip${e.from === 'kit' ? ' on' : ''}" data-el-from="${ei}:kit">from the kit</button></div>` : ''}
+          ${e.items.map((it, ii) => `<div class="oha-item"><div class="oha-item-label">${e.kind === 'added' ? this._esc(it.label) : 'How many went up?'}${lastNote}</div>
+              ${stepper(`q="${ei}:${ii}"`, it.qty, it.label)}<span class="ohu-unit">${this._esc(it.unit || '')}</span>
+              ${state.from === 'mix' && e.kind !== 'added' ? `<div class="oha-truckrow">off the truck ${stepper(`t="${ei}:${ii}"`, it.truck_qty, 'off the truck')}</div>` : ''}
+            </div>`).join('')}
+        </div>`;
+    };
     const elementHtml = (e, ei) => {
+      if (data.per_product) return productHtml(e, ei);
       const editing = state.open === ei;
       const diff = lastYear(e) && e.items.some(i => i.planned !== undefined && i.qty !== i.planned);
       return `<div class="oha-el${e.ok ? ' ok' : ''}${editing ? ' open' : ''}" data-ei="${ei}">
@@ -182,13 +201,13 @@ const HolidayActual = {
 
     const houseHtml = () => {
       if (!state.houseRows.length) return '';
-      const open = state.open === 'house';
+      const open = data.per_product || state.open === 'house';  // one-line-per-product screen: always open
       const blank = state.houseRows.some(r => isBlank(r.qty));
       return `<div class="oha-el${blank ? '' : ' ok'}${open ? ' open' : ''}"><div class="oha-el-head"><div class="oha-el-title">Clips, cords &amp; timers</div>
           ${open ? '' : blank ? '<button class="btn btn-primary" data-house-edit>Count it</button>' : '<button class="btn btn-sm btn-ghost" data-house-edit>Change</button>'}</div>
           ${open ? state.houseRows.map((r, ri) => `<div class="oha-item"><div class="oha-item-label">${this._esc(r.label)}${r.planned && !first && !r.blank ? `<div class="ohu-plan">last year ${r.planned}</div>` : ''}</div>
               ${stepper(`h="${ri}"`, r.qty, r.label)}<span class="ohu-unit">${this._esc(r.unit || '')}</span></div>`).join('')
-              + '<div class="oha-el-foot"><button class="btn btn-primary" data-house-done>Done</button></div>'
+              + (data.per_product ? '' : '<div class="oha-el-foot"><button class="btn btn-primary" data-house-done>Done</button></div>')
             : `<div class="oha-el-items">${state.houseRows.map(r => `${this._esc(r.label)} ${isBlank(r.qty) ? '<b class="oha-tocount">not counted</b>' : r.qty}`).join(' · ')}</div>`}</div>`;
     };
 
@@ -261,7 +280,7 @@ const HolidayActual = {
         if (kind === 'q') {
           const it = state.elements[a].items[b];
           if (!typed) return;
-          if (isBlank(it.qty) || it.qty !== v) it.counted = true;
+          if (isBlank(it.qty) || it.qty !== v) { it.counted = true; if (data.per_product) state.elements[a].ok = !elBlank(state.elements[a]); }
           const changed = it.qty !== v;
           it.qty = v; if (state.from === 'truck') it.truck_qty = v;
           if (state.from === 'mix' && changed && !it.truckSet) it.truck_qty = mixTruck(state.elements[a], it);
@@ -320,6 +339,7 @@ const HolidayActual = {
           const it = state.elements[a].items[b];
           it.qty = isBlank(it.qty) ? (sign > 0 ? stepOf(it) : 0) : Math.max(0, it.qty + sign * stepOf(it));
           it.counted = true;
+          if (data.per_product) state.elements[a].ok = !elBlank(state.elements[a]);
           if (state.from === 'truck') it.truck_qty = it.qty;
           if (state.from === 'mix' && !it.truckSet) it.truck_qty = mixTruck(state.elements[a], it);
           if (it.truck_qty > it.qty) it.truck_qty = it.qty;
