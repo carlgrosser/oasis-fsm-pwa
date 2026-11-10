@@ -894,45 +894,82 @@ const Photos = {
    * Render a read-only gallery of all photos for a job, grouped by category.
    * Merges local IndexedDB photos with Drive-only photos from other devices.
    */
+  /** The job's photos from every phone (Odoo: worker_job_photos), kept for no signal. Each:
+   *  {key, category, thumb, url, by, at, gdrive_file_id, attachment_id, elements}. */
+  async loadServerPhotos(jobId) {
+    if (navigator.onLine) {
+      try {
+        const rows = await OdooAPI.callKw('fsm.order', 'worker_job_photos', [jobId], {});
+        await DB.setState('ojp_' + jobId, rows).catch(() => {});
+        return rows || [];
+      } catch (err) { console.warn('Job photos: using the saved copy', err); }
+    }
+    return (await DB.getState('ojp_' + jobId).catch(() => null)) || [];
+  },
+
+  /** "Xavier · 3:13 PM" (or "Nov 8, 3:13 PM" on another day). */
+  whoWhen(p) {
+    const at = p.at ? new Date(p.at.replace(' ', 'T') + 'Z') : null;
+    const today = at && at.toDateString() === new Date().toDateString();
+    const when = at ? at.toLocaleString([], today ? { hour: 'numeric', minute: '2-digit' }
+      : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const first = (p.by || '').split(' ')[0];
+    return [first, when].filter(Boolean).join(' · ');
+  },
+
   async renderAllPhotosGallery(jobId, container) {
-    const [allLocal, drivePhotos, discoveryPhotos] = await Promise.all([
+    const [allLocal, drivePhotos, discoveryPhotos, serverPhotos] = await Promise.all([
       this.getPhotosForJob(jobId),
       this._loadDrivePhotos(jobId),
       this._loadDiscoveryPhotos(jobId),
+      this.loadServerPhotos(jobId).catch(() => []),
     ]);
 
     // Drive-only: photos from other devices not yet in local IndexedDB
     const localDriveIds = new Set(allLocal.filter(p => p.gdrive_file_id).map(p => p.gdrive_file_id));
     const driveOnly = drivePhotos.filter(p => !localDriveIds.has(p.gdrive_file_id));
+    // Photos kept only in Odoo, from other phones (Drive down since Nov 6 on production): once each, not this
+    // phone's (by attachment id) nor a Drive photo already shown (by Drive id).
+    const localAttIds = new Set(allLocal.filter(p => p.attachment_id).map(p => p.attachment_id));
+    const driveIds = new Set(drivePhotos.map(p => p.gdrive_file_id).concat([...localDriveIds]));
+    const odooOnly = serverPhotos.filter(p => p.attachment_id && !localAttIds.has(p.attachment_id)
+      && !(p.gdrive_file_id && driveIds.has(p.gdrive_file_id)));
 
     const categories = CONFIG.PHOTO_CATEGORIES || [];
     const lbItems = [];  // built in render order for lightbox navigation
 
-    if (allLocal.length === 0 && driveOnly.length === 0 && discoveryPhotos.length === 0) {
+    if (allLocal.length === 0 && driveOnly.length === 0 && discoveryPhotos.length === 0 && odooOnly.length === 0) {
       container.innerHTML = '<p style="color:var(--text-secondary); font-size:var(--font-size-small); text-align:center; padding:var(--spacing-md);">No photos captured yet.</p>';
       return;
     }
 
     let html = '';
-    for (const cat of categories) {
+    const known = new Set(categories.map(c => c.key));
+    for (const cat of categories.concat(odooOnly.some(p => !known.has(p.category)) ? [{ key: '__other', label: 'Other photos' }] : [])) {
       const catLocal = allLocal.filter(p => p.category === cat.key);
       const catDrive = driveOnly.filter(p => p.category === cat.key);
-      if (catLocal.length === 0 && catDrive.length === 0) continue;
+      const catOdoo = odooOnly.filter(p => (cat.key === '__other' ? !known.has(p.category) : p.category === cat.key));
+      if (catLocal.length === 0 && catDrive.length === 0 && catOdoo.length === 0) continue;
 
       const localStart = lbItems.length;
       catLocal.forEach(p => lbItems.push(this._localLbItem(p, cat.label, jobId)));
       const driveStart = lbItems.length;
       catDrive.forEach(p => lbItems.push({ src: `https://drive.google.com/thumbnail?id=${p.gdrive_file_id}&sz=w1600`, caption: `${cat.label} · ${p.filename}`, type: 'drive', note: p.note || '', gdriveFileId: p.gdrive_file_id, orderId: jobId }));
+      const odooStart = lbItems.length;
+      catOdoo.forEach(p => lbItems.push({ src: p.url || p.thumb, caption: `${cat.label} · ${this.whoWhen(p)}`, type: 'odoo' }));
 
       html += `
         <div class="photo-category photo-category-readonly">
           <div class="photo-category-header">
             <span class="photo-category-title">${this.catInfo(cat).label}</span>
-            <span class="photo-count complete">${catLocal.length + catDrive.length}</span>
+            <span class="photo-count complete">${catLocal.length + catDrive.length + catOdoo.length}</span>
           </div>
           <div class="photo-grid">
             ${this._renderThumbnails(catLocal, localStart)}
             ${this._renderDriveThumbnails(catDrive, driveStart)}
+            ${catOdoo.map((p, i) => `<div class="photo-thumb photo-thumb-drive" data-lb-idx="${odooStart + i}" title="${this._escText(this.whoWhen(p))}">
+                <img src="${this._escText(p.thumb)}" alt="${this._escText(p.category)}" loading="lazy">
+                <span class="photo-by">${this._escText(this.whoWhen(p))}</span></div>`).join('')}
           </div>
         </div>`;
     }

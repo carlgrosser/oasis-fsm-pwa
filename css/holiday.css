@@ -306,3 +306,6 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .oep-cap { display: block; font-size: 12px; padding: 4px 6px 0; color: #333; }
 .oep-tags { display: block; font-size: 11px; padding: 0 6px 4px; color: #2e7d32; }
 .oep-check { position: absolute; top: 6px; right: 6px; background: #2e7d32; color: #fff; border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; }
+.photo-thumb { position: relative; }
+.photo-by { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; line-height: 14px; padding: 1px 4px;
+  background: rgba(0, 0, 0, .55); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -85,14 +85,21 @@ const ElementPhotos = {
       overlay.innerHTML = `<div class="ohu-head"><button class="btn btn-sm" data-x>&larr; Done</button>
           <div style="flex:1;min-width:0;"><div class="ohu-title">Use a job photo</div><div class="ohu-sub">For ${this._esc(element.label)}: tap a photo to use it, again to take it off</div></div></div>
         <div class="ohu-body"><div class="loading"><div class="spinner"></div></div></div>`;
-      const photos = await OdooAPI.callKw('fsm.order', 'worker_job_photos', [job.id], {}).catch((e) => { App.showToast(e.message || String(e), 'error'); return []; });
+      const photos = await Photos.loadServerPhotos(job.id);
+      // This phone's photos not sent yet are offered too (tied on the phone, sent with the photo).
+      const local = (await Photos.getPhotosForJob(job.id).catch(() => []))
+        .filter(p => !p.synced && !p.attachment_id && !p.gdrive_file_id)
+        .map(p => ({ key: 'l:' + p.temp_id, local: p, category: p.category, thumb: p.thumbnail, by: 'This phone', at: '',
+          elements: p.element_uid ? [{ uid: p.element_uid, label: p.element_label || '' }] : [] }));
+      const all = local.concat(photos);
+      this._jobPhotos = all;
       const body = overlay.querySelector('.ohu-body');
       const label = { after: 'After', before: 'Walk-through' };
-      body.innerHTML = photos.length ? `<div class="oep-grid">${photos.map(p => {
+      body.innerHTML = all.length ? `<div class="oep-grid">${all.map(p => {
         const on = p.elements.some(e => e.uid === element.uid);
         return `<button class="oep-pick${on ? ' on' : ''}" data-key="${this._esc(p.key)}" data-on="${on ? 1 : 0}">
             <img src="${this._esc(p.thumb)}" alt="" loading="lazy">
-            <span class="oep-cap">${this._esc(label[p.category] || p.category || 'Photo')}${p.by ? ' · ' + this._esc(p.by) : ''}</span>
+            <span class="oep-cap">${this._esc(label[p.category] || p.category || 'Photo')} · ${this._esc(p.local ? 'this phone, not sent yet' : Photos.whoWhen(p))}</span>
             ${p.elements.length ? `<span class="oep-tags">${p.elements.map(e => this._esc(e.label)).join(', ')}</span>` : ''}
             ${on ? '<span class="oep-check">&#10003;</span>' : ''}</button>`;
       }).join('')}</div>` : '<div class="empty-state" style="padding:24px;">No photos on this job yet.</div>';
@@ -103,6 +110,14 @@ const ElementPhotos = {
       if (t.hasAttribute('data-x')) return close();
       if (t.dataset.key) {
         const untag = t.dataset.on === '1';
+        const local = t.dataset.key.startsWith('l:') && (this._jobPhotos || []).find(p => p.key === t.dataset.key);
+        if (local) {
+          const fresh = (await DB.get('photos', local.local.temp_id).catch(() => null)) || local.local;
+          Object.assign(fresh, untag ? { element_uid: null, element_label: null } : { element_uid: element.uid, element_label: element.label, element_sent: 0 });
+          await DB.put('photos', fresh).catch(() => {});
+          App.showToast(untag ? `Taken off ${element.label}` : `Photo of ${element.label}`, 'success');
+          return draw();
+        }
         try {
           await OdooAPI.callKw('fsm.order', 'worker_tag_job_photo', [job.id, t.dataset.key, element.uid, element.label, untag], {});
           App.showToast(untag ? `Taken off ${element.label}` : `Photo of ${element.label}`, 'success');
