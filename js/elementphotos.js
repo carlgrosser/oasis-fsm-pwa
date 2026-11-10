@@ -73,6 +73,46 @@ const ElementPhotos = {
     return taken.length;
   },
 
+  // ------------------------------------------------------------------ photos already on the job, any phone
+  /** Pick from the job's photos (every phone; after photos first) to tie to this element, or untie one. */
+  async jobPhotoPicker(job, element, onDone) {
+    if (!navigator.onLine) { App.showToast('The job\'s photos need signal', 'error'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'ohu-overlay';
+    document.body.appendChild(overlay);
+    const close = () => { overlay.remove(); if (onDone) onDone(); };
+    const draw = async () => {
+      overlay.innerHTML = `<div class="ohu-head"><button class="btn btn-sm" data-x>&larr; Done</button>
+          <div style="flex:1;min-width:0;"><div class="ohu-title">Use a job photo</div><div class="ohu-sub">For ${this._esc(element.label)}: tap a photo to use it, again to take it off</div></div></div>
+        <div class="ohu-body"><div class="loading"><div class="spinner"></div></div></div>`;
+      const photos = await OdooAPI.callKw('fsm.order', 'worker_job_photos', [job.id], {}).catch((e) => { App.showToast(e.message || String(e), 'error'); return []; });
+      const body = overlay.querySelector('.ohu-body');
+      const label = { after: 'After', before: 'Walk-through' };
+      body.innerHTML = photos.length ? `<div class="oep-grid">${photos.map(p => {
+        const on = p.elements.some(e => e.uid === element.uid);
+        return `<button class="oep-pick${on ? ' on' : ''}" data-key="${this._esc(p.key)}" data-on="${on ? 1 : 0}">
+            <img src="${this._esc(p.thumb)}" alt="" loading="lazy">
+            <span class="oep-cap">${this._esc(label[p.category] || p.category || 'Photo')}${p.by ? ' · ' + this._esc(p.by) : ''}</span>
+            ${p.elements.length ? `<span class="oep-tags">${p.elements.map(e => this._esc(e.label)).join(', ')}</span>` : ''}
+            ${on ? '<span class="oep-check">&#10003;</span>' : ''}</button>`;
+      }).join('')}</div>` : '<div class="empty-state" style="padding:24px;">No photos on this job yet.</div>';
+    };
+    overlay.addEventListener('click', async (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.hasAttribute('data-x')) return close();
+      if (t.dataset.key) {
+        const untag = t.dataset.on === '1';
+        try {
+          await OdooAPI.callKw('fsm.order', 'worker_tag_job_photo', [job.id, t.dataset.key, element.uid, element.label, untag], {});
+          App.showToast(untag ? `Taken off ${element.label}` : `Photo of ${element.label}`, 'success');
+        } catch (err) { App.showToast('Not saved: ' + (err.message || err), 'error'); }
+        draw();
+      }
+    });
+    draw();
+  },
+
   // ------------------------------------------------------------------ the element sheet: photo + count
   async sheet(job, element, onClose) {
     const overlay = document.createElement('div');
@@ -96,7 +136,8 @@ const ElementPhotos = {
       const season = parseInt(String(job.scheduled_date_start || new Date().toISOString()).slice(0, 4), 10);
       const strip = (photos) => photos.map(ph => `<a href="${this._esc(ph.url || '#')}" target="_blank" rel="noopener"><img class="oep-thumb" src="${this._esc(ph.thumb)}" alt=""></a>`).join('');
       body.innerHTML = `
-        <button class="btn btn-primary btn-lg" style="width:100%;" data-photo>&#128247; Photo</button>
+        <div style="display:flex;gap:8px;"><button class="btn btn-primary btn-lg" style="flex:1;" data-photo>&#128247; Photo</button>
+          <button class="btn btn-lg" style="flex:1;" data-jobphoto>&#128444;&#65039; Use a job photo</button></div>
         <div class="ohu-group">This season</div>
         <div class="oep-strip">${strip((seasons.find(s => s.season === season) || { photos: [] }).photos)}
           ${local.map(p => `<img class="oep-thumb" src="${this._esc(p.thumbnail)}" alt="">`).join('')}</div>
@@ -114,6 +155,7 @@ const ElementPhotos = {
           if (n) App.showToast(`${n} photo${n > 1 ? 's' : ''} of ${element.label}`, 'success');
           return draw();
         }
+        if (t.hasAttribute('data-jobphoto')) return this.jobPhotoPicker(job, element, draw);
         if (t.hasAttribute('data-count') && part) {
           const base = draft || { from: data.default_from, truck_id: data.truck_id, elements: data.elements,
             house_rows: data.house_rows, swaps: data.swaps || [], parts: data.parts };
@@ -174,7 +216,8 @@ const ElementPhotos = {
     box.className = 'ohu-overlay';
     box.innerHTML = `<div class="ohu-head"><button class="btn btn-sm" data-x>&larr; Back</button>
         <div style="flex:1;min-width:0;"><div class="ohu-title">Still to photograph</div><div class="ohu-sub">${todo.length} of ${elements.length}</div></div></div>
-      <div class="ohu-body">${todo.map(el => `<button class="omt-row" data-el="${this._esc(el.uid)}"><span class="omt-name">${this._esc(el.label)}</span><span class="omt-qty">&#128247;</span></button>`).join('')
+      <div class="ohu-body">${todo.map(el => `<div style="display:flex;gap:6px;align-items:stretch;"><button class="omt-row" style="flex:1;" data-el="${this._esc(el.uid)}"><span class="omt-name">${this._esc(el.label)}</span><span class="omt-qty">&#128247;</span></button>
+          <button class="btn" data-jp="${this._esc(el.uid)}" title="Use a job photo">&#128444;&#65039; Job photo</button></div>`).join('')
         || '<div class="empty-state" style="padding:24px;">Every tree, bush and run has a photo this season.</div>'}</div>`;
     document.body.appendChild(box);
     box.addEventListener('click', (e) => {
@@ -182,6 +225,7 @@ const ElementPhotos = {
       if (!t) return;
       if (t.hasAttribute('data-x')) { box.remove(); return; }
       if (t.dataset.el) { box.remove(); onPick(todo.find(x => x.uid === t.dataset.el)); }
+      if (t.dataset.jp) { box.remove(); this.jobPhotoPicker(job, todo.find(x => x.uid === t.dataset.jp)); }
     });
   },
 };
