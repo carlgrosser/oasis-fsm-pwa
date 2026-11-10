@@ -112,6 +112,7 @@ const HolidayActual = {
       const answers = shorts.map(() => null);
       const box = document.createElement('div');
       box.className = 'modal-overlay';
+      box.style.zIndex = '9600';  // above the count screen (z 9000), or it opens hidden behind it
       const draw = () => {
         box.innerHTML = `<div class="modal" style="max-width:460px;"><div class="modal-header"><h3>The truck didn't have it all</h3></div>
           <div class="modal-body">${shorts.map((sh, i) => {

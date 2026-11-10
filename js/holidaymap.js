@@ -108,6 +108,7 @@ const HolidayMap = {
     return new Promise((resolve) => {
       const box = document.createElement('div');
       box.className = 'modal-overlay';
+      box.style.zIndex = '9600';  // above the full-screen map (z 9000), or it opens hidden behind it
       box.innerHTML = `<div class="modal"><div class="modal-header"><h3>Bush group</h3></div>
           <div class="modal-body"><label class="ohu-plan">How many bushes?</label>
             <div class="oha-step"><button class="ohu-btn" data-n="-1">&minus;</button><input class="ohu-qty" type="number" inputmode="numeric" min="2" value="3" data-count><button class="ohu-btn" data-n="1">+</button></div>
