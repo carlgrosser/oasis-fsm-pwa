@@ -29,7 +29,7 @@ const ElementPhotos = {
       : (x.label || x.name || kind) + ((x.count || 1) > 1 ? ` (×${x.count})` : ''));
     const elements = []
       .concat((state.runs || []).map(r => ({ uid: r.uid, label: `Run ${r.run_no}${r.kind ? ' · ' + r.kind : ''}`, kind: 'run' })))
-      .concat((state.features || []).map(f => ({ uid: f.uid, label: label(f, f.kind), kind: f.kind })));
+      .concat((state.features || []).map(f => ({ uid: f.uid, label: label(f, f.kind), kind: f.kind, featureId: f.id, featureName: f.name || '' })));
     // Photos taken on this phone but not sent yet count too.
     const photos = Object.assign({}, state.photos || {});
     const local = await Photos.getPhotosForJob(job.id).catch(() => []);
@@ -156,6 +156,7 @@ const ElementPhotos = {
       body.innerHTML = `
         <div style="display:flex;gap:8px;"><button class="btn btn-primary btn-lg" style="flex:1;" data-photo>&#128247; Photo</button>
           <button class="btn btn-lg" style="flex:1;" data-jobphoto>&#128444;&#65039; Use a job photo</button></div>
+        ${element.featureId && typeof HolidayMap !== 'undefined' ? '<button class="btn btn-sm" style="margin-top:8px;" data-label>&#9998; Label</button>' : ''}
         <div class="ohu-group">This season</div>
         <div class="oep-strip">${strip((seasons.find(s => s.season === season) || { photos: [] }).photos)}
           ${local.map(p => `<img class="oep-thumb" src="${this._esc(p.thumbnail)}" alt="">`).join('')}</div>
@@ -174,6 +175,18 @@ const ElementPhotos = {
           return draw();
         }
         if (t.hasAttribute('data-jobphoto')) return this.jobPhotoPicker(job, element, draw);
+        if (t.hasAttribute('data-label')) {
+          // The map item's label (Carl 2026-11-09), also on a finished design.
+          const ask = await HolidayMap._askLabel(job, element.kind, { value: element.featureName || '', ok: 'Save', title: 'Label' });
+          if (!ask) return;
+          try {
+            const res = await OdooAPI.callKw('fsm.order', 'worker_map_set_feature_label', [job.id, element.featureId, ask.label || ''], {});
+            element.label = res.label; element.featureName = ask.label || '';
+            overlay.querySelector('.ohu-title').textContent = res.label;
+            App.showToast('Label saved', 'success');
+          } catch (err) { App.showToast('Not saved: ' + (err.message || err), 'error'); }
+          return;
+        }
         if (t.hasAttribute('data-count') && part) {
           const base = draft || { from: data.default_from, truck_id: data.truck_id, elements: data.elements,
             house_rows: data.house_rows, swaps: data.swaps || [], parts: data.parts };
