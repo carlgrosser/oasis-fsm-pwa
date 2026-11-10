@@ -192,6 +192,7 @@ const Photos = {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
+      overlay.style.zIndex = '9600';  // above a tree's sheet / the count screen (z 9000) when opened from there
       const draw = () => {
         const last = all[all.length - 1];
         overlay.innerHTML = `<div class="modal photo-series-modal">

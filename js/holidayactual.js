@@ -112,6 +112,7 @@ const HolidayActual = {
       const answers = shorts.map(() => null);
       const box = document.createElement('div');
       box.className = 'modal-overlay';
+      box.style.zIndex = '9600';  // above the count screen (z 9000), or it opens hidden behind it
       const draw = () => {
         box.innerHTML = `<div class="modal" style="max-width:460px;"><div class="modal-header"><h3>The truck didn't have it all</h3></div>
           <div class="modal-body">${shorts.map((sh, i) => {
@@ -606,6 +607,7 @@ const HolidayActual = {
     if (!data || !data.swap_items) { App.showToast('Open it once with signal first', 'error'); return; }
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    overlay.style.zIndex = '9600';  // above the count screen when opened from it
     const swaps = JSON.parse(JSON.stringify(data.swaps || []));
     let kind = null;
     let truckId = data.truck_id || (await DB.getState(this.TRUCK_KEY).catch(() => null));
