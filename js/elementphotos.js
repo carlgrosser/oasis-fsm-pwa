@@ -23,7 +23,10 @@ const ElementPhotos = {
       } catch (err) { console.warn('Map elements: using the saved copy', err); }
     }
     state = state || (await DB.getState(this._key(job.id)).catch(() => null)) || {};
-    const label = (x, kind) => (x.code ? x.code + ' · ' : '') + (x.label || x.name || kind) + ((x.count || 1) > 1 ? ` (×${x.count})` : '');
+    // Bushes always show how many ("B2 · front hedge · Bushes ×5"; an old single bush ×1).
+    const label = (x, kind) => (x.code ? x.code + ' · ' : '') + (kind === 'bush'
+      ? (x.name ? x.name + ' · ' : '') + `Bushes ×${x.count || 1}`
+      : (x.label || x.name || kind) + ((x.count || 1) > 1 ? ` (×${x.count})` : ''));
     const elements = []
       .concat((state.runs || []).map(r => ({ uid: r.uid, label: `Run ${r.run_no}${r.kind ? ' · ' + r.kind : ''}`, kind: 'run' })))
       .concat((state.features || []).map(f => ({ uid: f.uid, label: label(f, f.kind), kind: f.kind })));
