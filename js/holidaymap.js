@@ -295,7 +295,7 @@ const HolidayMap = {
         const m = new g.Marker({ map, position: { lat: f.lat, lng: f.lng }, zIndex: 6, title: f.item_label || f.label,
           clickable: st.mode === 'items' || st.mode === 'view',
           label: { text: (counted ? '✓' : '') + (f.code || kind.label.slice(0, 2)) + (f.kind === 'bush' ? ` ×${f.count || 1}` : '') + (loose ? '?' : '') + (shots ? ` 📷${shots}` : ''), color: '#fff', fontWeight: '700', fontSize: '11px' },
-          icon: { path: g.SymbolPath.CIRCLE, scale: 13, fillColor: kind.color, fillOpacity: 1, strokeColor: counted ? '#2e7d32' : loose ? '#ffeb3b' : '#fff', strokeWeight: counted || loose ? 3 : 2 } });
+          icon: { path: g.SymbolPath.CIRCLE, scale: f.kind === 'bush' ? 17 : 13, fillColor: kind.color, fillOpacity: 1, strokeColor: counted ? '#2e7d32' : loose ? '#ffeb3b' : '#fff', strokeWeight: counted || loose ? 3 : 2 } });
         m.addListener('click', () => featureSheet(f));
         st.shapes.push(m);
         if (f.name) {
