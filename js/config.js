@@ -98,6 +98,7 @@ const CONFIG = {
     'ohl_used_state',  // Holiday Lighting: "Count owed" on the job card (ohl_dispatch)
     'ohl_visit_label',  // Holiday Lighting: a design visit's window (ohl_requests)
     'ohl_agreement_state', 'ohl_deposit_state',  // Holiday Lighting: install gate warning (ohl_contract)
+    'ohl_crew_alert',  // Holiday Lighting: the house's "Crew must know" (e.g. stay off the roof), red on every job (ohl_dispatch)
   ],
 
   // Set to true after installing the custom Odoo modules

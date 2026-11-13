@@ -963,6 +963,8 @@ const Jobs = {
     }
 
     const isHistory = this._currentView === 'history';
+    // The house's standing rule ("Stay off the roof"): red on every job there, every year (Carl 2026-11-13).
+    const crewAlertHtml = this._crewAlertHtml(job);
     // An install whose count is owed (Finish later, or never counted after Completed): round 5 F-05.
     const owedHtml = job.ohl_job_kind === 'install' && (job.ohl_used_state === 'later'
       || (job.ohl_used_state === 'missing' && /complete|closed/i.test(stageName || '')))
@@ -996,6 +998,7 @@ const Jobs = {
           <span class="job-card-customer">${this._escapeHtml(locationName)}</span>
           <span class="job-card-time">${timeStr}${durationHtml}</span>
         </div>
+        ${crewAlertHtml}
         <div class="job-card-address">${gateHtml}${this._escapeHtml(address)}</div>
         ${cardContactHtml}
         ${notesHtml ? `<div class="job-card-divider"></div>${notesHtml}<div class="job-card-divider"></div>` : ''}
@@ -1017,6 +1020,12 @@ const Jobs = {
     });
 
     return card;
+  },
+
+  /** The house's "Crew must know" (Odoo: the house's Crew Must Know field), as a red banner. */
+  _crewAlertHtml(job) {
+    const text = (job && job.ohl_crew_alert) || '';
+    return text ? `<div class="crew-alert" role="alert">&#9888; <b>Crew must know:</b> ${this._escapeHtml(text)}</div>` : '';
   },
 
   // ========== DETAIL VIEW — Tabbed Layout ==========
@@ -1059,6 +1068,7 @@ const Jobs = {
         <h2 style="flex:1; font-size:18px;">${this._escapeHtml(job.name || 'Job')}</h2>
         <span class="status-badge ${statusClass}">${this._escapeHtml(stageName)}</span>
       </div>
+      ${this._crewAlertHtml(job)}
 
       ${showInlineBanner ? (job.wrapup_submitted ? `
       <div class="close-job-banner closed" id="closeJobBanner">
