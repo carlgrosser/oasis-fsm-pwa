@@ -206,6 +206,96 @@ const HolidayActual = {
         <input class="ohu-qty" type="number" inputmode="decimal" min="0" value="${isBlank(value) ? '' : value}" placeholder="?" data-${attr}-in aria-label="${this._esc(label)}">
         <button class="ohu-btn" data-${attr}="1" aria-label="More">+</button></div>`;
 
+    // C9 / C7 by pattern (Carl 2026-11-13): one total for a pattern (Multi, Red · Green…), split across its
+    // colors by Odoo when saved; the line shows the split. Change the pattern, or make a custom one.
+    const patterns = data.patterns || (data.patterns = []);
+    const bulbTypes = (data.catalog && data.catalog.bulb_types) || [];
+    const patternOf = (id) => patterns.find(p => p.id === id);
+    const bulbName = (id) => (bulbTypes.find(b => b.id === id) || bulbTypes[0] || {}).name || 'C9';
+    const isPatternLine = (e) => e.items.length === 1 && e.items[0].group === 'bulb' && !!e.items[0].pattern_id;
+    const bulbUid = (it) => `p:bulb:${it.bulb_type_id || 0}:${it.pattern_id || 0}:${it.ground ? 1 : 0}:0:0`;
+    const setPattern = (e, patternId, bulbTypeId) => {
+      const it = e.items[0];
+      const oldUid = e.uid;
+      if (patternId) it.pattern_id = patternId;
+      if (bulbTypeId) it.bulb_type_id = bulbTypeId;
+      const label = `${bulbName(it.bulb_type_id)} · ${(patternOf(it.pattern_id) || {}).name || ''}`;
+      // A product line's name is its product: it follows the pattern (an added line keeps its own name, e.g. Tree 3).
+      if (e.kind !== 'added' || !e.label || /^C\d/.test(e.label)) e.label = label;
+      it.label = label;
+      if ((oldUid || '').startsWith('p:')) {
+        e.uid = bulbUid(it);
+        state.parts.forEach(pt => pt.items.forEach(pi => {
+          if (pi.product_uid === oldUid) Object.assign(pi, { product_uid: e.uid, pattern_id: it.pattern_id, bulb_type_id: it.bulb_type_id, label });
+        }));
+      }
+    };
+    const bulbExtras = (e, ei) => {
+      if (!isPatternLine(e)) return '';
+      const it = e.items[0];
+      const pat = patternOf(it.pattern_id);
+      const split = typeof HolidayUsed !== 'undefined' && pat && !isBlank(it.qty) && it.qty > 0
+        ? HolidayUsed.split(it.qty, pat, {}) : null;
+      const uniq = pat ? [...new Map(pat.colors.map(c => [c.id, c])).values()] : [];
+      const open = state.patternOpen === ei;
+      return `<div class="oha-bulbpat">
+          ${bulbTypes.length > 1 ? `<div class="oha-chips">${bulbTypes.map(b => `<button class="ohu-chip${b.id === it.bulb_type_id ? ' on' : ''}" data-bt="${ei}:${b.id}">${this._esc(b.name)}</button>`).join('')}</div>` : ''}
+          <div class="oha-chips">
+            <button class="ohu-chip on" data-pat-open="${ei}">${pat ? pat.colors.slice(0, 6).map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>`).join('') : ''}
+              ${this._esc(pat ? pat.name : 'Pick a pattern')} <span class="ohu-plan">${open ? '&#9650;' : 'change &#9660;'}</span></button></div>
+          ${open ? `<div class="oha-chips">${patterns.map(p => `<button class="ohu-chip${p.id === it.pattern_id ? ' on' : ''}" data-pat="${ei}:${p.id}">
+              ${p.colors.slice(0, 6).map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>`).join('')}${this._esc(p.name)}</button>`).join('')}
+              <button class="ohu-chip" data-pat-custom="${ei}">&#10133; Custom pattern&hellip;</button></div>` : ''}
+          ${split ? `<div class="ohu-split">${uniq.map(c => `${this._esc(c.name)} ${split[c.id] || 0}`).join(' · ')}</div>`
+            : uniq.length > 1 ? '<div class="ohu-plan">Type the total: it is split across the colors by itself.</div>' : ''}
+        </div>`;
+    };
+    // A custom pattern: tap the colors in order (e.g. red, green, red, white). Needs signal (it is made in Odoo).
+    const customPattern = (ei) => {
+      if (!navigator.onLine) { App.showToast('A new pattern needs signal: pick one of the patterns for now', 'error'); return; }
+      const colors = (data.catalog && data.catalog.colors) || [];
+      const picked = [];
+      const box = document.createElement('div');
+      box.className = 'modal-overlay';
+      box.style.zIndex = '9600';  // above the count screen
+      const draw = () => {
+        box.innerHTML = `<div class="modal" style="max-width:460px;"><div class="modal-header"><h3>Custom pattern</h3></div>
+          <div class="modal-body"><div class="ohu-plan">Tap the colors in the order they repeat (e.g. Red, Green, Red, White).</div>
+            <div class="oha-chips">${colors.map(c => `<button class="ohu-chip" data-cc="${c.id}"><span class="ohu-swatch" style="background:${this._esc(c.hex)}"></span>${this._esc(c.name)}</button>`).join('')}</div>
+            <div style="margin-top:8px;"><b>Pattern:</b> ${picked.length ? picked.map(c => `<span class="ohu-swatch" style="background:${this._esc(c.hex)};display:inline-block;vertical-align:middle;"></span> ${this._esc(c.name)}`).join(' &rarr; ') : '<span class="ohu-plan">nothing yet</span>'}</div></div>
+          <div class="modal-footer"><button class="btn" data-cc-x>Cancel</button>
+            <button class="btn" data-cc-undo ${picked.length ? '' : 'disabled'}>Undo</button>
+            <button class="btn btn-primary" data-cc-save ${picked.length ? '' : 'disabled'}>Use it</button></div></div>`;
+      };
+      draw();
+      document.body.appendChild(box);
+      box.addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.hasAttribute('data-cc-x')) { box.remove(); return; }
+        if (b.hasAttribute('data-cc-undo')) { picked.pop(); return draw(); }
+        if (b.dataset.cc) { const c = colors.find(x => String(x.id) === b.dataset.cc); if (c && picked.length < 12) picked.push(c); return draw(); }
+        if (b.hasAttribute('data-cc-save')) {
+          b.disabled = true;
+          try {
+            const pat = await OdooAPI.callKw('fsm.order', 'worker_create_pattern', [job.id, picked.map(c => c.id)], {});
+            if (!patterns.find(p => p.id === pat.id)) patterns.push(pat);
+            // Kept on the phone with the job's data, so the pattern is still there with no signal.
+            if (typeof HolidayUsed !== 'undefined') DB.setState(HolidayUsed._key(job.id), data).catch(() => {});
+            setPattern(state.elements[ei], pat.id);
+            state.patternOpen = null;
+            box.remove();
+            redraw();
+          } catch (err) {
+            App.showToast('Pattern not made: ' + (err.message || err), 'error');
+            b.disabled = false;
+          }
+        }
+      });
+    };
+    const defaultPatternId = () => ((data.bulb_groups || []).find(g => g.pattern_id) || {}).pattern_id
+      || (patterns.find(p => /multi/i.test(p.name)) || patterns[0] || {}).id || false;
+
     // One line per product (Carl 2026-11-09): the box is open at once, one total, "for:" what it covers.
     const productHtml = (e, ei) => {
       const i = e.items[0] || {};
@@ -216,6 +306,7 @@ const HolidayActual = {
             ${!first && lastYear(e) && !e.ok ? `<button class="btn btn-sm btn-success" data-el-ok="${ei}">&#10003; Same as last year</button>` : ''}
             ${e.kind === 'added' ? `<button class="btn btn-sm btn-ghost" data-el-del="${ei}" aria-label="Remove">&#10005;</button>` : ''}</div>
           ${(e.covers || []).length ? `<div class="ohu-plan">for: ${this._esc(e.covers.join(', '))}</div>` : ''}
+          ${bulbExtras(e, ei)}
           ${e.kind === 'added' ? `<div class="oha-chips oha-addfrom">Came: <button class="ohu-chip${e.from !== 'kit' ? ' on' : ''}" data-el-from="${ei}:truck">off the truck</button><button class="ohu-chip${e.from === 'kit' ? ' on' : ''}" data-el-from="${ei}:kit">from the kit</button></div>` : ''}
           ${e.items.map((it, ii) => `<div class="oha-item"><div class="oha-item-label">${e.kind === 'added' ? this._esc(it.label) : 'How many went up?'}${lastNote}</div>
               ${stepper(`q="${ei}:${ii}"`, it.qty, it.label)}<span class="ohu-unit">${this._esc(it.unit || '')}</span>
@@ -279,7 +370,8 @@ const HolidayActual = {
 
     const addHtml = () => {
       if (!state.adding) {
-        return '<button class="btn oha-add-btn" data-add-el>&#10133; Add a tree, bush, run&hellip;</button>';
+        return ((data.patterns || []).length && !data.takedown ? '<button class="btn oha-add-btn" data-add-bulbs>&#10133; Bulbs (C9 / C7): total + pattern</button>' : '')
+          + '<button class="btn oha-add-btn" data-add-el>&#10133; Add a tree, bush, run&hellip;</button>';
       }
       const kinds = data.add_kinds || [];
       const strands = (data.catalog && data.catalog.strand_types) || [];
@@ -422,6 +514,7 @@ const HolidayActual = {
       // The ✓ on the line and the Save label follow a typed number at once.
       const card = e.target.closest('.oha-el');
       const el = card && card.dataset.ei !== undefined ? state.elements[+card.dataset.ei] : null;
+      if (el && isPatternLine(el)) { redraw(); return; }  // the split across the pattern's colors follows the total
       const title = el && card.querySelector('.oha-el-title');
       if (title && el.ok && !title.textContent.trim().startsWith('✓')) title.insertAdjacentText('afterbegin', '✓ ');
       saveLabel();
@@ -498,6 +591,42 @@ const HolidayActual = {
       if (t.hasAttribute('data-house-done')) {
         if (state.houseRows.some(r => isBlank(r.qty))) { App.showToast('Type a number for each one (0 if none)', 'error'); return; }
         state.open = null; return redraw();
+      }
+      if (t.hasAttribute('data-add-bulbs')) {
+        // One bulb total for a pattern (Multi by default when nothing else is planned): the split is automatic.
+        const it = { group: 'bulb', label: '', bulb_type_id: (bulbTypes[0] || {}).id || false, pattern_id: defaultPatternId(),
+          qty: null, counted: false, unit: 'bulbs', step: 25, truck_qty: 0 };
+        const el = { uid: this._uid(), label: '', kind: 'added', source: '', from: state.from === 'kit' ? 'kit' : 'truck',
+          items: [it], ok: false };
+        setPattern(el);
+        state.elements.push(el);
+        state.open = state.elements.length - 1;
+        state.patternOpen = state.open;
+        redraw();
+        const inp = overlay.querySelector(`.oha-el[data-ei="${state.open}"] input.ohu-qty`);
+        if (inp) inp.focus();
+        return;
+      }
+      if (t.dataset.patOpen !== undefined) {
+        const ei = parseInt(t.dataset.patOpen, 10);
+        state.patternOpen = state.patternOpen === ei ? null : ei;
+        return redraw();
+      }
+      if (t.dataset.pat) {
+        const [ei, pid] = t.dataset.pat.split(':').map(Number);
+        const el = state.elements[ei];
+        const clash = state.elements.find((o, oi) => oi !== ei && isPatternLine(o) && o.items[0].pattern_id === pid
+          && o.items[0].bulb_type_id === el.items[0].bulb_type_id && !!o.items[0].ground === !!el.items[0].ground && (o.uid || '').startsWith('p:') && (el.uid || '').startsWith('p:'));
+        if (clash) { App.showToast(`${clash.label} is already a line: count it there`, 'error'); return; }
+        setPattern(el, pid);
+        state.patternOpen = null;
+        return redraw();
+      }
+      if (t.dataset.patCustom !== undefined) { customPattern(parseInt(t.dataset.patCustom, 10)); return; }
+      if (t.dataset.bt) {
+        const [ei, bt] = t.dataset.bt.split(':').map(Number);
+        setPattern(state.elements[ei], null, bt);
+        return redraw();
       }
       if (t.hasAttribute('data-add-el')) { state.adding = {}; return redraw(); }
       if (t.hasAttribute('data-add-cancel')) { state.adding = null; return redraw(); }
