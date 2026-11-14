@@ -3332,7 +3332,10 @@ const Jobs = {
     overlay.querySelector('#continueCancelBtn').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-    overlay.querySelector('#continueApplyBtn').addEventListener('click', async () => {
+    const applyBtn = overlay.querySelector('#continueApplyBtn');
+    applyBtn.addEventListener('click', async () => {
+      // One visit per tap: the server takes a few seconds, and a second tap made a second visit (FO1041/FO1042).
+      if (applyBtn.disabled) return;
       const startLocal = overlay.querySelector('#continueStart').value;
       const durHrs = parseFloat(overlay.querySelector('#continueDuration').value) || 0;
       const reason = overlay.querySelector('#continueReason').value || '';
@@ -3341,11 +3344,16 @@ const Jobs = {
         return;
       }
       const startOdoo = this._localToOdooDateTime(startLocal);
+      const label = applyBtn.textContent;
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Creating…';
+      const release = () => { applyBtn.disabled = false; applyBtn.textContent = label; };
       try {
         const res = await OdooAPI.workerCreateNextVisit(
           job.id, startOdoo, durHrs, reason,
         );
         if (!res || !res.ok) {
+          release();
           App.showToast('Failed to create next visit: ' + (res && res.error || 'unknown'), 'error');
           return;
         }
@@ -3353,6 +3361,7 @@ const Jobs = {
         App.showToast(`Next visit created: ${res.new_order_name}`, 'success');
         await Jobs.loadJobs(Jobs._currentView || 'today');
       } catch (err) {
+        release();
         App.showToast('Failed: ' + (err.message || err), 'error');
       }
     });
