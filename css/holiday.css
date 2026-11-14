@@ -136,6 +136,7 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .ohf-actions .btn-primary { flex: 1; min-height: 48px; font-size: 17px; }
 .ohf-quick { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .ohf-quick > .btn { min-height: 44px; }
+.ohf-comeback-top { margin-top: 8px; min-height: 44px; }
 .ohf-tally { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 14px; flex-wrap: wrap; }
 .ohf-tally .btn { min-width: 44px; min-height: 40px; }
 .ohf-tally-big { margin-top: 14px; font-size: 15px; }

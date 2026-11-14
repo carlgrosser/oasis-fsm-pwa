@@ -1,6 +1,7 @@
 /**
- * Need to Come Back (Holiday Lighting): the crew has to go back to the house: short on material, couldn't
- * finish, something to fix, or damage we caused (that one goes through the damage report: photos and a spot
+ * Need to Come Back (Holiday Lighting): who comes back? Our crew finishing this job another day (the next visit
+ * of it, js/jobs.js Continue Another Day), or a separate trip: short on material, something to fix, or damage we
+ * caused (that one goes through the damage report: photos and a spot
  * on the map, js/damage.js). Odoo (ohl_helpdesk: worker_report_callback) opens a ticket saying what and why,
  * on the house's callback (a Service Call job the office books; it then shows up here like any job).
  * Without signal the report waits on the phone and goes when the signal is back.
@@ -21,18 +22,35 @@ const ComeBack = {
     return div.innerHTML;
   },
 
+  /** Our own crew finishing this job on another day (the next visit of it), or a separate trip to fix something
+   * (a service call the office books; whoever's free goes). Installs and takedowns can do either; a service
+   * call can only ask for another trip. */
+  canContinue(job) {
+    return job.ohl_job_kind !== 'service' && typeof Jobs !== 'undefined' && !!Jobs._showContinueAnotherDayModal;
+  },
+
   open(job) {
+    const continueOk = this.canContinue(job);
+    // "Couldn't finish" on an install or takedown is the first choice (finish it ourselves), not a trip.
+    const reasons = continueOk ? this.REASONS.filter(([key]) => key !== 'unfinished') : this.REASONS;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `<div class="modal" style="max-width:460px;">
         <div class="modal-header"><h3>Need to come back</h3></div>
         <div class="modal-body">
-          <p style="margin:0 0 6px;">Why?</p>
+          ${continueOk ? `
+          <button class="btn btn-block cb-choice" data-cb="continue" style="display:block;text-align:left;padding:10px 12px;margin-bottom:12px;">
+            <span style="display:block;font-weight:700;">&#128197; We'll finish this job another day</span>
+            <span style="display:block;font-size:14px;font-weight:normal;margin-top:2px;">Our crew comes back to finish: the next visit of this job, on the day you pick.</span>
+          </button>
+          <p style="margin:0 0 6px;"><b>&#128295; A separate trip to fix something</b></p>
+          <p style="margin:0 0 6px;font-size:14px;">A service call the office books (whoever's free goes). What's needed?</p>` : `
+          <p style="margin:0 0 6px;">Another trip to this house: the office books it. Why?</p>`}
           <div class="cb-reasons" style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${this.REASONS.map(([key, label]) => `<button class="btn btn-sm" data-cb-reason="${key}">${this._esc(label)}</button>`).join('')}
+            ${reasons.map(([key, label]) => `<button class="btn btn-sm" data-cb-reason="${key}">${this._esc(label)}</button>`).join('')}
           </div>
           <textarea class="cb-note" rows="4" style="width:100%;font-size:16px;margin-top:10px;display:none;"></textarea>
-          <p class="cb-help" style="margin:6px 0 0;font-size:14px;">The office books the trip back. It shows up in your jobs.</p>
+          <p class="cb-help" style="margin:6px 0 0;font-size:14px;display:none;">The office books the trip and tells whoever goes.</p>
         </div>
         <div class="modal-footer" style="display:flex;gap:8px;">
           <button class="btn" data-cb="cancel">Cancel</button>
@@ -57,6 +75,7 @@ const ComeBack = {
           return DamageReport.open(job.id);
         }
         reason = t.dataset.cbReason;
+        overlay.querySelector('.cb-help').style.display = '';
         overlay.querySelectorAll('[data-cb-reason]').forEach(b => b.classList.toggle('btn-primary', b === t));
         const r = this.REASONS.find(x => x[0] === reason);
         note.placeholder = r ? r[2] : '';
@@ -66,6 +85,7 @@ const ComeBack = {
         return;
       }
       if (t.dataset.cb === 'cancel') { overlay.remove(); return; }
+      if (t.dataset.cb === 'continue') { overlay.remove(); return Jobs._showContinueAnotherDayModal(job); }
       if (t.dataset.cb === 'send') {
         t.disabled = true;
         try {

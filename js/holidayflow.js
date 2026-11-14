@@ -204,15 +204,17 @@ const HolidayFlow = {
           </div></div>`;
     }
     const magnets = (data.tally && data.tally[this.MAGNETS]) || 0;
-    const back = '<button class="btn" data-ohf="comeback" title="Need to come back">&#8617;&#65039;</button>';
     const quick = stage === 'work' && (visit || callback) ? `<div class="ohf-quick">
         ${job.ohl_design_id ? '<button class="btn" data-ohf="map">&#128506;&#65039; Design</button>' : ''}
-        <button class="btn" data-ohf="photo">&#128247; Photo</button>${callback ? back : ''}</div>` : stage === 'work' ? `<div class="ohf-quick">
+        <button class="btn" data-ohf="photo">&#128247; Photo</button></div>` : stage === 'work' ? `<div class="ohf-quick">
         <button class="btn" data-ohf="map">&#128506;&#65039; Map</button>
         <div class="ohf-tally"><span>&#129522; Magnets <b id="ohfMagnets">${magnets}</b></span>
           <button class="btn btn-sm" data-ohf-tally="1">+1</button><button class="btn btn-sm" data-ohf-tally="5">+5</button></div>
-        <button class="btn" data-ohf="photo">&#128247;</button>${back}</div>` : '';
-    top.innerHTML = this._gateHtml(job, stage) + card + quick;
+        <button class="btn" data-ohf="photo">&#128247;</button></div>` : '';
+    // On site, right under the next step (not only at the bottom of Finish, where crews didn't find it).
+    const comeBack = !visit && (stage === 'work' || stage === 'arrival')
+      ? '<button class="btn btn-block ohf-comeback-top" data-ohf="comeback">&#8617;&#65039; Need to come back</button>' : '';
+    top.innerHTML = this._gateHtml(job, stage) + card + quick + comeBack;
     top.onclick = (e) => this._onClick(job, e);
   },
 
@@ -484,7 +486,10 @@ const HolidayFlow = {
     }
     if (!this.isVisit(job)) {
       html += '<div class="ohf-comeback"><button class="btn" data-ohf="comeback">&#8617;&#65039; Need to come back</button>'
-        + '<div class="ohf-help">Short on material, couldn\'t finish, something to fix, damage: the office books the trip back.</div></div>';
+        + '<div class="ohf-help">' + (this.isCallback(job)
+          ? 'Another trip to fix or finish something: the office books it.'
+          : 'Finish this job another day (our crew), or a separate trip to fix something (the office books it).')
+        + '</div></div>';
     }
     box.innerHTML = html;
     box.onclick = (e) => this._onClick(job, e);
