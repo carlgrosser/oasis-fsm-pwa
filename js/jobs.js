@@ -1846,6 +1846,12 @@ const Jobs = {
       return '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">Job completed</p>';
     }
 
+    // Holiday jobs: Close Job (on the Info tab) completes the job after the required steps, so no
+    // separate Completed button that would skip them (Carl 2026-11-16).
+    if (typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job)
+        && this._stageMatches(workflow[nextIdx], 'Completed')) {
+      return '<p style="color:var(--text-secondary); font-size:var(--font-size-small);">Close Job on the Info tab completes the job.</p>';
+    }
     return this._nextStageButtonHtml(workflow[nextIdx]);
   },
 
