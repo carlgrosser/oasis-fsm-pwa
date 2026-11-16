@@ -507,6 +507,7 @@ const Jobs = {
       return;
     }
 
+    if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderButton(container, plan.today, "Today's route");
     for (const item of plan.today) {
       container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));
     }
@@ -521,6 +522,7 @@ const Jobs = {
       divider.className = 'jobs-section-divider';
       divider.innerHTML = `<span class="jobs-section-label">Upcoming &middot; ${dateLabel}</span>`;
       container.appendChild(divider);
+      if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderButton(container, plan.upcoming, `${dateLabel.split(',')[0]}'s route`);
 
       for (const item of plan.upcoming) {
         container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));
@@ -567,9 +569,25 @@ const Jobs = {
       ? (jobDay === day ? this._upcomingJobs : []).concat(later.filter(a => this._dayKey(a.scheduled_date_start) === day))
       : [];
     return {
-      today: this._jobs.concat(todayAppts).sort(byTime),
-      upcoming: upcoming.slice().sort(byTime),
+      today: this._routeOrder(this._jobs.concat(todayAppts).sort(byTime)),
+      upcoming: this._routeOrder(upcoming.slice().sort(byTime)),
     };
+  },
+
+  /**
+   * The crew's saved route (Route screen): jobs with a route number take the places those jobs have in time
+   * order, in route order; everything else stays where time puts it (storm days: many "morning" calls).
+   */
+  _routeOrder(items) {
+    const slots = [];
+    const routed = [];
+    items.forEach((item, i) => {
+      if (!item._appt && item.ohl_route_seq) { slots.push(i); routed.push(item); }
+    });
+    routed.sort((a, b) => a.ohl_route_seq - b.ohl_route_seq);
+    const out = items.slice();
+    slots.forEach((slot, k) => { out[slot] = routed[k]; });
+    return out;
   },
 
   /**
