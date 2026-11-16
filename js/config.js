@@ -97,7 +97,7 @@ const CONFIG = {
     'ohl_job_kind', 'ohl_design_id',  // Holiday Lighting: install map (ohl_design)
     'ohl_used_state',  // Holiday Lighting: "Count owed" on the job card (ohl_dispatch)
     'ohl_visit_label',  // Holiday Lighting: a design visit's window (ohl_requests)
-    'ohl_route_seq',  // the crew's saved route order for the day (ohl_dispatch, Route screen)
+    'ohl_route_seq', 'ohl_go_first',  // the crew's route order for the day and Go first (ohl_dispatch, Route screen)
     'ohl_agreement_state', 'ohl_deposit_state',  // Holiday Lighting: install gate warning (ohl_contract)
     'ohl_crew_alert',  // Holiday Lighting: the house's "Crew must know" (e.g. stay off the roof), red on every job (ohl_dispatch)
   ],

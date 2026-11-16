@@ -329,3 +329,8 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
   display: flex; align-items: center; justify-content: center; }
 .route-what { flex: 1; min-width: 0; }
 .route-stop .btn { min-width: 40px; min-height: 40px; }
+.route-others-box { margin: 8px 0; border: 1px solid var(--border-color, #ddd); border-radius: 8px; padding: 8px 10px;
+  background: var(--bg-primary, #fff); }
+.route-others-box summary { font-weight: 600; cursor: pointer; }
+.route-other { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border-color, #eee); }
+.route-first-on { background: #fff3e0; }

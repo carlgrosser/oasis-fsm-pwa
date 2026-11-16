@@ -4293,3 +4293,7 @@ textarea.form-input {
   font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .autoarrive-bar span { flex: 1; }
 .autoarrive-bar button { border: 0; background: none; color: #93c5fd; font-weight: 700; font-size: 15px; min-height: 40px; padding: 0 6px; }
+
+/* The route starts here (route.js / the office's Go first) */
+.go-first-badge { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 4px; font-size: 11px;
+  font-weight: 700; background: #fff3e0; color: #e65100; border: 1px solid #ffb74d; }

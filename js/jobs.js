@@ -233,7 +233,10 @@ const Jobs = {
       billingStates = await OdooAPI.getBillingStates(personId);
     } catch (e) { /* module not yet upgraded */ }
 
-    const overdueCount = overdueJobs.length;
+    // Service calls from earlier days that weren't finished go on Today ("do today"), not the banner.
+    this._overdueService = overdueJobs.filter(j => j.ohl_job_kind === 'service');
+    this._overdueService.forEach(j => { j._isOverdue = true; });
+    const overdueCount = overdueJobs.length - this._overdueService.length;
     const notClosedCount = completedJobs.filter(j => !j.wrapup_submitted).length;
     const unpaidIds = new Set(billingStates.unpaid_ids || []);
     return { overdueCount, notClosedCount, unpaidIds };
@@ -511,6 +514,7 @@ const Jobs = {
     for (const item of plan.today) {
       container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));
     }
+    if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderOthers(container);
 
     if (plan.upcoming.length > 0) {
       const firstDate = this._parseOdooDatetime(plan.upcoming[0].scheduled_date_start);
@@ -569,7 +573,9 @@ const Jobs = {
       ? (jobDay === day ? this._upcomingJobs : []).concat(later.filter(a => this._dayKey(a.scheduled_date_start) === day))
       : [];
     return {
-      today: this._routeOrder(this._jobs.concat(todayAppts).sort(byTime)),
+      today: this._routeOrder((this._searchQuery ? [] : (this._overdueService || []))
+        .filter(j => !this._jobs.some(t => t.id === j.id))  // moved to today since: once
+        .concat(this._jobs.concat(todayAppts).sort(byTime))),
       upcoming: this._routeOrder(upcoming.slice().sort(byTime)),
     };
   },
@@ -909,9 +915,11 @@ const Jobs = {
       : '';
 
     // Overdue indicator for past uncompleted jobs
-    const overdueHtml = job._isOverdue
-      ? '<span class="overdue-badge" title="Needs completion">⚠️ OVERDUE</span>'
-      : '';
+    const overdueHtml = (job._isOverdue
+      ? (this._currentView === 'today'
+        ? '<span class="overdue-badge" title="From an earlier day: must be done today">⚠️ OVERDUE · do today</span>'
+        : '<span class="overdue-badge" title="Needs completion">⚠️ OVERDUE</span>')
+      : '') + (job.ohl_go_first ? '<span class="go-first-badge" title="The route starts here">⭐ GO FIRST</span>' : '');
 
     // Callback / trouble-ticket ribbon. Callbacks are short maintenance visits
     // that read very differently from a full install, so they get their own

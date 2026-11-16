@@ -23,6 +23,51 @@ const RouteMap = {
     return card;
   },
 
+  _others: null,     // { ts, list } the overdue service calls on others, fetched at most once a minute
+  _OTHERS_TTL: 60000,
+
+  /**
+   * Service calls from earlier days not finished, on someone else (or nobody): anyone on a crew may take one;
+   * it's theirs, today (Carl 2026-11-16). A placeholder now, filled when the list comes.
+   */
+  renderOthers(container) {
+    const box = document.createElement('div');
+    box.className = 'route-others';
+    container.appendChild(box);
+    const personId = (typeof Auth !== 'undefined') && Auth.getPersonId();
+    if (!personId || !navigator.onLine) return;
+    const fill = (list) => {
+      if (!list || !list.length) { box.innerHTML = ''; return; }
+      box.innerHTML = `<details class="route-others-box"><summary>⚠️ Overdue service calls on others · ${list.length}</summary>
+        ${list.map(j => `<div class="route-other" data-id="${j.id}">
+            <div class="route-what"><b>${this._esc(j.customer)}</b>${j.go_first ? ' <span class="go-first-badge">⭐ GO FIRST</span>' : ''}
+              <div class="text-muted small">${this._esc([j.city, j.what].filter(Boolean).join(' · '))}</div>
+              <div class="text-muted small">${this._esc(j.name)} · from ${this._esc(j.since)} · on ${this._esc(j.who)}</div></div>
+            <button class="btn btn-sm btn-primary" data-act="take">Take it</button>
+          </div>`).join('')}</details>`;
+      box.querySelectorAll('[data-act="take"]').forEach(btn => btn.addEventListener('click', async () => {
+        const row = btn.closest('.route-other');
+        btn.disabled = true;
+        try {
+          const res = await OdooAPI.callKw('fsm.order', 'worker_take_overdue', [personId, Number(row.dataset.id)], {});
+          if (!res.ok) { App.showToast(res.reason || 'Not taken.', 'error'); btn.disabled = false; return; }
+          App.showToast('Taken: it\'s on your Today.', 'success');
+          this._others = null;
+          await Jobs.loadJobs('today');
+          const list = document.getElementById('jobListToday');
+          if (list) Jobs.renderJobList(list);
+        } catch (err) {
+          App.showToast((err && err.message) || 'Not taken.', 'error');
+          btn.disabled = false;
+        }
+      }));
+    };
+    if (this._others && Date.now() - this._others.ts < this._OTHERS_TTL) { fill(this._others.list); return; }
+    OdooAPI.callKw('fsm.order', 'worker_overdue_others', [personId], {})
+      .then(list => { this._others = { ts: Date.now(), list }; fill(list); })
+      .catch(() => {});  // an Odoo without it: nothing to show
+  },
+
   /** Google's encoded polyline -> [{lat, lng}]. */
   _decode(str) {
     const out = [];
@@ -120,7 +165,8 @@ const RouteMap = {
         const m = new google.maps.Marker({
           map, position: { lat: s.lat, lng: s.lng },
           label: { text: picked ? String(i + 1) : '?', color: '#fff', fontWeight: 'bold' },
-          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 14, fillColor: picked ? '#1565c0' : '#9e9e9e',
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 14,
+                  fillColor: !picked ? '#9e9e9e' : s.go_first ? '#e65100' : s.overdue ? '#c62828' : '#1565c0',
                   fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
           title: `${s.customer} (${s.name})`,
         });
@@ -165,7 +211,10 @@ const RouteMap = {
         return `<div class="route-stop" data-id="${id}">
             <span class="route-num">${i + 1}</span>
             <div class="route-what"><b>${this._esc(s.customer)}</b> <span class="text-muted">${this._esc(s.name)}${s.when ? ' · ' + this._esc(s.when) : ''}</span>
+              ${s.overdue ? `<div class="small" style="color:#c62828;font-weight:600;">Overdue from ${this._esc(s.overdue)} · do today</div>` : ''}
               <div class="text-muted small">${this._esc(s.address)}${(s.lat || s.lng) ? '' : ' · not on the map'}</div></div>
+            <button class="btn btn-sm ${s.go_first ? 'route-first-on' : ''}" data-act="first" aria-label="Go first"
+              title="${s.go_first ? 'Go first (tap to clear)' : 'Make this a Go first stop'}">${s.go_first ? '⭐' : '☆'}</button>
             <button class="btn btn-sm" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Earlier">&#9650;</button>
             <button class="btn btn-sm" data-act="down" ${i === state.order.length - 1 ? 'disabled' : ''} aria-label="Later">&#9660;</button>
           </div>`;
@@ -186,6 +235,18 @@ const RouteMap = {
         state.line = null;
         state.info = '';
         render();
+      } else if (act === 'first') {
+        const id = Number(btn.closest('.route-stop').dataset.id);
+        const s = byId.get(id);
+        btn.disabled = true;
+        try {
+          const res = await OdooAPI.callKw('fsm.order', 'worker_set_go_first', [id, !s.go_first], {});
+          s.go_first = res.go_first;
+          App.showToast(s.go_first ? 'Go first: Best route starts with it.' : 'No longer Go first.', 'success');
+        } catch (err) {
+          App.showToast((err && err.message) || 'Not changed.', 'error');
+        }
+        render();
       } else if (act === 'tap') {
         state.tapping = [];
         render();
@@ -200,7 +261,8 @@ const RouteMap = {
           const best = await OdooAPI.callKw('fsm.order', 'worker_best_route', [state.order],
             { lat: state.here ? state.here.lat : null, lng: state.here ? state.here.lng : null });
           state.order = best.ids;
-          state.line = best.polyline ? this._decode(best.polyline) : null;
+          const lines = best.polylines || (best.polyline ? [best.polyline] : []);
+          state.line = lines.length ? [].concat(...lines.map(l => this._decode(l))) : null;
           state.info = `Best route: about ${best.minutes} min, ${best.miles} mi${state.here ? ' from here' : ''}`
             + (best.missing && best.missing.length ? ` · not on the map (last): ${best.missing.join(', ')}` : '');
         } catch (err) {
@@ -214,14 +276,12 @@ const RouteMap = {
           state.saved = state.order.join(',');
           App.showToast('Route saved: the crew sees the jobs in this order.', 'success');
           if (typeof Jobs !== 'undefined') {
-            // The Today list in the new order.
-            (Jobs._allJobs || []).concat(Jobs._upcomingJobs || []).forEach(j => {
-              const k = state.order.indexOf(j.id);
-              if (k >= 0) j.ohl_route_seq = k + 1;
-            });
+            // The Today list in the new order: overdue ones on the route are today's now (the server moved them).
+            Jobs._overdueService = (Jobs._overdueService || []).filter(j => !state.order.includes(j.id));
+            Jobs._historyFetchCache = null;
+            await Jobs.loadJobs('today').catch(() => {});
             const list = document.getElementById('jobListToday');
             if (list) Jobs.renderJobList(list);
-            Jobs.loadJobs('today').catch(() => {});
           }
         } catch (err) {
           App.showToast((err && err.message) || 'Not saved.', 'error');
