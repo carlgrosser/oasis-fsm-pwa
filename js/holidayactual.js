@@ -748,7 +748,7 @@ const HolidayActual = {
           <div class="modal-header"><h3>Replaced anything?</h3></div>
           <div class="modal-body">
             <div class="oha-chips">${Object.keys(this.SWAP_TITLES).map(k => `<button class="ohu-chip${kind === k ? ' on' : ''}" data-k="${k}">${this.SWAP_TITLES[k]}</button>`).join('')}</div>
-            ${kind ? `<div class="ohu-plan">${this.SWAP_HELP[kind]}</div>${list.slice(0, 8).map(p => `<button class="ohu-chip" data-p="${p.id}">${this._esc(p.name)}</button>`).join('')}` : ''}
+            ${kind ? `<div class="ohu-plan">${this.SWAP_HELP[kind]}</div>${list.slice(0, 30).map(p => `<button class="ohu-chip" data-p="${p.id}">${this._esc(p.name)}</button>`).join('')}` : ''}
             ${swaps.map((s, i) => `<div class="oha-item"><div class="oha-item-label">${this.SWAP_TITLES[s.kind]}: ${this._esc(s.label)}</div>
               <button class="ohu-btn" data-m="${i}">&minus;</button><b style="min-width:28px;text-align:center;">${s.qty}</b><button class="ohu-btn" data-pl="${i}">+</button></div>`).join('')}
             ${swaps.length ? `<div class="oha-trucks">Truck: ${trucks.map(t => `<button class="ohu-chip${truckId === t.id ? ' on' : ''}" data-t="${t.id}">${this._esc(t.name)}</button>`).join('')}</div>` : ''}

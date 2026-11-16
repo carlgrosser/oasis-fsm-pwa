@@ -334,3 +334,4 @@ button.review-star { cursor: pointer; touch-action: manipulation; }
 .route-others-box summary { font-weight: 600; cursor: pointer; }
 .route-other { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border-color, #eee); }
 .route-first-on { background: #fff3e0; }
+.jobs-done-toggle { margin: 8px 0; width: 100%; }

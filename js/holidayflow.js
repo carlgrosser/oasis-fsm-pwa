@@ -234,6 +234,7 @@ const HolidayFlow = {
       used: '&#9989; Count', map: '&#128506;&#65039; Open the map', bill: '&#128179; OK to bill',
       rating: '&#11088; Rate', _start: '&#9654; Start install', _close: '&#10003; Close Job',
       takedown_check: '&#10003; Check strands',
+      swaps: '&#128295; Materials used?', resolution: '&#9997;&#65039; Say what was done',
     }[step.type] || 'Do it';
   },
 
@@ -350,6 +351,77 @@ const HolidayFlow = {
     if (type === 'takedown_check' && typeof TakedownCheck !== 'undefined') return TakedownCheck.open(job, after);
     if (type === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job, after);
     if (type === 'bill') return this.okToBill(job);
+    if (type === 'swaps') return this.materialsUsed(job, code, after);
+    if (type === 'resolution') return this.whatWasDone(job, after);
+  },
+
+  /** A service call: did anything come off the truck? Pick it (it comes off the truck's stock), or Nothing used. */
+  materialsUsed(job, code, after) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `<div class="modal" style="max-width:420px;">
+        <div class="modal-header"><h3>Materials used?</h3></div>
+        <div class="modal-body"><p style="margin-top:0;">Did you use anything from the truck: strands, bulbs, wire or clips?
+          It comes off the truck's stock (a bad strand goes to the repair bin).</p></div>
+        <div class="modal-footer"><button class="btn" data-none>Nothing used</button>
+          <button class="btn btn-primary" data-yes>Yes, pick them</button></div></div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', async (e) => {
+      if (e.target === overlay) { overlay.remove(); return; }
+      const t = e.target.closest('button');
+      if (!t) return;
+      overlay.remove();
+      if (t.hasAttribute('data-yes')) {
+        if (typeof HolidayActual !== 'undefined') return HolidayActual.openSwaps(job, after);
+        return;
+      }
+      try {
+        await this.setStep(job, code, 'done');
+      } catch (err) {
+        App.showToast('Not saved: ' + (err.message || err), 'error');
+      }
+      after();
+    });
+  },
+
+  /** A service call: what was done, in a line (the job's resolution, and the ticket's when the job closes). */
+  whatWasDone(job, after) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `<div class="modal" style="max-width:460px;">
+        <div class="modal-header"><h3>What was done?</h3></div>
+        <div class="modal-body">
+          <p style="margin-top:0;">For the office and the customer: it closes the ticket.</p>
+          <textarea class="form-input ohf-resolution" rows="4" style="width:100%;"
+            placeholder="e.g. Replaced 3 bad multicolor strands on the front gutter; all lights working.">${this._esc(job.resolution || '')}</textarea>
+        </div>
+        <div class="modal-footer"><button class="btn" data-x>Cancel</button>
+          <button class="btn btn-primary" data-ok>Save</button></div></div>`;
+    document.body.appendChild(overlay);
+    const box = overlay.querySelector('.ohf-resolution');
+    box.focus();
+    overlay.addEventListener('click', async (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.hasAttribute('data-x')) { overlay.remove(); return; }
+      if (t.hasAttribute('data-ok')) {
+        const text = box.value.trim();
+        if (!text) { App.showToast('Say what was done.', 'error'); return; }
+        t.disabled = true;
+        try {
+          await OdooAPI.callKw('fsm.order', 'worker_set_resolution', [job.id, text], {});
+          job.resolution = text;  // Close Job sends it again: the same note
+          if (typeof Jobs !== 'undefined') {
+            (Jobs._allJobs || []).filter(j => j.id === job.id).forEach(j => { j.resolution = text; });
+          }
+          overlay.remove();
+          after();
+        } catch (err) {
+          App.showToast('Not saved: ' + (err.message || err), 'error');
+          t.disabled = false;
+        }
+      }
+    });
   },
 
   skipStep(job, code) {
@@ -456,7 +528,8 @@ const HolidayFlow = {
       const state = s.done ? '<span class="ohf-st ok">&#10003;</span>' : s.skipped ? '<span class="ohf-st skip">&#8631;</span>' : '<span class="ohf-st todo">&#9675;</span>';
       const sub = s.skipped ? `Skipped: ${this._esc(s.reason)}` : this._esc(s.detail || (s.required ? '' : 'optional'));
       // Done: a tick can be undone; a count, the map or photos can be opened again to change or add.
-      const reopen = { used: 'Edit', map: 'Edit', photos_before: '+ Photos', photos_after: '+ Photos' }[s.type];
+      const reopen = { used: 'Edit', map: 'Edit', photos_before: '+ Photos', photos_after: '+ Photos', swaps: 'Edit',
+        resolution: 'Edit' }[s.type];
       if (s.type === 'used' && s.skipped && !s.done) {
         return `<div class="ohf-row"><span class="ohf-st skip">&#8631;</span><div class="ohf-row-main"><div>${this._esc(s.name)}</div>
           <div class="ohf-row-sub">Finish later: count it tonight</div></div>
@@ -480,7 +553,7 @@ const HolidayFlow = {
     const billState = { scheduled: `Charged to the card on file tomorrow morning${bill.card ? ` (ending ${this._esc(bill.card)})` : ''}`,
       hold: 'On hold (office)', charged: 'Charged', office: `The office follows up: ${this._esc(bill.note)}`, nothing: 'Nothing left to charge' }[bill.state];
     html += billState ? `<div class="ohf-billstate">&#128179; ${bill.invoice ? this._esc(bill.invoice) + ': ' : ''}${billState}</div>` : '';
-    if (this.isCallback(job) && typeof HolidayActual !== 'undefined') {
+    if (this.isCallback(job) && typeof HolidayActual !== 'undefined' && !data.steps.some(s => s.type === 'swaps')) {
       html += '<div class="ohf-comeback"><button class="btn" data-ohf="swaps">&#128295; Replaced anything?</button>'
         + '<div class="ohf-help">A strand, bulbs, wire or clips from the truck (optional).</div></div>';
     }

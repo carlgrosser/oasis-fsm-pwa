@@ -510,9 +510,21 @@ const Jobs = {
       return;
     }
 
-    if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderButton(container, plan.today, "Today's route");
-    for (const item of plan.today) {
+    // Done today: folded away under a "Completed" line (tap to show them again; Carl 2026-11-16).
+    const isDone = (item) => !item._appt && this._isCompletedJob(item);
+    const active = plan.today.filter(item => !isDone(item));
+    const done = this._searchQuery ? [] : plan.today.filter(isDone);
+    if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderButton(container, active, "Today's route");
+    for (const item of (this._searchQuery ? plan.today : active)) {
       container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));
+    }
+    if (done.length) {
+      const fold = document.createElement('button');
+      fold.className = 'btn btn-ghost btn-block jobs-done-toggle';
+      fold.textContent = this._showDone ? `Hide completed (${done.length})` : `✓ Completed today · ${done.length} (show)`;
+      fold.addEventListener('click', () => { this._showDone = !this._showDone; this.renderJobList(container); });
+      container.appendChild(fold);
+      if (this._showDone) done.forEach(item => container.appendChild(this._createJobCard(item)));
     }
     if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderOthers(container);
 
@@ -526,7 +538,9 @@ const Jobs = {
       divider.className = 'jobs-section-divider';
       divider.innerHTML = `<span class="jobs-section-label">Upcoming &middot; ${dateLabel}</span>`;
       container.appendChild(divider);
-      if (typeof RouteMap !== 'undefined' && !this._searchQuery) RouteMap.renderButton(container, plan.upcoming, `${dateLabel.split(',')[0]}'s route`);
+      if (typeof RouteMap !== 'undefined' && !this._searchQuery) {
+        RouteMap.renderButton(container, plan.upcoming.filter(j => !this._isCompletedJob(j)), `${dateLabel.split(',')[0]}'s route`);
+      }
 
       for (const item of plan.upcoming) {
         container.appendChild(item._appt ? this._createAppointmentCard(item) : this._createJobCard(item));

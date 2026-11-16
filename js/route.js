@@ -138,9 +138,27 @@ const RouteMap = {
       order: stops.map(s => s.id),
       saved: stops.map(s => s.id).join(','),
       tapping: null,  // ids tapped so far, in "Tap in order"
-      line: null,     // Google's drive line (best route), or null: straight lines
+      line: null,     // the drive along the streets (Google), or null while it loads: straight lines
       info: '',
       here: null,
+      removed: [],    // taken off the route (back to their time order when saved)
+    };
+    // The drive along the streets for the order as it is now (after each change, once things settle).
+    let lineTimer = null;
+    let lineAsk = 0;
+    const refreshLine = () => {
+      clearTimeout(lineTimer);
+      lineTimer = setTimeout(async () => {
+        const ask = ++lineAsk;
+        try {
+          const res = await OdooAPI.callKw('fsm.order', 'worker_route_line', [state.order],
+            { lat: state.here ? state.here.lat : null, lng: state.here ? state.here.lng : null });
+          if (ask !== lineAsk || state.tapping) return;
+          state.line = res.polyline ? this._decode(res.polyline) : null;
+          if (res.minutes) state.info = `About ${res.minutes} min, ${res.miles} mi${state.here ? ' from here' : ''}`;
+          render();
+        } catch (e) { /* straight lines stay */ }
+      }, 500);
     };
     const placed = stops.filter(s => s.lat || s.lng);
     const map = new google.maps.Map($('.route-map'), {
@@ -178,6 +196,7 @@ const RouteMap = {
             state.tapping = null;
             state.line = null;
             state.info = '';
+            refreshLine();
           }
           render();
         });
@@ -196,7 +215,7 @@ const RouteMap = {
     };
 
     const render = () => {
-      const changed = state.order.join(',') !== state.saved;
+      const changed = state.order.join(',') !== state.saved || state.removed.length > 0;
       const missing = stops.filter(s => !(s.lat || s.lng)).length;
       $('.ohu-sub').textContent = state.tapping
         ? `Tap the stops in the order you'll drive (${state.tapping.length} of ${stops.length})`
@@ -217,6 +236,7 @@ const RouteMap = {
               title="${s.go_first ? 'Go first (tap to clear)' : 'Make this a Go first stop'}">${s.go_first ? '⭐' : '☆'}</button>
             <button class="btn btn-sm" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Earlier">&#9650;</button>
             <button class="btn btn-sm" data-act="down" ${i === state.order.length - 1 ? 'disabled' : ''} aria-label="Later">&#9660;</button>
+            <button class="btn btn-sm" data-act="remove" aria-label="Take off the route" title="Take off the route">&#10005;</button>
           </div>`;
       }).join('');
       draw();
@@ -235,6 +255,15 @@ const RouteMap = {
         state.line = null;
         state.info = '';
         render();
+        refreshLine();
+      } else if (act === 'remove') {
+        const id = Number(btn.closest('.route-stop').dataset.id);
+        state.order = state.order.filter(x => x !== id);
+        state.removed.push(id);
+        state.line = null;
+        state.info = '';
+        render();
+        refreshLine();
       } else if (act === 'first') {
         const id = Number(btn.closest('.route-stop').dataset.id);
         const s = byId.get(id);
@@ -272,8 +301,9 @@ const RouteMap = {
       } else if (act === 'save') {
         btn.disabled = true;
         try {
-          await OdooAPI.callKw('fsm.order', 'worker_set_route', [state.order], {});
+          await OdooAPI.callKw('fsm.order', 'worker_set_route', [state.order], { removed_ids: state.removed });
           state.saved = state.order.join(',');
+          state.removed = [];
           App.showToast('Route saved: the crew sees the jobs in this order.', 'success');
           if (typeof Jobs !== 'undefined') {
             // The Today list in the new order: overdue ones on the route are today's now (the server moved them).
@@ -290,5 +320,6 @@ const RouteMap = {
       }
     });
     render();
+    this._here().then(here => { state.here = state.here || here; refreshLine(); });
   },
 };
