@@ -509,14 +509,6 @@ const HolidayMap = {
         return;
       }
       if (!live('view')) return;
-      if (!ownRun(run)) {
-        if (typeof ElementPhotos !== 'undefined') {
-          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' }, this._refreshPhotos);
-          return;
-        }
-        App.showToast(`Run ${run.run_no}: ${Math.round(run.feet || 0)} ft (the office's run: tag it in Tags)`, 'info');
-        return;
-      }
       kindSheet(run);
     });
     const onCord = (cord) => guard(async () => {
@@ -621,16 +613,47 @@ const HolidayMap = {
 
     const kindSheet = (run) => {
       const box = $('.ohu-add');
-      box.innerHTML = `<div class="ohu-add-card">
+      const own = ownRun(run);
+      const tags = (st.data.tags || []);
+      const tagName = (id) => (tags.find(t => t.id === id) || {}).name || '';
+      const photos = typeof ElementPhotos !== 'undefined';
+      const render = () => {
+        const current = run.tag_id ? tagName(run.tag_id) + (run.tag2_id ? ' + ' + tagName(run.tag2_id) : '') : 'none yet';
+        box.innerHTML = `<div class="ohu-add-card">
           <div class="ohu-add-title">Run ${this._esc(run.run_no)} · ${Math.round(run.feet || 0)} ft</div>
-          <div class="ohm-row">${this.KINDS.map(k => `<button class="ohu-chip${(run.kind || 'roofline') === k.key ? ' on' : ''}" data-kind="${k.key}">${k.label}</button>`).join('')}</div>
-          <div class="ohm-btns" style="margin-top:14px;"><button class="btn" data-sheet="delete">Delete run</button>
+          <div class="ohm-sec">&#127991;&#65039; Tag color: <b>${this._esc(current)}</b></div>
+          <div class="ohm-tags">${tags.map(t => `<button class="ohm-tag${run.tag_id === t.id ? ' on' : ''}" data-runtag="${t.id}"
+              style="background:${this._esc(t.hex)}" aria-label="${this._esc(t.name)}"><span>${this._esc(t.name)}</span></button>`).join('')}</div>
+          ${run.tag_id ? `<div class="ohm-row"><button class="btn btn-sm btn-ghost" data-runtag="0">Remove tag</button>
+            <span class="ohm-hint" style="margin:0;">Two colors on one run: use &#127991;&#65039; Tags.</span></div>` : ''}
+          ${own ? `<div class="ohm-sec">What it is</div>
+          <div class="ohm-row">${this.KINDS.map(k => `<button class="ohu-chip${(run.kind || 'roofline') === k.key ? ' on' : ''}" data-kind="${k.key}">${k.label}</button>`).join('')}</div>` : ''}
+          <div class="ohm-btns" style="margin-top:14px;">${own ? '<button class="btn" data-sheet="delete">Delete run</button>' : ''}
+            ${photos ? '<button class="btn" data-sheet="photos">&#128247; Photos</button>' : ''}
             <button class="btn btn-primary" data-sheet="close">Close</button></div></div>`;
+      };
+      render();
       box.hidden = false;
       box.onclick = (e) => {
         const t = e.target.closest('button');
         if (!t) return;
         if (t.dataset.sheet === 'close') { box.hidden = true; return; }
+        if (t.dataset.sheet === 'photos') {
+          box.hidden = true;
+          ElementPhotos.sheet(job, { uid: run.uid, label: `Run ${run.run_no}${run.kind ? ' · ' + run.kind : ''}`, kind: 'run' }, this._refreshPhotos);
+          return;
+        }
+        if (t.dataset.runtag !== undefined) {
+          const id = Number(t.dataset.runtag) || false;
+          guard(async () => {
+            // One tap sets one color (a second color stays with the Tags tool); tapping the current color keeps it.
+            if (id === (run.tag_id || false) && !run.tag2_id) return;
+            run = await saveRun({ uid: run.uid, tag_color_id: id, tag_color2_id: false });
+            draw();
+            render();
+          });
+          return;
+        }
         guard(async () => {
           if (t.dataset.kind) {
             if (t.dataset.kind !== (run.kind || 'roofline')) await saveRun({ uid: run.uid, kind: t.dataset.kind });
