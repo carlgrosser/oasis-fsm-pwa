@@ -1,6 +1,7 @@
 /**
  * Materials used, the simple way (Carl 2026-11-23): which bulbs and which strands, how many. Nothing per run, tree
- * or bush, no clips or cords, no "where did it come from".
+ * or bush, no cords, no "where did it come from". Clips work themselves out: one per roof bulb, less the magnets and
+ * other special clips (typed); one stake per ground bulb. Timers: how many.
  *  - Install count (opened by HolidayUsed): one line per bulb pattern and strand, last year's actual count filled in
  *    when there is one; add what's missing. Boxes left empty aren't recorded. Saved with worker_save_actual.
  *  - Service call: tap the bulbs or strands used, or Nothing used. Saved with worker_save_swaps.
@@ -63,20 +64,119 @@ const SimpleUsed = {
       }
       return '';
     };
+    // ---- Clips (worked out) and timers
+    const clipCat = (data.catalog && data.catalog.clips) || { main: [], ground: false, special: [] };
+    const rowsIn = (src && src.house_rows) || data.house_rows || [];
+    const trusted = data.source === 'saved' || !!src;
+    const codeOf = (r) => {
+      const known = [...clipCat.main, ...clipCat.special, ...(clipCat.ground ? [clipCat.ground] : [])];
+      const c = known.find(k => k.id === r.attachment_id) || known.find(k => k.name.toLowerCase() === (r.label || '').toLowerCase());
+      return c && r.group === 'attachment' ? c.code : null;
+    };
+    const clip = { main: data.main_clip_id || (clipCat.main[0] || {}).id || false, typed: null, stakes: null, special: {}, last: {}, more: false };
+    const timer = { qty: null, last: null };
+    const savedQty = {};
+    const keepRows = [];   // cords and the like, counted before: kept, not asked
+    rowsIn.forEach(r => {
+      const code = codeOf(r);
+      const qty = this._blank(r.qty) ? null : r.qty;
+      if (r.group === 'timer') {
+        if (qty !== null) { timer.qty = (timer.qty || 0) + qty; if (!trusted && r.planned) timer.last = timer.qty; }
+        return;
+      }
+      if (!code) {
+        if (qty !== null && (trusted || !r.planned)) keepRows.push(Object.assign({}, r, { counted: true }));
+        return;
+      }
+      if (qty === null) return;
+      const main = clipCat.main.find(c => c.code === code);
+      if (main) { clip.main = main.id; savedQty.main = (savedQty.main || 0) + qty; }
+      else if (clipCat.ground && code === clipCat.ground.code) savedQty.stakes = qty;
+      else { clip.special[code] = qty; if (!trusted && r.planned) clip.last[code] = qty; }
+    });
+    // Counted as they went (the Magnets +1 / +5 buttons).
+    const flow = typeof HolidayFlow !== 'undefined' && HolidayFlow._data && HolidayFlow._data[job.id];
+    const magnets = (flow && flow.tally && flow.tally[HolidayFlow.MAGNETS]) || 0;
+    if (magnets && !trusted) { clip.special.magnetic_clip = magnets; delete clip.last.magnetic_clip; }
+    const bulbs = (ground) => items().filter(x => x.it.group === 'bulb' && !!x.it.ground === ground)
+      .reduce((a, x) => a + (x.it.qty || 0), 0);
+    // Staples (per foot) and glue hold no bulb's clip place.
+    const swapped = () => clipCat.special.filter(c => c.usage !== 'per_ft' && c.code !== 'hot_glue')
+      .reduce((a, c) => a + (clip.special[c.code] || 0), 0);
+    const autoMain = () => Math.max(bulbs(false) - swapped(), 0);
+    // A saved number the crew had changed by hand stays theirs; one that was worked out keeps following the bulbs.
+    if (trusted) {
+      if (savedQty.main !== undefined && savedQty.main !== autoMain()) clip.typed = savedQty.main;
+      if (savedQty.stakes !== undefined && savedQty.stakes !== bulbs(true)) clip.stakes = savedQty.stakes;
+    }
+    const clipsHtml = () => {
+      const main = clipCat.main.find(c => c.id === clip.main);
+      const roof = bulbs(false);
+      let html = '';
+      if (main && (roof || clip.typed)) {
+        const auto = clip.typed === null;
+        html += `<div class="ohu-row"><div class="ohu-label">${clipCat.main.length > 1 ? `<select data-clip-main style="height:40px;font-size:16px;max-width:100%;">${clipCat.main.map(c =>
+          `<option value="${c.id}"${c.id === clip.main ? ' selected' : ''}>${this._esc(c.name)}</option>`).join('')}</select>` : this._esc(main.name)}
+          <div class="ohu-plan">${auto ? `automatic: ${roof} bulbs${swapped() ? ` − ${swapped()} special` : ''}` : `you typed it <button class="btn btn-sm btn-ghost" data-clip-auto="main">use ${autoMain()}</button>`}</div></div>
+          ${this._stepper('clip:main', auto ? autoMain() : clip.typed)}</div>`;
+      }
+      if (clipCat.ground && (bulbs(true) || clip.stakes)) {
+        const auto = clip.stakes === null;
+        html += `<div class="ohu-row"><div class="ohu-label">${this._esc(clipCat.ground.name)}
+          <div class="ohu-plan">${auto ? 'automatic: 1 per ground bulb' : `you typed it <button class="btn btn-sm btn-ghost" data-clip-auto="stakes">use ${bulbs(true)}</button>`}</div></div>
+          ${this._stepper('clip:stakes', auto ? bulbs(true) : clip.stakes)}</div>`;
+      }
+      clipCat.special.filter(c => clip.special[c.code] !== undefined).forEach(c => {
+        html += `<div class="ohu-row"><div class="ohu-label">${this._esc(c.name)}${c.usage === 'per_ft' ? ' (feet)' : ''}${clip.last[c.code] ? `<div class="ohu-plan">last year ${clip.last[c.code]}</div>` : ''}</div>
+          ${this._stepper('special:' + c.code, clip.special[c.code])}</div>`;
+      });
+      const rest = clipCat.special.filter(c => clip.special[c.code] === undefined);
+      if (clip.more) html += `<div class="oha-chips">${rest.map(c => `<button class="ohu-chip" data-special="${c.code}">${this._esc(c.name)}</button>`).join('')}</div>`;
+      else if (rest.length) html += '<button class="btn oha-add-btn" data-special-more>&#10133; Magnets or other clips</button>';
+      return html;
+    };
+    const houseRows = () => {
+      const out = keepRows.slice();
+      const push = (c, qty, unit) => { if (c && qty > 0) out.push({ group: 'attachment', label: c.name, qty, unit: unit || '', attachment_id: c.id, counted: true }); };
+      push(clipCat.main.find(c => c.id === clip.main), clip.typed === null ? autoMain() : clip.typed);
+      push(clipCat.ground, clip.stakes === null ? bulbs(true) : clip.stakes);
+      clipCat.special.forEach(c => push(c, clip.special[c.code] || 0, c.usage === 'per_ft' ? 'ft' : ''));
+      if (!this._blank(timer.qty)) out.push({ group: 'timer', label: 'Timer', qty: timer.qty, unit: '', counted: true });
+      return out;
+    };
+    // A number box: a light line, a clip or the timers.
+    const getQ = (ref) => {
+      if (ref === 'clip:main') return clip.typed === null ? autoMain() : clip.typed;
+      if (ref === 'clip:stakes') return clip.stakes === null ? bulbs(true) : clip.stakes;
+      if (ref === 'timer') return timer.qty;
+      if (ref.startsWith('special:')) return clip.special[ref.slice(8)];
+      return at(ref).qty;
+    };
+    const setQ = (ref, v) => {
+      if (ref === 'clip:main') clip.typed = v;
+      else if (ref === 'clip:stakes') clip.stakes = v;
+      else if (ref === 'timer') timer.qty = v;
+      else if (ref.startsWith('special:')) clip.special[ref.slice(8)] = v === null ? 0 : v;
+      else Object.assign(at(ref), { qty: v, counted: v !== null });
+    };
     const draw = () => {
       const all = items();
       const section = (title, list, kind) => `<div class="ohu-group">${title}</div>${list.map(lineHtml).join('')}
         ${adding === kind ? addHtml() : `<button class="btn oha-add-btn" data-add="${kind}">&#10133; Add ${kind === 'bulb' ? 'bulbs' : 'strands'}</button>`}`;
       $('.ohu-body').innerHTML = section('Bulbs', all.filter(x => !isStrand(x.it)), 'bulb')
-        + section('Strands', all.filter(x => isStrand(x.it)), 'strand');
+        + section('Strands', all.filter(x => isStrand(x.it)), 'strand')
+        + `<div class="ohu-group">Clips</div>${clipsHtml()}`
+        + `<div class="ohu-group">Timers</div><div class="ohu-row"><div class="ohu-label">How many timers?${timer.last ? `<div class="ohu-plan">last year ${timer.last}</div>` : ''}</div>${this._stepper('timer', timer.qty)}</div>`;
     };
     const at = (ref) => { const [a, b] = ref.split(':').map(Number); return lines[a].items[b]; };
-    const readInputs = () => overlay.querySelectorAll('[data-qty]').forEach(inp => {
-      const it = at(inp.dataset.qty);
-      const v = inp.value === '' ? null : Math.max(0, inp.valueAsNumber || 0);
-      if (v !== it.qty && !(this._blank(v) && this._blank(it.qty))) it.counted = v !== null;
-      it.qty = v;
-    });
+    const readInputs = () => {
+      // What's typed, against what the boxes were drawn with (a worked-out clip number isn't a typed one).
+      const typed = [...overlay.querySelectorAll('[data-qty]')]
+        .map(inp => [inp.dataset.qty, inp.value === '' ? null : Math.max(0, inp.valueAsNumber || 0), inp.defaultValue, inp.value])
+        .filter(x => x[2] !== x[3]);
+      typed.forEach(([ref, v]) => setQ(ref, v));
+      overlay.querySelectorAll('[data-qty]').forEach(inp => { inp.defaultValue = inp.value; });
+    };
     const add = (it) => {
       lines.push({ uid: HolidayActual._uid(), label: it.label, kind: 'added', source: '', from: 'truck', items: [it] });
       adding = null;
@@ -86,6 +186,20 @@ const SimpleUsed = {
       if (box) box.focus();
     };
     draw();
+
+    // The clips follow as the bulbs are typed (redrawn when the box is left).
+    $('.ohu-body').addEventListener('change', (e) => {
+      if (e.target.matches('[data-clip-main]')) clip.main = +e.target.value;
+      const next = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.qty : null;
+      readInputs();
+      // Redrawn after this tap is done: redrawing at once would swallow a tap on Save's neighbours.
+      setTimeout(() => { if (!overlay.isConnected || (document.activeElement && document.activeElement.matches && document.activeElement.matches('[data-qty]') && document.activeElement.value !== document.activeElement.defaultValue)) return;
+        const focus = (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.qty) || next;
+        draw();
+        const box = focus && [...overlay.querySelectorAll('[data-qty]')].find(b => b.dataset.qty === focus);
+        if (box && focus !== e.target.dataset.qty) box.focus();
+      }, 250);
+    });
 
     const payload = () => {
       readInputs();
@@ -99,8 +213,6 @@ const SimpleUsed = {
       oldParts.forEach(p => p.items.forEach(i => { if (!this._blank(i.qty)) sums[i.product_uid] = (sums[i.product_uid] || 0) + i.qty; }));
       const parts = oldParts.map(p => Object.assign({}, p, { items: p.items.filter(i => !this._blank(i.qty)
         && totals[i.product_uid] >= sums[i.product_uid]) })).filter(p => p.items.length);
-      const houseRows = ((src && src.house_rows) || data.house_rows || []).filter(r => !this._blank(r.qty)
-        && (data.source === 'saved' || src || !r.planned)).map(r => Object.assign({}, r, { counted: true }));
       return {
         from, truck_id: (src && src.truck_id) || data.truck_id || false,
         elements: used.map(e => ({ uid: e.uid, label: e.label, kind: e.kind, run_id: e.run_id || false,
@@ -109,7 +221,7 @@ const SimpleUsed = {
             from: e.kind === 'added' ? 'truck' : undefined,
             truck_qty: e.kind === 'added' || from === 'truck' ? it.qty : from === 'kit' ? 0 : Math.min(it.truck_qty || 0, it.qty),
           })) })),
-        house_rows: houseRows, swaps, parts,
+        house_rows: houseRows(), swaps, parts,
       };
     };
     const close = () => { overlay.remove(); if (onClose) onClose(); };
@@ -120,14 +232,17 @@ const SimpleUsed = {
       if (d.act === 'close') { overlay.remove(); if (onClose) onClose(); return; }
       if (d.less || d.more) {
         readInputs();
-        const it = at(d.less || d.more);
-        it.qty = Math.max(0, (it.qty || 0) + (d.more ? 1 : -1) * stepOf(it));
-        it.counted = true;
+        const ref = d.less || d.more;
+        const step = /^(clip|special|timer)/.test(ref) ? 1 : stepOf(at(ref));
+        setQ(ref, Math.max(0, (getQ(ref) || 0) + (d.more ? 1 : -1) * step));
         return draw();
       }
       if (d.del) { readInputs(); lines.splice(+d.del.split(':')[0], 1); return draw(); }
       if (d.add) { readInputs(); adding = d.add; return draw(); }
       if (t.hasAttribute('data-add-x')) { readInputs(); adding = null; return draw(); }
+      if (t.hasAttribute('data-special-more')) { readInputs(); clip.more = true; return draw(); }
+      if (d.special) { readInputs(); clip.special[d.special] = 0; clip.more = false; return draw(); }
+      if (d.clipAuto) { readInputs(); if (d.clipAuto === 'main') clip.typed = null; else clip.stakes = null; return draw(); }
       if (d.bt) { readInputs(); bulbType = +d.bt; return draw(); }
       if (d.addPat) {
         readInputs();
