@@ -245,6 +245,16 @@ const DB = {
 
   // ========== SYNC QUEUE ==========
 
+  /** How many wait to be sent, without loading them (photos are big: loading them to count them froze the app). */
+  async countUnsynced(storeName) {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(storeName, 'readonly').objectStore(storeName).index('synced').count(0);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
   async getUnsyncedItems(storeName) {
     return this.getByIndex(storeName, 'synced', 0);
   },

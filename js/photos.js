@@ -471,7 +471,7 @@ const Photos = {
           countEl.style.display = '';
           overlay.querySelector('#cameraCloseBtn .camera-btn-label').textContent = 'Done';
           overlay.querySelector('#cameraCloseBtn .camera-btn-icon').textContent = '✓';
-          if (navigator.onLine) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
+          if (!OdooAPI.noSignal()) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
         } catch (err) {
           console.error('Photo capture error:', err);
           App.showToast('That photo didn\'t save: try again', 'error');
@@ -582,7 +582,7 @@ const Photos = {
           const photo = await this.savePhoto(
             pending.jobId, resized, thumbnail, pending.category, file.name || `photo_${Date.now()}.jpg`, takenAt, true);
           photos.push(photo);
-          if (navigator.onLine) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
+          if (!OdooAPI.noSignal()) this.uploadPhoto(photo).catch(err => console.warn('Upload later (sync):', err));
         } finally {
           URL.revokeObjectURL(objectUrl); // release immediately
         }
@@ -665,6 +665,7 @@ const Photos = {
     if (cached && Date.now() - cached.ts < this._DRIVE_CACHE_TTL) {
       return cached.data;
     }
+    if (OdooAPI.noSignal()) return cached ? cached.data : [];
     try {
       const data = await OdooAPI.getDrivePhotoLinks(jobId);
       this._driveCache[jobId] = { ts: Date.now(), data };
@@ -745,6 +746,8 @@ const Photos = {
         break;
       } catch (err) {
         driveError = err;
+        // No signal: kept for later, not sent again twice more on a weak line.
+        if (OdooAPI.isOffline(err) && !/HTTP 5/.test(err.message || '')) { OdooAPI.markWeak(); throw err; }
         if (attempt < 2) continue;
         console.warn('Drive upload failed after retry:', err);
       }
@@ -791,6 +794,7 @@ const Photos = {
       } catch (err) {
         console.warn('Failed to upload photo:', photo.temp_id, err);
         failed++;
+        if (OdooAPI.noSignal()) return { uploaded, failed, offline: true };  // the rest waits
       }
     }
     // Records (when, where, fingerprint) that didn't reach Odoo with their photo.

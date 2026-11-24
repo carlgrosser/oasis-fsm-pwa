@@ -70,7 +70,7 @@ const HolidayActual = {
   },
 
   async _call(jobId, method, args, entry) {
-    if (navigator.onLine) {
+    if (!OdooAPI.noSignal()) {
       try {
         return await OdooAPI.callKw('fsm.order', method, [jobId].concat(args), {});
       } catch (err) {

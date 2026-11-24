@@ -505,7 +505,9 @@ const WrapUp = {
 
     const btnLabel = editMode ? 'Save Changes' : 'Close Job';
 
-    let queue = !navigator.onLine;
+    // Status changes still waiting go first (Close Job after them).
+    const waiting = (await DB.getUnsyncedItems('statusChanges').catch(() => [])).some(i => i.job_id === job.id);
+    let queue = OdooAPI.noSignal() || waiting;
     if (!queue) {
       try {
         const result = await OdooAPI.submitWrapup(job.id, { ...data, gps, gps_accuracy: gpsAccuracy });
@@ -566,6 +568,7 @@ const WrapUp = {
         job.wrapup_submitted = true;
         if (typeof Jobs !== 'undefined') Jobs._historyFetchCache = null;
         await DB.put('jobs', job);
+        if (typeof Sync !== 'undefined') Sync._retryAt = 0;
         const detailContainer = document.getElementById('jobDetail');
         if (detailContainer && typeof Jobs !== 'undefined') Jobs.renderJobDetail(job.id, detailContainer);
       }

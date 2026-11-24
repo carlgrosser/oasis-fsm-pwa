@@ -21,7 +21,7 @@ const HolidayUsed = {
   async load(jobId) {
     const saved = await DB.getState(this._key(jobId)).catch(() => null);
     const pending = (await this._pending())[jobId];
-    if (navigator.onLine && !pending) {
+    if (navigator.onLine && !pending && !(saved && OdooAPI.isWeak())) {
       try {
         const data = await OdooAPI.callKw('fsm.order', 'worker_get_used', [jobId], {});
         await DB.setState(this._key(jobId), data).catch(() => {});
@@ -35,7 +35,7 @@ const HolidayUsed = {
   },
 
   async prewarm(job) {
-    if (!navigator.onLine || job.ohl_job_kind !== 'install') return;
+    if (!navigator.onLine || !['install', 'service'].includes(job.ohl_job_kind)) return;
     await this.load(job.id).catch(() => {});
   },
 
@@ -115,6 +115,11 @@ const HolidayUsed = {
     document.body.appendChild(overlay);
     const $ = (s) => overlay.querySelector(s);
     const data = await this.load(job.id);
+    if (data && data.elements && typeof SimpleUsed !== 'undefined' && !data.takedown && !(opts && opts.focus)) {
+      $('.ohu-foot').innerHTML = '<button class="btn btn-lg" data-act="later">Finish later</button>'
+        + '<button class="btn btn-primary btn-lg" data-act="save">&#10003; Save</button>';
+      return SimpleUsed.openCount(job, data, onClose, overlay);
+    }
     if (data && data.elements && typeof HolidayActual !== 'undefined') {
       // By element, from the kit or the truck (Odoo ohl_dispatch 18.0.1.8+).
       $('.ohu-foot').innerHTML = '<button class="btn btn-lg" data-act="later">Finish later</button>'

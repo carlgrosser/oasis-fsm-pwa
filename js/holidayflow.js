@@ -48,9 +48,9 @@ const HolidayFlow = {
   },
 
   /** The job's flow from Odoo (kept on the phone), with ticks / skips made offline applied on top. */
-  async load(job, fresh) {
+  async load(job, cachedOnly) {
     let data = null;
-    if (navigator.onLine) {
+    if (!cachedOnly && !OdooAPI.noSignal()) {
       try {
         data = await OdooAPI.callKw('fsm.order', 'worker_get_field_flow', [job.id], {});
         await DB.setState(this._key(job.id), data).catch(() => {});
@@ -60,8 +60,11 @@ const HolidayFlow = {
     }
     if (!data) data = await DB.getState(this._key(job.id)).catch(() => null);
     if (!data) return null;
+    // Service calls: materials and what was done, nothing else (Carl 2026-11-23).
+    if (this.isCallback(job)) data.steps = data.steps.filter(s => ['swaps', 'resolution'].includes(s.type));
     // Photos just taken may still be uploading: count the ones on the phone too.
-    if (typeof Photos !== 'undefined' && Photos.getPhotoCountsByCategory) {
+    if (!cachedOnly && typeof Photos !== 'undefined' && Photos.getPhotoCountsByCategory
+        && data.steps.some(s => s.type === 'photos_before' || s.type === 'photos_after')) {
       const counts = await Photos.getPhotoCountsByCategory(job.id).catch(() => ({}));
       for (const s of data.steps) {
         const cat = s.type === 'photos_before' ? 'before' : s.type === 'photos_after' ? 'after' : null;
@@ -76,6 +79,10 @@ const HolidayFlow = {
     for (const p of pending) {
       const step = data.steps.find(s => s.code === p.code);
       if (step) Object.assign(step, { done: p.state === 'done', skipped: p.state === 'skipped', reason: p.reason || '' });
+      if (p.resolution) {
+        job.resolution = p.resolution;
+        if (step) step.detail = p.resolution.slice(0, 60);
+      }
     }
     this._data = this._data || {};
     this._data[job.id] = data;
@@ -85,35 +92,49 @@ const HolidayFlow = {
   async flush() {
     if (!navigator.onLine) return;
     const pending = (await DB.getState(this.PENDING_KEY).catch(() => null)) || [];
-    const left = [];
+    const sent = [];
     for (const p of pending) {
       try {
-        await OdooAPI.callKw('fsm.order', 'worker_set_field_step', [p.jobId, p.code, p.state, p.reason || false], {});
+        if (p.resolution) await OdooAPI.callKw('fsm.order', 'worker_set_resolution', [p.jobId, p.resolution], {});
+        else await OdooAPI.callKw('fsm.order', 'worker_set_field_step', [p.jobId, p.code, p.state, p.reason || false], {});
+        sent.push(p);
       } catch (err) {
-        left.push(p);
+        console.warn('Field step: still not sent', p, err);
+        if (OdooAPI.isOffline(err)) break;
       }
     }
-    await DB.setState(this.PENDING_KEY, left).catch(() => {});
+    if (!sent.length) return;
+    // What was added while these went out stays.
+    const key = (p) => JSON.stringify(p);
+    const gone = new Set(sent.map(key));
+    const now = (await DB.getState(this.PENDING_KEY).catch(() => null)) || [];
+    await DB.setState(this.PENDING_KEY, now.filter(p => !gone.has(key(p)))).catch(() => {});
   },
 
   async setStep(job, code, state, reason) {
     const data = this._data && this._data[job.id];
     const step = data && data.steps.find(s => s.code === code);
     if (step) Object.assign(step, { done: state === 'done', skipped: state === 'skipped', reason: reason || '' });
-    if (navigator.onLine) {
+    if (!OdooAPI.noSignal()) {
       try {
         const res = await OdooAPI.callKw('fsm.order', 'worker_set_field_step', [job.id, code, state, reason || false], {});
-        if (data) data.steps = res.steps;
+        if (data) data.steps = this.isCallback(job) ? res.steps.filter(s => ['swaps', 'resolution'].includes(s.type)) : res.steps;
         await DB.setState(this._key(job.id), data).catch(() => {});
         return;
       } catch (err) {
         if (!OdooAPI.isOffline(err)) throw err;
       }
     }
-    const pending = ((await DB.getState(this.PENDING_KEY).catch(() => null)) || []).filter(p => !(p.jobId === job.id && p.code === code));
-    pending.push({ jobId: job.id, code, state, reason });
-    await DB.setState(this.PENDING_KEY, pending);
+    await this._queueStep({ jobId: job.id, code, state, reason });
     await DB.setState(this._key(job.id), data).catch(() => {});
+  },
+
+  async _queueStep(entry) {
+    const pending = ((await DB.getState(this.PENDING_KEY).catch(() => null)) || [])
+      .filter(p => !(p.jobId === entry.jobId && p.code === entry.code));
+    pending.push(Object.assign({ at: Date.now() }, entry));
+    await DB.setState(this.PENDING_KEY, pending);
+    if (typeof Sync !== 'undefined') Sync._updatePendingCount().catch(() => {});
   },
 
   // ---------------------------------------------------------------- Where the job is
@@ -122,7 +143,7 @@ const HolidayFlow = {
     const n = name.toLowerCase();
     if (n.includes('complete') || n.includes('closed') || job.wrapup_submitted) return 'done';
     if (n.includes('progress')) return 'work';
-    if (n.includes('arrived')) return 'arrival';
+    if (n.includes('arrived')) return this.isCallback(job) ? 'work' : 'arrival';  // a service call starts on arrival
     if (n.includes('route')) return 'enroute';
     return 'pre';
   },
@@ -150,11 +171,19 @@ const HolidayFlow = {
     const top = document.getElementById('ohfTop');
     if (!top) return;
     this._job = job;
-    const data = await this.load(job);
-    if (!data) { top.innerHTML = ''; return; }
-    this._renderTop(job, data, top);
-    this.renderFinish(job);
-    this.renderMapCount(job);
+    // The phone's copy at once, then Odoo's (a weak signal used to leave the screen empty for seconds).
+    const draw = (data) => {
+      const box = document.getElementById('ohfTop');
+      if (!box || this._job !== job) return;
+      this._renderTop(job, data, box);
+      this.renderFinish(job);
+      this.renderMapCount(job);
+    };
+    const kept = await this.load(job, true);
+    if (kept) draw(kept);
+    const fresh = OdooAPI.noSignal() ? null : await this.load(job);
+    if (fresh) draw(fresh);
+    else if (!kept) top.innerHTML = '';
   },
 
   _renderTop(job, data, top) {
@@ -174,8 +203,8 @@ const HolidayFlow = {
     } else if (stage === 'enroute' && (visit || callback)) {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span></div>
           <div class="ohf-title">On the way</div>
-          <div class="ohf-help">Tap Arrived when you get there. Then ${visit ? 'photos of the house' : 'before photos'}.</div>
-          <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="arrived">&#128205; Arrived</button></div></div>`;
+          <div class="ohf-help">${visit ? 'Tap Arrived when you get there. Then photos of the house.' : 'Tap when you get there: it starts the job.'}</div>
+          <div class="ohf-actions"><button class="btn btn-primary btn-lg" data-ohf="arrived">&#128205; ${visit ? 'Arrived' : 'Arrived, start'}</button></div></div>`;
     } else if (stage === 'pre') {
       card = `<div class="ohf-card"><div class="ohf-card-head"><span class="ohf-label">Next</span>${sop}</div>
           <div class="ohf-title">Head to the job</div>
@@ -200,13 +229,13 @@ const HolidayFlow = {
           ${next.detail ? `<div class="ohf-detail">${this._esc(next.detail)}</div>` : ''}
           <div class="ohf-actions">
             <button class="btn btn-primary btn-lg" data-ohf-do="${this._esc(next.code)}">${action}</button>
-            ${next.code.startsWith('_') ? '' : `<button class="btn btn-ghost" data-ohf-skip="${this._esc(next.code)}">Skip…</button>`}
+            ${next.code.startsWith('_') || callback ? '' : `<button class="btn btn-ghost" data-ohf-skip="${this._esc(next.code)}">Skip…</button>`}
           </div></div>`;
     }
     const magnets = (data.tally && data.tally[this.MAGNETS]) || 0;
     const quick = stage === 'work' && (visit || callback) ? `<div class="ohf-quick">
         ${job.ohl_design_id ? '<button class="btn" data-ohf="map">&#128506;&#65039; Design</button>' : ''}
-        <button class="btn" data-ohf="photo">&#128247; Photo</button></div>` : stage === 'work' ? `<div class="ohf-quick">
+        ${callback ? '<button class="btn" data-ohf="before">&#128247; Before photos</button>' : '<button class="btn" data-ohf="photo">&#128247; Photo</button>'}</div>` : stage === 'work' ? `<div class="ohf-quick">
         <button class="btn" data-ohf="map">&#128506;&#65039; Map</button>
         <div class="ohf-tally"><span>&#129522; Magnets <b id="ohfMagnets">${magnets}</b></span>
           <button class="btn btn-sm" data-ohf-tally="1">+1</button><button class="btn btn-sm" data-ohf-tally="5">+5</button></div>
@@ -259,6 +288,7 @@ const HolidayFlow = {
       return;
     }
     if (t.dataset.ohf === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job);
+    if (t.dataset.ohf === 'before') return this.addPhotos(job, 'before');
     if (t.dataset.ohf === 'photo') return document.getElementById('footerCameraBtn')?.click();
     if (t.dataset.ohf === 'comeback' && typeof ComeBack !== 'undefined') return ComeBack.open(job);
     if (t.dataset.ohf === 'swaps' && typeof HolidayActual !== 'undefined') return HolidayActual.openSwaps(job);
@@ -272,11 +302,28 @@ const HolidayFlow = {
   },
 
   async refresh(job) {
-    const data = await this.load(job);
-    const top = document.getElementById('ohfTop');
-    if (data && top) this._renderTop(job, data, top);
-    this.renderFinish(job);
-    this.renderMapCount(job);
+    const draw = (data) => {
+      const top = document.getElementById('ohfTop');
+      if (data && top && this._job === job) this._renderTop(job, data, top);
+      this.renderFinish(job);
+      this.renderMapCount(job);
+    };
+    draw(await this.load(job, true));
+    if (!OdooAPI.noSignal()) draw(await this.load(job));
+  },
+
+  /** Photos from a button (never a step): take them or pick them from the gallery. */
+  async addPhotos(job, category) {
+    try {
+      const res = await Photos.capturePhoto(job.id, category);
+      const n = res ? (res.series ? res.photos.length : 1) : 0;
+      if (n) App.showToast(`${n} photo${n === 1 ? '' : 's'} saved`, 'success');
+      if (res && !res.series && !OdooAPI.noSignal()) Photos.uploadPhoto(res).catch(() => {});
+      return n;
+    } catch (err) {
+      App.showToast('Photo not taken: ' + (err.message || err), 'error');
+      return 0;
+    }
   },
 
   async tally(job, delta) {
@@ -351,77 +398,75 @@ const HolidayFlow = {
     if (type === 'takedown_check' && typeof TakedownCheck !== 'undefined') return TakedownCheck.open(job, after);
     if (type === 'map' && typeof HolidayMap !== 'undefined') return HolidayMap.open(job, after);
     if (type === 'bill') return this.okToBill(job);
-    if (type === 'swaps') return this.materialsUsed(job, code, after);
+    if (type === 'swaps') return SimpleUsed.openService(job, code, after);
     if (type === 'resolution') return this.whatWasDone(job, after);
   },
 
-  /** A service call: did anything come off the truck? Pick it (it comes off the truck's stock), or Nothing used. */
-  materialsUsed(job, code, after) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `<div class="modal" style="max-width:420px;">
-        <div class="modal-header"><h3>Materials used?</h3></div>
-        <div class="modal-body"><p style="margin-top:0;">Did you use anything from the truck: strands, bulbs, wire or clips?
-          It comes off the truck's stock (a bad strand goes to the repair bin).</p></div>
-        <div class="modal-footer"><button class="btn" data-none>Nothing used</button>
-          <button class="btn btn-primary" data-yes>Yes, pick them</button></div></div>`;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', async (e) => {
-      if (e.target === overlay) { overlay.remove(); return; }
-      const t = e.target.closest('button');
-      if (!t) return;
-      overlay.remove();
-      if (t.hasAttribute('data-yes')) {
-        if (typeof HolidayActual !== 'undefined') return HolidayActual.openSwaps(job, after);
-        return;
-      }
-      try {
-        await this.setStep(job, code, 'done');
-      } catch (err) {
-        App.showToast('Not saved: ' + (err.message || err), 'error');
-      }
-      after();
-    });
-  },
-
-  /** A service call: what was done, in a line (the job's resolution, and the ticket's when the job closes). */
+  /** A service call: what was done, in a line (the job's resolution and the ticket's), photos if they like, and
+   *  Close: the job and its ticket together. */
   whatWasDone(job, after) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `<div class="modal" style="max-width:460px;">
         <div class="modal-header"><h3>What was done?</h3></div>
         <div class="modal-body">
-          <p style="margin-top:0;">For the office and the customer: it closes the ticket.</p>
           <textarea class="form-input ohf-resolution" rows="4" style="width:100%;"
             placeholder="e.g. Replaced 3 bad multicolor strands on the front gutter; all lights working.">${this._esc(job.resolution || '')}</textarea>
+          <button class="btn btn-block" data-photos style="margin-top:10px;">&#128247; Add photos (optional)</button>
         </div>
-        <div class="modal-footer"><button class="btn" data-x>Cancel</button>
-          <button class="btn btn-primary" data-ok>Save</button></div></div>`;
+        <div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn" data-x>Cancel</button>
+          <button class="btn" data-ok>Save</button>
+          <button class="btn btn-primary" data-close style="flex:1 1 100%;min-height:48px;">&#10003; Save and close the job</button></div></div>`;
     document.body.appendChild(overlay);
     const box = overlay.querySelector('.ohf-resolution');
-    box.focus();
+    let photos = 0;
     overlay.addEventListener('click', async (e) => {
       const t = e.target.closest('button');
       if (!t) return;
       if (t.hasAttribute('data-x')) { overlay.remove(); return; }
-      if (t.hasAttribute('data-ok')) {
-        const text = box.value.trim();
-        if (!text) { App.showToast('Say what was done.', 'error'); return; }
-        t.disabled = true;
-        try {
-          await OdooAPI.callKw('fsm.order', 'worker_set_resolution', [job.id, text], {});
-          job.resolution = text;  // Close Job sends it again: the same note
-          if (typeof Jobs !== 'undefined') {
-            (Jobs._allJobs || []).filter(j => j.id === job.id).forEach(j => { j.resolution = text; });
-          }
-          overlay.remove();
-          after();
-        } catch (err) {
-          App.showToast('Not saved: ' + (err.message || err), 'error');
-          t.disabled = false;
-        }
+      if (t.hasAttribute('data-photos')) {
+        overlay.style.display = 'none';  // the camera opens over the whole screen
+        photos += await this.addPhotos(job, 'after');
+        overlay.style.display = '';
+        if (photos) t.innerHTML = `&#128247; ${photos} photo${photos === 1 ? '' : 's'} added. Add more`;
+        return;
+      }
+      if (!t.hasAttribute('data-ok') && !t.hasAttribute('data-close')) return;
+      const text = box.value.trim();
+      if (!text) { App.showToast('Say what was done.', 'error'); return; }
+      overlay.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      try {
+        await this.saveResolution(job, text);
+        overlay.remove();
+        if (after) after();
+        if (t.hasAttribute('data-close') && typeof WrapUp !== 'undefined') WrapUp.show(job);
+      } catch (err) {
+        App.showToast('Not saved: ' + (err.message || err), 'error');
+        overlay.querySelectorAll('button').forEach(b => { b.disabled = false; });
       }
     });
+  },
+
+  async saveResolution(job, text) {
+    const data = this._data && this._data[job.id];
+    const step = data && data.steps.find(s => s.type === 'resolution');
+    let sent = false;
+    if (!OdooAPI.noSignal()) {
+      try {
+        await OdooAPI.callKw('fsm.order', 'worker_set_resolution', [job.id, text], {});
+        sent = true;
+      } catch (err) {
+        if (!OdooAPI.isOffline(err)) throw err;
+      }
+    }
+    if (!sent) await this._queueStep({ jobId: job.id, code: step ? step.code : 'service_resolution', state: 'done', resolution: text });
+    job.resolution = text;  // Close Job sends it again: the same note
+    if (typeof Jobs !== 'undefined') {
+      (Jobs._allJobs || []).filter(j => j.id === job.id).forEach(j => { j.resolution = text; });
+    }
+    await DB.put('jobs', job).catch(() => {});
+    if (step) Object.assign(step, { done: true, skipped: false, detail: text.slice(0, 60) });
+    if (data) await DB.setState(this._key(job.id), data).catch(() => {});
   },
 
   skipStep(job, code) {
@@ -557,6 +602,9 @@ const HolidayFlow = {
       html += '<div class="ohf-comeback"><button class="btn" data-ohf="swaps">&#128295; Replaced anything?</button>'
         + '<div class="ohf-help">A strand, bulbs, wire or clips from the truck (optional).</div></div>';
     }
+    if (this.isCallback(job)) {
+      html += '<div class="ohf-comeback"><button class="btn" data-ohf="before">&#128247; Before photos</button><div class="ohf-help">Optional.</div></div>';
+    }
     if (!this.isVisit(job)) {
       html += '<div class="ohf-comeback"><button class="btn" data-ohf="comeback">&#8617;&#65039; Need to come back</button>'
         + '<div class="ohf-help">' + (this.isCallback(job)
@@ -625,7 +673,7 @@ const HolidayFlow = {
   },
 
   async beforeClose(job) {
-    const data = await this.load(job);
+    const data = await this.load(job, OdooAPI.noSignal() || (this.isCallback(job) && !!(this._data && this._data[job.id])));
     if (!data) return true;
     // Close Job asks for the count first while it's owed (Finish later turns into never otherwise).
     if (this.owed(job, data) && typeof HolidayUsed !== 'undefined'

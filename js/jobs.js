@@ -430,7 +430,9 @@ const Jobs = {
           const options = await OdooAPI.getJobOptions(job.id);
           await DB.cacheJobOptions(job.id, options);
         } catch { /* skip this job's options */ }
+        if (OdooAPI.isWeak()) break;  // the weak signal is for what they're doing now
         if (typeof InstallMap !== 'undefined') await InstallMap.prewarm(job);
+        if (typeof HolidayFlow !== 'undefined' && HolidayFlow.isHoliday(job)) await HolidayFlow.load(job).catch(() => {});
         cached++;
       }
       if (cached > 0) {
@@ -1644,6 +1646,7 @@ const Jobs = {
     // photos hidden still gets a collapsible "Earlier Steps" block that both
     // shows and uploads photos, resurrecting the section the profile removed.
     const earlierCats = (prof.photos.mode !== 'hidden'
+      && !(typeof HolidayFlow !== 'undefined' && HolidayFlow.isCallback(job))
       && !this._showAllSteps
       && stageName.toLowerCase().includes('progress'))
       ? ['equipment', 'before'].filter(c => !this._skippedPhotoCats(job).includes(c))
@@ -1720,6 +1723,8 @@ const Jobs = {
   _getStagePhotoCategories(stageName, job) {
     // A template with photos hidden gets no photo sections at all.
     if (job && this._profileFor(job).photos.mode === 'hidden') return [];
+    // Service calls: photos are buttons (before photos, and on What was done), not steps.
+    if (job && typeof HolidayFlow !== 'undefined' && HolidayFlow.isCallback(job)) return [];
     const name = stageName.toLowerCase();
     const skip = this._skippedPhotoCats(job);
     if (name.includes('arrived')) return ['equipment', 'before'].filter(c => !skip.includes(c));
@@ -1907,7 +1912,7 @@ const Jobs = {
     const prof = this._profileFor(job);
 
     // Hidden or optional photos never block, whatever the stage.
-    if (prof.photos.mode !== 'required') return { met: true, missing: [] };
+    if (prof.photos.mode !== 'required' || (typeof HolidayFlow !== 'undefined' && HolidayFlow.isCallback(job))) return { met: true, missing: [] };
 
     // Only the stages this job type gates on hold anything up.
     const gateStages = prof.gate_stages || [];
@@ -3482,7 +3487,9 @@ const Jobs = {
     // Stage changes affect overdue/not-closed lists
     this._historyFetchCache = null;
 
-    let queued = !navigator.onLine;
+    // An earlier change of this job still waiting: this one waits behind it, so they go in order.
+    const waiting = (await DB.getUnsyncedItems('statusChanges').catch(() => [])).some(i => i.job_id === job.id);
+    let queued = OdooAPI.noSignal() || waiting;
     if (!queued) {
       try {
         // Push stage change immediately — backend automations depend on this
@@ -3523,6 +3530,11 @@ const Jobs = {
       // Update local cache optimistically
       job.stage_id = [stage.id, stage.name];
       await DB.put('jobs', job);
+    }
+
+    // A service call: arriving is starting (Carl 2026-11-23).
+    if (name.includes('arrived') && typeof HolidayFlow !== 'undefined' && HolidayFlow.isCallback(job)) {
+      return this.changeJobStatus(job, 'In Progress');
     }
 
     // Note: the clock-off prompt happens at Close Job (WrapUp._showClockOffPrompt),
@@ -3714,6 +3726,9 @@ const Jobs = {
     let actionHtml = '';
     if (ticket.closed) {
       actionHtml = `<div class="ticket-closed-note">✓ Ticket closed (${this._escapeHtml(ticket.stage_name)})</div>`;
+    } else if (typeof HolidayFlow !== 'undefined' && HolidayFlow.isCallback(job)) {
+      // One way to close it: the job and its ticket together.
+      actionHtml = '<button class="btn btn-primary btn-block" id="ticketCloseJobBtn">Close the ticket and the job</button>';
     } else if (!ticket.can_close) {
       actionHtml = `<div class="ticket-blocked-note">Ticket can't be closed until the other jobs on it are finished.</div>
         <button class="btn btn-outline btn-sm btn-block" id="ticketNoteBtn">Add Ticket Note</button>`;
@@ -3731,6 +3746,8 @@ const Jobs = {
       <div class="ticket-actions">${actionHtml}</div>
     `;
 
+    const closeJobBtn = document.getElementById('ticketCloseJobBtn');
+    if (closeJobBtn) closeJobBtn.addEventListener('click', () => HolidayFlow.whatWasDone(job, () => HolidayFlow.refresh(job)));
     const resolveBtn = document.getElementById('ticketResolveBtn');
     if (resolveBtn) {
       resolveBtn.addEventListener('click', () => this._showResolveTicketModal(job, ticket));

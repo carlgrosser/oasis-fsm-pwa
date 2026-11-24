@@ -9,6 +9,10 @@ const Sync = {
   _refreshTimer: null,
   OTHER_QUEUES: ['otc_pending', 'oha_pending', 'ohu_pending', 'ohf_pending', 'omt_pending', 'damage_pending', 'comeback_pending', 'review_pending'],
 
+  STORES: ['statusChanges', 'photos', 'timeEntries', 'journalQueue', 'materialsQueue', 'officeNotes', 'expensesQueue', 'wrapupQueue'],
+  _retryMs: 15000,
+  _retryAt: 0,
+
   /**
    * Initialize sync — set up online/offline listeners and auto-refresh.
    */
@@ -25,7 +29,8 @@ const Sync = {
 
     // Check for pending items, and keep the "Waiting to send" count fresh (round 3: no badge while offline).
     this._updatePendingCount();
-    setInterval(() => this._updatePendingCount(), 4000);
+    setInterval(() => this._updatePendingCount(), 5000);
+    setInterval(() => this._retry(), 5000);
   },
 
   /**
@@ -50,27 +55,77 @@ const Sync = {
   },
 
   /**
-   * Process all pending sync items.
+   * Something is waiting (or the signal was weak): ask Odoo for a sign of life, in the background, and send when it
+   * answers. Weak signal never fires the browser's "online" event, so things waited for the next refresh (30 min).
+   * Backs off to 5 minutes when nothing gets through.
    */
-  async syncAll() {
+  async _retry() {
+    if (this._isSyncing || this._probing || !navigator.onLine || Date.now() < this._retryAt) return;
+    if (document.visibilityState !== 'visible') return;
+    if (!this._pendingCount && !OdooAPI.isWeak()) { this._retryMs = 15000; return; }
+    this._probing = true;
+    try {
+      const status = await OdooAPI.checkSession();
+      if (status === 'valid') {
+        OdooAPI.clearWeak();
+        const before = this._pendingCount;
+        if (before) await this.syncAll(true);
+        this._retryMs = this._pendingCount < before || !this._pendingCount ? 15000 : Math.min(this._retryMs * 2, 300000);
+      } else {
+        this._retryMs = Math.min(this._retryMs * 2, 120000);
+      }
+    } finally {
+      this._probing = false;
+      this._retryAt = Date.now() + this._retryMs;
+    }
+  },
+
+  /** The holiday screens' own queues. */
+  async _syncOthers() {
+    const all = [
+      typeof HolidayFlow !== 'undefined' && (() => HolidayFlow.flush()),
+      typeof HolidayFlow !== 'undefined' && (() => HolidayFlow.flushTally()),
+      typeof HolidayActual !== 'undefined' && (() => HolidayActual.flush()),
+      typeof HolidayUsed !== 'undefined' && (() => HolidayUsed.flush()),
+      typeof TakedownCheck !== 'undefined' && (() => TakedownCheck.flush()),
+      typeof MyTruck !== 'undefined' && (() => MyTruck.flush()),
+      typeof Reviews !== 'undefined' && (() => Reviews.flush()),
+    ].filter(Boolean);
+    for (const send of all) {
+      if (OdooAPI.noSignal()) return;
+      await send().catch(err => console.warn('Sync: a queue was not sent', err));
+    }
+  },
+
+  /** Damage and come-back reports go with their photos. */
+  async _syncReports() {
+    for (const send of [
+      typeof DamageReport !== 'undefined' && (() => DamageReport.flush()),
+      typeof ComeBack !== 'undefined' && (() => ComeBack.flush()),
+    ].filter(Boolean)) {
+      await send().catch(err => console.warn('Sync: a report was not sent', err));
+    }
+  },
+
+  /**
+   * Process all pending sync items: the small ones first, photos last (they used to hold up everything behind them).
+   */
+  async syncAll(quiet) {
     if (this._isSyncing || !navigator.onLine) return;
     this._isSyncing = true;
     this._updateIndicator();
 
     try {
-      await this._syncStatusChanges();
-      await this._syncPhotos();
-      await this._syncJournal();
-      await this._syncMaterials();
-      await this._syncTimeEntries();
-      await this._syncWrapups();
-      await this._syncOfficeNotes();
-      await this._syncExpenses();
+      for (const step of ['_syncTimeEntries', '_syncStatusChanges', '_syncOthers', '_syncWrapups', '_syncJournal',
+        '_syncMaterials', '_syncOfficeNotes', '_syncReports', '_syncPhotos', '_syncExpenses']) {
+        await this[step]();
+        if (OdooAPI.noSignal()) break;  // lost it again: the rest waits
+      }
       await this._updatePendingCount();
-      App.showToast('Sync complete', 'success');
+      if (!quiet) App.showToast(this._pendingCount ? 'Some items still wait to be sent' : 'Sync complete', this._pendingCount ? 'info' : 'success');
     } catch (err) {
       console.error('Sync error:', err);
-      App.showToast('Sync failed — will retry', 'error');
+      if (!quiet) App.showToast('Sync failed — will retry', 'error');
     } finally {
       this._isSyncing = false;
       this._updateIndicator();
@@ -81,9 +136,19 @@ const Sync = {
    * Sync queued status changes.
    */
   async _syncStatusChanges() {
-    const pending = await DB.getUnsyncedItems('statusChanges');
+    const pending = (await DB.getUnsyncedItems('statusChanges'))
+      .sort((x, y) => String(x.timestamp).localeCompare(String(y.timestamp)));
     for (const item of pending) {
       try {
+        // Already done, or further along (the office, a crew-mate, this phone later on): a late "En Route" must not
+        // reopen it (FO1021, Nov 2026: Completed, then back to En Route two days later).
+        const late = Date.now() - new Date(String(item.timestamp).replace(' ', 'T') + 'Z').getTime() > 60000;
+        if (late && await this._isBehind(item)) {
+          item.synced = 1;
+          item.skipped = 'the job was already further along';
+          await DB.put('statusChanges', item);
+          continue;
+        }
         const extraValues = item.extra_values ? { ...item.extra_values } : {};
         if (item.gps && !extraValues.gps_enroute) {
           extraValues.gps_enroute = item.gps;
@@ -99,9 +164,18 @@ const Sync = {
         await DB.put('statusChanges', item);
       } catch (err) {
         console.warn('Failed to sync status change:', item, err);
-        // Leave unsynced for next attempt
+        if (OdooAPI.isOffline(err)) return;  // in order, later
       }
     }
+  },
+
+  /** The job in Odoo is closed, or past the stage this queued change would set. Throws with no signal. */
+  async _isBehind(item) {
+    const rows = await OdooAPI.read('fsm.order', [item.job_id], ['stage_id']);
+    const now = rows && rows[0] && rows[0].stage_id && Jobs.getStage(rows[0].stage_id[0]);
+    const want = Jobs.getStage(item.stage_id);
+    if (!now || !want || now.id === want.id) return false;
+    return !!now.is_closed || (now.sequence || 0) > (want.sequence || 0);
   },
 
   /**
@@ -123,7 +197,7 @@ const Sync = {
         await DB.put('wrapupQueue', item);
       } catch (err) {
         console.warn('Failed to sync wrap-up:', item, err);
-        // Leave unsynced for next attempt
+        if (OdooAPI.isOffline(err)) return;
       }
     }
   },
@@ -137,7 +211,7 @@ const Sync = {
       if (result.uploaded > 0) {
         console.log(`Synced ${result.uploaded} photos, ${result.failed} failed`);
       }
-      if (result.failed > 0) {
+      if (result.failed > 0 && !result.offline) {
         App.showToast(`${result.failed} photo(s) failed to upload — will retry on next sync`, 'error');
       }
     }
@@ -207,48 +281,19 @@ const Sync = {
    * Count pending sync items.
    */
   async _updatePendingCount() {
-    try {
-      const statusChanges = await DB.getUnsyncedItems('statusChanges');
-      const photos = await DB.getUnsyncedItems('photos');
-      const timeEntries = await DB.getUnsyncedItems('timeEntries');
-      let journalCount = 0;
-      try {
-        const journalItems = await DB.getUnsyncedItems('journalQueue');
-        journalCount = journalItems.length;
-      } catch { /* store may not exist yet */ }
-      let materialsCount = 0;
-      try {
-        const materialsItems = await DB.getUnsyncedItems('materialsQueue');
-        materialsCount = materialsItems.length;
-      } catch { /* store may not exist yet */ }
-      let officeNotesCount = 0;
-      try {
-        const officeNotes = await DB.getUnsyncedItems('officeNotes');
-        officeNotesCount = officeNotes.length;
-      } catch { /* store may not exist yet */ }
-      let expensesCount = 0;
-      try {
-        const expenseItems = await DB.getUnsyncedItems('expensesQueue');
-        expensesCount = expenseItems.length;
-      } catch { /* store may not exist yet */ }
-      let wrapupCount = 0;
-      try {
-        const wrapupItems = await DB.getUnsyncedItems('wrapupQueue');
-        wrapupCount = wrapupItems.length;
-      } catch { /* store may not exist yet */ }
-      // The holiday screens, My Truck, damage, come-backs and reviews keep their own queues on the phone.
-      let otherCount = 0;
-      for (const key of this.OTHER_QUEUES) {
-        try {
-          const q = await DB.getState(key);
-          if (Array.isArray(q)) otherCount += q.length;
-          else if (q && typeof q === 'object') otherCount += Object.keys(q).length;
-        } catch { /* nothing kept */ }
-      }
-      this._pendingCount = statusChanges.length + photos.length + timeEntries.length + journalCount + materialsCount + officeNotesCount + expensesCount + wrapupCount + otherCount;
-    } catch {
-      this._pendingCount = 0;
+    let count = 0;
+    for (const store of this.STORES) {
+      count += await DB.countUnsynced(store).catch(() => 0);
     }
+    // The holiday screens, My Truck, damage, come-backs and reviews keep their own queues on the phone.
+    for (const key of this.OTHER_QUEUES) {
+      try {
+        const q = await DB.getState(key);
+        if (Array.isArray(q)) count += q.length;
+        else if (q && typeof q === 'object') count += Object.keys(q).length;
+      } catch { /* nothing kept */ }
+    }
+    this._pendingCount = count;
     this._updatePendingBadge();
   },
 

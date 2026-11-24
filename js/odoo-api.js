@@ -6,6 +6,24 @@ const OdooAPI = {
   _requestId: 0,
   _sessionId: null,
 
+  // Weak signal (Carl 2026-11-23: the app crawled): after a call that got no answer, for half a minute screens are
+  // read from the phone after a short try and changes are kept on the phone at once, instead of each waiting 10 s.
+  // Sync checks in the background whether the signal is back.
+  _weakUntil: 0,
+  WEAK_MS: 30000,
+  WEAK_READ_MS: 2500,
+  isWeak() { return Date.now() < this._weakUntil; },
+  markWeak() { this._weakUntil = Date.now() + this.WEAK_MS; },
+  clearWeak() { this._weakUntil = 0; },
+  /** No point trying now: no signal, or too weak. Changes go in the phone's queue. */
+  noSignal() { return !navigator.onLine || this.isWeak(); },
+  /** Calls that only read: safe to give up on early. Anything else keeps its full time (giving up on a write that
+   *  got through would send it twice). */
+  _isRead(params) {
+    const m = params && params.method;
+    return !!m && /^(read|search|search_read|search_count|worker_get_|worker_job_photos|worker_my_|worker_day_route|get_)/.test(m);
+  },
+
   /**
    * Detect missing server-side custom method errors.
    */
@@ -46,7 +64,8 @@ const OdooAPI = {
       params: params,
     };
 
-    const timeoutMs = (opts && opts.timeout) || CONFIG.RPC_TIMEOUT_MS || 10000;
+    const timeoutMs = (opts && opts.timeout)
+      || (this.isWeak() && this._isRead(params) ? this.WEAK_READ_MS : CONFIG.RPC_TIMEOUT_MS || 10000);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -60,6 +79,7 @@ const OdooAPI = {
         signal: controller.signal,
       });
     } catch (err) {
+      this.markWeak();
       if (err && err.name === 'AbortError') {
         const e = new Error('Request timed out — weak or no connection');
         e.isTimeout = true;
@@ -69,6 +89,8 @@ const OdooAPI = {
     } finally {
       clearTimeout(timer);
     }
+
+    this.clearWeak();
 
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -1261,11 +1283,23 @@ const OdooAPI = {
     formData.append('file', blob, filename || 'photo.jpg');
 
     const url = (CONFIG.ODOO_URL || '') + '/gdrive/upload_photo';
-    const resp = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      credentials: CONFIG.ODOO_URL ? 'include' : 'same-origin',
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+    let resp;
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        credentials: CONFIG.ODOO_URL ? 'include' : 'same-origin',
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const e = new Error('Photo upload got no answer (weak or no signal)');
+      e.isTimeout = true;
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!resp.ok) throw new Error(`Drive upload failed: HTTP ${resp.status}`);
     const data = await resp.json();
